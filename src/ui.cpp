@@ -730,13 +730,10 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_set_style_bg_opa(slider_vol, LV_OPA_COVER, LV_PART_INDICATOR);
     lv_obj_set_style_radius(slider_vol, 3, LV_PART_INDICATOR);
 
-    // Knob / Thumb (16px circular thumb with white perimeter)
-    lv_obj_set_style_bg_color(slider_vol, COLOR_ACCENT, LV_PART_KNOB);
-    lv_obj_set_style_bg_opa(slider_vol, LV_OPA_COVER, LV_PART_KNOB);
-    lv_obj_set_style_border_color(slider_vol, lv_color_hex(0xFFFFFF), LV_PART_KNOB);
-    lv_obj_set_style_border_width(slider_vol, 2, LV_PART_KNOB);
-    lv_obj_set_style_pad_all(slider_vol, 5, LV_PART_KNOB);
-    lv_obj_set_style_radius(slider_vol, 8, LV_PART_KNOB);
+    // Knob / Thumb (Hidden for flush progress-bar aesthetic)
+    lv_obj_set_style_bg_opa(slider_vol, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_obj_set_style_border_opa(slider_vol, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(slider_vol, 0, LV_PART_KNOB);
 
     // Generous touch hit area
     lv_obj_add_flag(slider_vol, LV_OBJ_FLAG_CLICKABLE);
@@ -751,7 +748,7 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_set_style_text_color(lbl_vol_percent, COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_align(lbl_vol_percent, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(lbl_vol_percent, 50);
-    lv_obj_align(lbl_vol_percent, LV_ALIGN_CENTER, 0, 16);
+    lv_obj_align(lbl_vol_percent, LV_ALIGN_CENTER, 0, 14);
 }
 
 // Build Presets Drawer / List Tab (12 Presets)
