@@ -69,6 +69,20 @@ struct PresetList {
 };
 
 // =============================================================================
+// Wi-Fi Scanning & Provisioning Data Structures
+// =============================================================================
+struct WiFiNetworkInfo {
+    char ssid[33];
+    int8_t rssi;
+    bool is_open;
+};
+
+struct WiFiScanList {
+    uint8_t count;
+    WiFiNetworkInfo networks[20];
+};
+
+// =============================================================================
 // Inter-Task Communication (FreeRTOS Queues)
 // =============================================================================
 
@@ -79,7 +93,10 @@ enum UiEventType {
     UI_EVT_PLAYER_STATE,
     UI_EVT_META_UPDATED,
     UI_EVT_PRESETS_UPDATED,
-    UI_EVT_SCAN_STATUS
+    UI_EVT_SCAN_STATUS,
+    UI_EVT_WIFI_SCAN_RESULT,
+    UI_EVT_WIFI_SETUP_REQUIRED,
+    UI_EVT_WIFI_CONNECT_FAILED
 };
 
 struct UiEvent {
@@ -97,6 +114,7 @@ struct UiEvent {
         struct {
             bool is_scanning;
         } scan;
+        WiFiScanList* wifi_scan;
     } data;
 };
 
@@ -111,6 +129,9 @@ inline void ui_event_free(UiEvent* evt) {
     } else if (evt->type == UI_EVT_PRESETS_UPDATED && evt->data.presets) {
         free(evt->data.presets);
         evt->data.presets = nullptr;
+    } else if (evt->type == UI_EVT_WIFI_SCAN_RESULT && evt->data.wifi_scan) {
+        free(evt->data.wifi_scan);
+        evt->data.wifi_scan = nullptr;
     }
 }
 
@@ -124,7 +145,10 @@ enum CmdType {
     CMD_TRIGGER_PRESET,
     CMD_SELECT_DEVICE,
     CMD_TRIGGER_RESCAN,
-    CMD_SEEK_POSITION
+    CMD_SEEK_POSITION,
+    CMD_WIFI_START_SCAN,
+    CMD_WIFI_CONNECT,
+    CMD_WIFI_FORGET
 };
 
 struct UiCommand {
@@ -135,6 +159,10 @@ struct UiCommand {
         uint8_t preset_index;       // For CMD_TRIGGER_PRESET (1..12)
         char device_ip[24];         // For CMD_SELECT_DEVICE
         uint32_t seek_ms;           // For CMD_SEEK_POSITION
+        struct {
+            char ssid[33];
+            char password[65];
+        } wifi_connect;             // For CMD_WIFI_CONNECT
     } data;
 };
 

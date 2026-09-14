@@ -150,7 +150,7 @@
 #define LV_USE_CHART      0
 #define LV_USE_COLORWHEEL 0
 #define LV_USE_IMGBTN     1
-#define LV_USE_KEYBOARD   0
+#define LV_USE_KEYBOARD   1
 #define LV_USE_LED        1
 #define LV_USE_LIST       1
 #define LV_USE_MENU       0

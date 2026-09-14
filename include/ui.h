@@ -17,3 +17,7 @@ void ui_set_player_state(const PlayerState& state);
 void ui_set_track_meta(const TrackMeta& meta);
 void ui_set_presets(const PresetList& presets);
 void ui_set_scanning(bool is_scanning);
+void ui_set_wifi_scan_results(const WiFiScanList& list);
+void ui_open_wifi_modal();
+void ui_wifi_on_connected(const char* ip);
+void ui_wifi_on_connect_failed();

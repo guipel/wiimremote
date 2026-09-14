@@ -96,6 +96,17 @@ private:
     HTTPClient _persistentHttp;
     String _persistentIp;
     bool _persistentHttpConfigured;
+
+    // Wi-Fi Provisioning & Scanning
+    void startWiFiScan();
+    void checkWiFiScanStatus();
+    void connectWiFi(const char* ssid, const char* pass);
+    void forgetWiFi();
+    bool _wifiScanning;
+    bool _wifiConnecting;
+    unsigned long _wifiConnectStart;
+    String _pendingConnectSsid;
+    String _pendingConnectPass;
 };
 
 void network_task_entry(void* param);

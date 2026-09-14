@@ -79,6 +79,25 @@ static lv_obj_t* list_devices = nullptr;
 static lv_obj_t* lbl_scan_status = nullptr;
 static lv_obj_t* btn_rescan = nullptr;
 
+// UI Widgets - Wi-Fi Configuration Modal
+static lv_obj_t* btn_wifi_select = nullptr;
+static lv_obj_t* modal_wifi_selector = nullptr;
+static lv_obj_t* wifi_view_list = nullptr;
+static lv_obj_t* wifi_view_pass = nullptr;
+static lv_obj_t* wifi_view_status = nullptr;
+static lv_obj_t* list_wifi = nullptr;
+static lv_obj_t* lbl_wifi_scan_status = nullptr;
+static lv_obj_t* lbl_wifi_pass_title = nullptr;
+static lv_obj_t* ta_wifi_pass = nullptr;
+static lv_obj_t* kb_wifi = nullptr;
+static lv_obj_t* lbl_wifi_connecting_msg = nullptr;
+static lv_obj_t* spinner_wifi = nullptr;
+static lv_obj_t* btn_wifi_status_back = nullptr;
+
+static WiFiScanList current_wifi_scan_list;
+static char selected_wifi_ssid[33] = "";
+static lv_timer_t* timer_wifi_close = nullptr;
+
 // Local state tracking to prevent UI flicker
 static bool is_user_dragging_slider = false;
 static bool current_mute_state = false;
@@ -318,6 +337,10 @@ static void event_device_item_clicked(lv_event_t* e) {
     lv_obj_add_flag(modal_device_selector, LV_OBJ_FLAG_HIDDEN);
 }
 
+static void event_btn_open_wifi_modal(lv_event_t* e) {
+    ui_open_wifi_modal();
+}
+
 // Build Header Bar
 static void build_header(lv_obj_t* parent) {
     header_cont = lv_obj_create(parent);
@@ -331,16 +354,25 @@ static void build_header(lv_obj_t* parent) {
     lv_obj_set_style_pad_all(header_cont, 2, 0);
     lv_obj_clear_flag(header_cont, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Wi-Fi Icon Only
-    lbl_wifi = lv_label_create(header_cont);
-    lv_label_set_text(lbl_wifi, LV_SYMBOL_WIFI);
+    // Wi-Fi Button & Action Chevron (Top Left)
+    btn_wifi_select = lv_btn_create(header_cont);
+    lv_obj_set_size(btn_wifi_select, 48, 22);
+    lv_obj_align(btn_wifi_select, LV_ALIGN_LEFT_MID, 2, 0);
+    lv_obj_set_style_bg_opa(btn_wifi_select, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_shadow_width(btn_wifi_select, 0, 0);
+    lv_obj_set_style_border_width(btn_wifi_select, 0, 0);
+    lv_obj_set_style_pad_all(btn_wifi_select, 0, 0);
+    lv_obj_add_event_cb(btn_wifi_select, event_btn_open_wifi_modal, LV_EVENT_CLICKED, nullptr);
+
+    lbl_wifi = lv_label_create(btn_wifi_select);
+    lv_label_set_text(lbl_wifi, LV_SYMBOL_WIFI " " LV_SYMBOL_DOWN);
     lv_obj_set_style_text_color(lbl_wifi, COLOR_TEXT_MUTED, 0);
-    lv_obj_set_style_text_font(lbl_wifi, &lv_font_montserrat_14, 0);
-    lv_obj_align(lbl_wifi, LV_ALIGN_LEFT_MID, 6, 0);
+    lv_obj_set_style_text_font(lbl_wifi, &lv_font_montserrat_12, 0);
+    lv_obj_align(lbl_wifi, LV_ALIGN_LEFT_MID, 2, 0);
 
     // Active Device Button (Flat & right-aligned)
     btn_device_select = lv_btn_create(header_cont);
-    lv_obj_set_size(btn_device_select, 190, 22);
+    lv_obj_set_size(btn_device_select, 180, 22);
     lv_obj_align(btn_device_select, LV_ALIGN_RIGHT_MID, -4, 0);
     lv_obj_set_style_bg_opa(btn_device_select, LV_OPA_TRANSP, 0);
     lv_obj_set_style_shadow_width(btn_device_select, 0, 0);
@@ -351,7 +383,7 @@ static void build_header(lv_obj_t* parent) {
     lbl_active_device = lv_label_create(btn_device_select);
     lv_label_set_text(lbl_active_device, "Searching... " LV_SYMBOL_DOWN);
     lv_label_set_long_mode(lbl_active_device, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(lbl_active_device, 184);
+    lv_obj_set_width(lbl_active_device, 174);
     lv_obj_set_style_text_color(lbl_active_device, COLOR_ACCENT, 0);
     lv_obj_set_style_text_font(lbl_active_device, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_align(lbl_active_device, LV_TEXT_ALIGN_RIGHT, 0);
@@ -678,6 +710,295 @@ static void build_device_modal() {
     lv_obj_center(lbl_close_btn);
 }
 
+// Wi-Fi Configuration Modal Callbacks
+static void event_btn_close_wifi_modal(lv_event_t* e) {
+    if (modal_wifi_selector) {
+        lv_obj_add_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void event_btn_wifi_rescan(lv_event_t* e) {
+    if (lbl_wifi_scan_status) {
+        lv_label_set_text(lbl_wifi_scan_status, "Scanning for networks...");
+        lv_obj_set_style_text_color(lbl_wifi_scan_status, COLOR_ACCENT, 0);
+    }
+    UiCommand cmd;
+    cmd.type = CMD_WIFI_START_SCAN;
+    xQueueSend(xQueueUiCmd, &cmd, 0);
+}
+
+static void event_btn_wifi_eye_toggle(lv_event_t* e) {
+    if (!ta_wifi_pass) return;
+    bool cur = lv_textarea_get_password_mode(ta_wifi_pass);
+    lv_textarea_set_password_mode(ta_wifi_pass, !cur);
+    lv_obj_t* btn = lv_event_get_target(e);
+    lv_obj_t* lbl = lv_obj_get_child(btn, 0);
+    if (lbl) {
+        lv_label_set_text(lbl, cur ? LV_SYMBOL_EYE_CLOSE : LV_SYMBOL_EYE_OPEN);
+    }
+}
+
+static void event_btn_wifi_pass_back(lv_event_t* e) {
+    if (wifi_view_pass) lv_obj_add_flag(wifi_view_pass, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_view_status) lv_obj_add_flag(wifi_view_status, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_view_list) lv_obj_clear_flag(wifi_view_list, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void do_wifi_connect(const char* ssid, const char* pass) {
+    if (!ssid || strlen(ssid) == 0) return;
+
+    UiCommand cmd;
+    cmd.type = CMD_WIFI_CONNECT;
+    strncpy(cmd.data.wifi_connect.ssid, ssid, sizeof(cmd.data.wifi_connect.ssid) - 1);
+    cmd.data.wifi_connect.ssid[sizeof(cmd.data.wifi_connect.ssid) - 1] = '\0';
+    strncpy(cmd.data.wifi_connect.password, pass ? pass : "", sizeof(cmd.data.wifi_connect.password) - 1);
+    cmd.data.wifi_connect.password[sizeof(cmd.data.wifi_connect.password) - 1] = '\0';
+    xQueueSend(xQueueUiCmd, &cmd, 0);
+
+    if (wifi_view_list) lv_obj_add_flag(wifi_view_list, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_view_pass) lv_obj_add_flag(wifi_view_pass, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_view_status) lv_obj_clear_flag(wifi_view_status, LV_OBJ_FLAG_HIDDEN);
+
+    if (spinner_wifi) lv_obj_clear_flag(spinner_wifi, LV_OBJ_FLAG_HIDDEN);
+    if (btn_wifi_status_back) lv_obj_add_flag(btn_wifi_status_back, LV_OBJ_FLAG_HIDDEN);
+    if (lbl_wifi_connecting_msg) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "Connecting to\n%s...", ssid);
+        lv_label_set_text(lbl_wifi_connecting_msg, buf);
+        lv_obj_set_style_text_color(lbl_wifi_connecting_msg, COLOR_TEXT_PRIMARY, 0);
+    }
+}
+
+static void event_btn_wifi_pass_connect(lv_event_t* e) {
+    const char* pass = ta_wifi_pass ? lv_textarea_get_text(ta_wifi_pass) : "";
+    do_wifi_connect(selected_wifi_ssid, pass);
+}
+
+static void event_kb_wifi_ready(lv_event_t* e) {
+    const char* pass = ta_wifi_pass ? lv_textarea_get_text(ta_wifi_pass) : "";
+    do_wifi_connect(selected_wifi_ssid, pass);
+}
+
+static void event_wifi_item_clicked(lv_event_t* e) {
+    uintptr_t idx = (uintptr_t)lv_event_get_user_data(e);
+    if (idx >= current_wifi_scan_list.count) return;
+
+    strncpy(selected_wifi_ssid, current_wifi_scan_list.networks[idx].ssid, sizeof(selected_wifi_ssid) - 1);
+    selected_wifi_ssid[sizeof(selected_wifi_ssid) - 1] = '\0';
+
+    if (current_wifi_scan_list.networks[idx].is_open) {
+        do_wifi_connect(selected_wifi_ssid, "");
+    } else {
+        if (lbl_wifi_pass_title) {
+            char title[64];
+            snprintf(title, sizeof(title), "Network: %s", selected_wifi_ssid);
+            lv_label_set_text(lbl_wifi_pass_title, title);
+        }
+        if (ta_wifi_pass) {
+            lv_textarea_set_text(ta_wifi_pass, "");
+            lv_textarea_set_password_mode(ta_wifi_pass, true);
+        }
+        if (kb_wifi && ta_wifi_pass) {
+            lv_keyboard_set_textarea(kb_wifi, ta_wifi_pass);
+        }
+        if (wifi_view_list) lv_obj_add_flag(wifi_view_list, LV_OBJ_FLAG_HIDDEN);
+        if (wifi_view_status) lv_obj_add_flag(wifi_view_status, LV_OBJ_FLAG_HIDDEN);
+        if (wifi_view_pass) lv_obj_clear_flag(wifi_view_pass, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+// Build Wi-Fi Configuration Modal
+static void build_wifi_modal() {
+    modal_wifi_selector = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(modal_wifi_selector, 240, 320);
+    lv_obj_align(modal_wifi_selector, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(modal_wifi_selector, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(modal_wifi_selector, LV_OPA_80, 0);
+    lv_obj_set_style_radius(modal_wifi_selector, 0, 0);
+    lv_obj_set_style_border_side(modal_wifi_selector, LV_BORDER_SIDE_NONE, 0);
+    lv_obj_set_style_pad_all(modal_wifi_selector, 8, 0);
+    lv_obj_add_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN); // Hidden by default
+
+    // Modal Card
+    lv_obj_t* card = lv_obj_create(modal_wifi_selector);
+    lv_obj_set_size(card, 224, 296);
+    lv_obj_center(card);
+    lv_obj_set_style_bg_color(card, COLOR_SURFACE, 0);
+    lv_obj_set_style_radius(card, 12, 0);
+    lv_obj_set_style_border_color(card, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_pad_all(card, 6, 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+    // -------------------------------------------------------------
+    // View 1: Network Selection List
+    // -------------------------------------------------------------
+    wifi_view_list = lv_obj_create(card);
+    lv_obj_set_size(wifi_view_list, 212, 284);
+    lv_obj_center(wifi_view_list);
+    lv_obj_set_style_bg_opa(wifi_view_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(wifi_view_list, 0, 0);
+    lv_obj_set_style_pad_all(wifi_view_list, 0, 0);
+    lv_obj_clear_flag(wifi_view_list, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t* lbl_title = lv_label_create(wifi_view_list);
+    lv_label_set_text(lbl_title, "Select Wi-Fi Network");
+    lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, 0);
+
+    lbl_wifi_scan_status = lv_label_create(wifi_view_list);
+    lv_label_set_text(lbl_wifi_scan_status, "Ready");
+    lv_obj_set_style_text_font(lbl_wifi_scan_status, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(lbl_wifi_scan_status, COLOR_TEXT_MUTED, 0);
+    lv_obj_align(lbl_wifi_scan_status, LV_ALIGN_TOP_MID, 0, 18);
+
+    list_wifi = lv_list_create(wifi_view_list);
+    lv_obj_set_size(list_wifi, 212, 192);
+    lv_obj_align(list_wifi, LV_ALIGN_TOP_MID, 0, 36);
+    lv_obj_set_style_bg_color(list_wifi, COLOR_BG, 0);
+    lv_obj_set_style_border_side(list_wifi, LV_BORDER_SIDE_NONE, 0);
+    lv_obj_set_style_radius(list_wifi, 8, 0);
+
+    lv_obj_t* btn_rescan_w = lv_btn_create(wifi_view_list);
+    lv_obj_set_size(btn_rescan_w, 100, 32);
+    lv_obj_align(btn_rescan_w, LV_ALIGN_BOTTOM_LEFT, 2, 0);
+    lv_obj_set_style_bg_color(btn_rescan_w, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_radius(btn_rescan_w, 8, 0);
+    lv_obj_add_event_cb(btn_rescan_w, event_btn_wifi_rescan, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* lbl_rescan = lv_label_create(btn_rescan_w);
+    lv_label_set_text(lbl_rescan, LV_SYMBOL_REFRESH " Rescan");
+    lv_obj_set_style_text_font(lbl_rescan, &lv_font_montserrat_10, 0);
+    lv_obj_center(lbl_rescan);
+
+    lv_obj_t* btn_close_w = lv_btn_create(wifi_view_list);
+    lv_obj_set_size(btn_close_w, 100, 32);
+    lv_obj_align(btn_close_w, LV_ALIGN_BOTTOM_RIGHT, -2, 0);
+    lv_obj_set_style_bg_color(btn_close_w, COLOR_ACCENT, 0);
+    lv_obj_set_style_radius(btn_close_w, 8, 0);
+    lv_obj_add_event_cb(btn_close_w, event_btn_close_wifi_modal, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* lbl_close = lv_label_create(btn_close_w);
+    lv_label_set_text(lbl_close, "Close");
+    lv_obj_set_style_text_color(lbl_close, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_font(lbl_close, &lv_font_montserrat_10, 0);
+    lv_obj_center(lbl_close);
+
+    // -------------------------------------------------------------
+    // View 2: Password Entry & Keyboard
+    // -------------------------------------------------------------
+    wifi_view_pass = lv_obj_create(card);
+    lv_obj_set_size(wifi_view_pass, 212, 284);
+    lv_obj_center(wifi_view_pass);
+    lv_obj_set_style_bg_opa(wifi_view_pass, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(wifi_view_pass, 0, 0);
+    lv_obj_set_style_pad_all(wifi_view_pass, 0, 0);
+    lv_obj_clear_flag(wifi_view_pass, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(wifi_view_pass, LV_OBJ_FLAG_HIDDEN);
+
+    lbl_wifi_pass_title = lv_label_create(wifi_view_pass);
+    lv_label_set_text(lbl_wifi_pass_title, "Enter Password");
+    lv_obj_set_style_text_font(lbl_wifi_pass_title, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_wifi_pass_title, COLOR_ACCENT, 0);
+    lv_obj_set_width(lbl_wifi_pass_title, 210);
+    lv_label_set_long_mode(lbl_wifi_pass_title, LV_LABEL_LONG_DOT);
+    lv_obj_align(lbl_wifi_pass_title, LV_ALIGN_TOP_MID, 0, 0);
+
+    // Text Area for Password
+    ta_wifi_pass = lv_textarea_create(wifi_view_pass);
+    lv_obj_set_size(ta_wifi_pass, 172, 34);
+    lv_obj_align(ta_wifi_pass, LV_ALIGN_TOP_LEFT, 0, 20);
+    lv_textarea_set_password_mode(ta_wifi_pass, true);
+    lv_textarea_set_one_line(ta_wifi_pass, true);
+    lv_textarea_set_placeholder_text(ta_wifi_pass, "Password");
+    lv_obj_set_style_bg_color(ta_wifi_pass, COLOR_BG, 0);
+    lv_obj_set_style_text_color(ta_wifi_pass, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_border_color(ta_wifi_pass, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_radius(ta_wifi_pass, 6, 0);
+    lv_obj_set_style_text_font(ta_wifi_pass, &lv_font_montserrat_12, 0);
+
+    // Eye toggle button
+    lv_obj_t* btn_eye = lv_btn_create(wifi_view_pass);
+    lv_obj_set_size(btn_eye, 34, 34);
+    lv_obj_align(btn_eye, LV_ALIGN_TOP_RIGHT, 0, 20);
+    lv_obj_set_style_bg_color(btn_eye, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_radius(btn_eye, 6, 0);
+    lv_obj_add_event_cb(btn_eye, event_btn_wifi_eye_toggle, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* lbl_eye = lv_label_create(btn_eye);
+    lv_label_set_text(lbl_eye, LV_SYMBOL_EYE_OPEN);
+    lv_obj_set_style_text_font(lbl_eye, &lv_font_montserrat_12, 0);
+    lv_obj_center(lbl_eye);
+
+    // Keyboard
+    kb_wifi = lv_keyboard_create(wifi_view_pass);
+    lv_obj_set_size(kb_wifi, 212, 178);
+    lv_obj_align(kb_wifi, LV_ALIGN_TOP_MID, 0, 58);
+    lv_keyboard_set_textarea(kb_wifi, ta_wifi_pass);
+    lv_obj_set_style_bg_color(kb_wifi, COLOR_SURFACE, 0);
+    lv_obj_set_style_radius(kb_wifi, 6, 0);
+    lv_obj_add_event_cb(kb_wifi, event_kb_wifi_ready, LV_EVENT_READY, nullptr);
+
+    // Bottom Action Buttons: Back & Connect
+    lv_obj_t* btn_pass_back = lv_btn_create(wifi_view_pass);
+    lv_obj_set_size(btn_pass_back, 100, 32);
+    lv_obj_align(btn_pass_back, LV_ALIGN_BOTTOM_LEFT, 2, 0);
+    lv_obj_set_style_bg_color(btn_pass_back, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_radius(btn_pass_back, 8, 0);
+    lv_obj_add_event_cb(btn_pass_back, event_btn_wifi_pass_back, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* lbl_back = lv_label_create(btn_pass_back);
+    lv_label_set_text(lbl_back, LV_SYMBOL_LEFT " Back");
+    lv_obj_set_style_text_font(lbl_back, &lv_font_montserrat_10, 0);
+    lv_obj_center(lbl_back);
+
+    lv_obj_t* btn_pass_connect = lv_btn_create(wifi_view_pass);
+    lv_obj_set_size(btn_pass_connect, 100, 32);
+    lv_obj_align(btn_pass_connect, LV_ALIGN_BOTTOM_RIGHT, -2, 0);
+    lv_obj_set_style_bg_color(btn_pass_connect, COLOR_ACCENT, 0);
+    lv_obj_set_style_radius(btn_pass_connect, 8, 0);
+    lv_obj_add_event_cb(btn_pass_connect, event_btn_wifi_pass_connect, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* lbl_conn = lv_label_create(btn_pass_connect);
+    lv_label_set_text(lbl_conn, "Connect");
+    lv_obj_set_style_text_color(lbl_conn, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_font(lbl_conn, &lv_font_montserrat_10, 0);
+    lv_obj_center(lbl_conn);
+
+    // -------------------------------------------------------------
+    // View 3: Connecting Status
+    // -------------------------------------------------------------
+    wifi_view_status = lv_obj_create(card);
+    lv_obj_set_size(wifi_view_status, 212, 284);
+    lv_obj_center(wifi_view_status);
+    lv_obj_set_style_bg_opa(wifi_view_status, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(wifi_view_status, 0, 0);
+    lv_obj_set_style_pad_all(wifi_view_status, 0, 0);
+    lv_obj_clear_flag(wifi_view_status, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(wifi_view_status, LV_OBJ_FLAG_HIDDEN);
+
+    spinner_wifi = lv_spinner_create(wifi_view_status, 1000, 60);
+    lv_obj_set_size(spinner_wifi, 50, 50);
+    lv_obj_align(spinner_wifi, LV_ALIGN_CENTER, 0, -30);
+    lv_obj_set_style_arc_color(spinner_wifi, COLOR_ACCENT, LV_PART_INDICATOR);
+
+    lbl_wifi_connecting_msg = lv_label_create(wifi_view_status);
+    lv_label_set_text(lbl_wifi_connecting_msg, "Connecting...");
+    lv_obj_set_style_text_font(lbl_wifi_connecting_msg, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_wifi_connecting_msg, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_align(lbl_wifi_connecting_msg, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(lbl_wifi_connecting_msg, 200);
+    lv_obj_align(lbl_wifi_connecting_msg, LV_ALIGN_CENTER, 0, 25);
+
+    btn_wifi_status_back = lv_btn_create(wifi_view_status);
+    lv_obj_set_size(btn_wifi_status_back, 120, 34);
+    lv_obj_align(btn_wifi_status_back, LV_ALIGN_BOTTOM_MID, 0, -10);
+    lv_obj_set_style_bg_color(btn_wifi_status_back, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_radius(btn_wifi_status_back, 8, 0);
+    lv_obj_add_event_cb(btn_wifi_status_back, event_btn_wifi_pass_back, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_flag(btn_wifi_status_back, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t* lbl_st_back = lv_label_create(btn_wifi_status_back);
+    lv_label_set_text(lbl_st_back, "Back to List");
+    lv_obj_set_style_text_font(lbl_st_back, &lv_font_montserrat_10, 0);
+    lv_obj_center(lbl_st_back);
+}
+
 void ui_init() {
     lv_obj_set_style_bg_color(lv_scr_act(), COLOR_BG, 0);
 
@@ -720,8 +1041,9 @@ void ui_init() {
     build_player_tab(tab_player);
     build_presets_tab(tab_presets);
 
-    // 3. Build modal device picker
+    // 3. Build modal pickers
     build_device_modal();
+    build_wifi_modal();
 
     // 4. Progress Interpolation Timer (50ms = 20 FPS updates)
     lv_timer_create(timer_progress_cb, 50, nullptr);
@@ -729,7 +1051,7 @@ void ui_init() {
 
 void ui_set_wifi_status(bool connected, int8_t rssi, const char* ip) {
     if (!lbl_wifi) return;
-    lv_label_set_text(lbl_wifi, LV_SYMBOL_WIFI);
+    lv_label_set_text(lbl_wifi, LV_SYMBOL_WIFI " " LV_SYMBOL_DOWN);
     if (connected) {
         if (rssi >= -65) {
             lv_obj_set_style_text_color(lbl_wifi, COLOR_SUCCESS, 0); // Green (Strong)
@@ -980,12 +1302,116 @@ void ui_set_scanning(bool is_scanning) {
 }
 
 
+static void timer_close_wifi_modal_cb(lv_timer_t* timer) {
+    if (modal_wifi_selector) {
+        lv_obj_add_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN);
+    }
+    timer_wifi_close = nullptr;
+}
+
+void ui_open_wifi_modal() {
+    if (!modal_wifi_selector) return;
+    lv_obj_clear_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_view_list) lv_obj_clear_flag(wifi_view_list, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_view_pass) lv_obj_add_flag(wifi_view_pass, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_view_status) lv_obj_add_flag(wifi_view_status, LV_OBJ_FLAG_HIDDEN);
+    if (lbl_wifi_scan_status) {
+        lv_label_set_text(lbl_wifi_scan_status, "Scanning for networks...");
+        lv_obj_set_style_text_color(lbl_wifi_scan_status, COLOR_ACCENT, 0);
+    }
+
+    UiCommand cmd;
+    cmd.type = CMD_WIFI_START_SCAN;
+    xQueueSend(xQueueUiCmd, &cmd, 0);
+}
+
+void ui_set_wifi_scan_results(const WiFiScanList& list) {
+    current_wifi_scan_list = list;
+    if (!list_wifi) return;
+    lv_obj_clean(list_wifi);
+
+    if (lbl_wifi_scan_status) {
+        char status[32];
+        if (list.count == 0) {
+            snprintf(status, sizeof(status), "No networks found");
+        } else if (list.count == 1) {
+            snprintf(status, sizeof(status), "1 network found");
+        } else {
+            snprintf(status, sizeof(status), "%d networks found", list.count);
+        }
+        lv_label_set_text(lbl_wifi_scan_status, status);
+        lv_obj_set_style_text_color(lbl_wifi_scan_status, COLOR_TEXT_MUTED, 0);
+    }
+
+    for (uint8_t i = 0; i < list.count; ++i) {
+        char item_text[64];
+        if (list.networks[i].is_open) {
+            snprintf(item_text, sizeof(item_text), "%s (%d dBm)", list.networks[i].ssid, list.networks[i].rssi);
+        } else {
+            snprintf(item_text, sizeof(item_text), "%s " LV_SYMBOL_SETTINGS " (%d dBm)", list.networks[i].ssid, list.networks[i].rssi);
+        }
+
+        lv_obj_t* btn = lv_list_add_btn(list_wifi, LV_SYMBOL_WIFI, item_text);
+        lv_obj_set_style_bg_color(btn, COLOR_SURFACE, 0);
+        lv_obj_set_style_text_color(btn, COLOR_TEXT_PRIMARY, 0);
+        lv_obj_set_style_text_font(btn, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_radius(btn, 6, 0);
+        lv_obj_set_style_pad_bottom(btn, 4, 0);
+
+        lv_obj_add_event_cb(btn, event_wifi_item_clicked, LV_EVENT_CLICKED, (void*)(uintptr_t)i);
+    }
+}
+
+void ui_wifi_on_connected(const char* ip) {
+    if (!modal_wifi_selector || lv_obj_has_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN)) return;
+
+    if (spinner_wifi) lv_obj_add_flag(spinner_wifi, LV_OBJ_FLAG_HIDDEN);
+    if (lbl_wifi_connecting_msg) {
+        char buf[64];
+        snprintf(buf, sizeof(buf), "Connected!\nIP: %s", (ip && strlen(ip) > 0) ? ip : "OK");
+        lv_label_set_text(lbl_wifi_connecting_msg, buf);
+        lv_obj_set_style_text_color(lbl_wifi_connecting_msg, COLOR_SUCCESS, 0);
+    }
+
+    if (!timer_wifi_close) {
+        timer_wifi_close = lv_timer_create(timer_close_wifi_modal_cb, 1200, nullptr);
+        lv_timer_set_repeat_count(timer_wifi_close, 1);
+    }
+}
+
+void ui_wifi_on_connect_failed() {
+    if (!modal_wifi_selector || lv_obj_has_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN)) return;
+
+    if (spinner_wifi) lv_obj_add_flag(spinner_wifi, LV_OBJ_FLAG_HIDDEN);
+    if (lbl_wifi_connecting_msg) {
+        lv_label_set_text(lbl_wifi_connecting_msg, "Connection Failed!\nCheck password and try again.");
+        lv_obj_set_style_text_color(lbl_wifi_connecting_msg, lv_color_hex(0xE63946), 0);
+    }
+    if (btn_wifi_status_back) {
+        lv_obj_clear_flag(btn_wifi_status_back, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 void ui_process_events() {
     UiEvent evt;
     while (xQueueReceive(xQueueUiState, &evt, 0) == pdTRUE) {
         switch (evt.type) {
             case UI_EVT_WIFI_STATUS:
                 ui_set_wifi_status(evt.data.wifi.connected, evt.data.wifi.rssi, evt.data.wifi.ip);
+                if (evt.data.wifi.connected) {
+                    ui_wifi_on_connected(evt.data.wifi.ip);
+                }
+                break;
+            case UI_EVT_WIFI_SCAN_RESULT:
+                if (evt.data.wifi_scan) {
+                    ui_set_wifi_scan_results(*evt.data.wifi_scan);
+                }
+                break;
+            case UI_EVT_WIFI_SETUP_REQUIRED:
+                ui_open_wifi_modal();
+                break;
+            case UI_EVT_WIFI_CONNECT_FAILED:
+                ui_wifi_on_connect_failed();
                 break;
             case UI_EVT_DEVICES_UPDATED:
                 if (evt.data.devices) {
