@@ -48,6 +48,8 @@ static lv_obj_t* lbl_var_mute = nullptr;
 static lv_obj_t* lbl_var_x = nullptr;
 static lv_obj_t* slider_vol = nullptr;
 static lv_obj_t* lbl_vol_percent = nullptr;
+static lv_obj_t* btn_var_input = nullptr;
+static lv_obj_t* lbl_var_input = nullptr;
 static bool is_user_adjusting_volume = false;
 static uint8_t current_volume = 0;
 
@@ -341,6 +343,10 @@ static void event_btn_mute(lv_event_t* e) {
     cmd.type = CMD_SET_MUTE;
     cmd.data.mute = !current_mute_state;
     xQueueSend(xQueueUiCmd, &cmd, 0);
+}
+
+static void event_btn_input(lv_event_t* e) {
+    // Placeholder for Input Source selection / cycle action
 }
 
 // Event Callbacks - Presets
@@ -640,9 +646,9 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_align(lbl_x, LV_ALIGN_LEFT_MID, 38, 0);
     lv_obj_add_flag(lbl_x, LV_OBJ_FLAG_HIDDEN);
 
-    // 6B. Variable Volume Row Container (Y = 186, width 224, height 40)
+    // 6B. Variable Volume Row Container (Y = 186, width 224, height 42)
     obj_vol_var_cont = lv_obj_create(parent);
-    lv_obj_set_size(obj_vol_var_cont, 224, 40);
+    lv_obj_set_size(obj_vol_var_cont, 224, 42);
     lv_obj_align(obj_vol_var_cont, LV_ALIGN_TOP_MID, 0, 186);
     lv_obj_set_style_bg_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
@@ -682,10 +688,35 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_align(lbl_var_x, LV_ALIGN_CENTER, 8, -6);
     lv_obj_add_flag(lbl_var_x, LV_OBJ_FLAG_HIDDEN);
 
-    // Interactive Volume Slider (Center, 130x6, matching progress bar thickness)
+    // Variable Input / Source Button (Right, 38x38, matching mute button)
+    btn_var_input = lv_btn_create(obj_vol_var_cont);
+    lv_obj_set_size(btn_var_input, 38, 38);
+    lv_obj_align(btn_var_input, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_bg_color(btn_var_input, lv_color_hex(0x222732), 0);
+    lv_obj_set_style_border_width(btn_var_input, 1, 0);
+    lv_obj_set_style_border_color(btn_var_input, lv_color_hex(0x3A4252), 0);
+    lv_obj_set_style_radius(btn_var_input, 8, 0);
+    lv_obj_set_style_pad_all(btn_var_input, 0, 0);
+    lv_obj_clear_flag(btn_var_input, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(btn_var_input, event_btn_input, LV_EVENT_CLICKED, nullptr);
+
+    // Pressed feedback for Input button
+    lv_obj_set_style_transform_width(btn_var_input, -2, LV_STATE_PRESSED);
+    lv_obj_set_style_transform_height(btn_var_input, -2, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(btn_var_input, lv_color_hex(0x3B4455), LV_STATE_PRESSED);
+    lv_obj_set_style_border_color(btn_var_input, COLOR_ACCENT, LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(btn_var_input, 2, LV_STATE_PRESSED);
+
+    lbl_var_input = lv_label_create(btn_var_input);
+    lv_label_set_text(lbl_var_input, LV_SYMBOL_SHUFFLE);
+    lv_obj_set_style_text_font(lbl_var_input, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(lbl_var_input, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_center(lbl_var_input);
+
+    // Interactive Volume Slider (Center, 126x6, matching progress bar thickness)
     slider_vol = lv_slider_create(obj_vol_var_cont);
-    lv_obj_set_size(slider_vol, 130, 6);
-    lv_obj_align(slider_vol, LV_ALIGN_LEFT_MID, 46, 0);
+    lv_obj_set_size(slider_vol, 126, 6);
+    lv_obj_align(slider_vol, LV_ALIGN_CENTER, 0, -8);
     lv_slider_set_range(slider_vol, 0, 100);
     lv_slider_set_value(slider_vol, 0, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(slider_vol, lv_color_hex(0x242A35), 0);
@@ -713,14 +744,14 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_clear_flag(slider_vol, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(slider_vol, event_slider_vol, LV_EVENT_ALL, nullptr);
 
-    // Live Percentage Label (Right, 42px)
+    // Live Percentage Label (Directly below volume slider, centered to it)
     lbl_vol_percent = lv_label_create(obj_vol_var_cont);
     lv_label_set_text(lbl_vol_percent, "0%");
     lv_obj_set_style_text_font(lbl_vol_percent, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lbl_vol_percent, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_text_align(lbl_vol_percent, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_set_width(lbl_vol_percent, 42);
-    lv_obj_align(lbl_vol_percent, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_text_align(lbl_vol_percent, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(lbl_vol_percent, 50);
+    lv_obj_align(lbl_vol_percent, LV_ALIGN_CENTER, 0, 10);
 }
 
 // Build Presets Drawer / List Tab (12 Presets)
