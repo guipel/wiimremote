@@ -646,9 +646,9 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_align(lbl_x, LV_ALIGN_LEFT_MID, 38, 0);
     lv_obj_add_flag(lbl_x, LV_OBJ_FLAG_HIDDEN);
 
-    // 6B. Variable Volume Row Container (Y = 186, width 224, height 42)
+    // 6B. Variable Volume Row Container (Y = 186, width 224, height 48)
     obj_vol_var_cont = lv_obj_create(parent);
-    lv_obj_set_size(obj_vol_var_cont, 224, 42);
+    lv_obj_set_size(obj_vol_var_cont, 224, 48);
     lv_obj_align(obj_vol_var_cont, LV_ALIGN_TOP_MID, 0, 186);
     lv_obj_set_style_bg_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
@@ -713,10 +713,10 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_set_style_text_color(lbl_var_input, COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(lbl_var_input);
 
-    // Interactive Volume Slider (Center, 126x6, matching progress bar thickness)
+    // Interactive Volume Slider (Center, 126x6, vertically centered with mute/input buttons)
     slider_vol = lv_slider_create(obj_vol_var_cont);
     lv_obj_set_size(slider_vol, 126, 6);
-    lv_obj_align(slider_vol, LV_ALIGN_CENTER, 0, -8);
+    lv_obj_align(slider_vol, LV_ALIGN_CENTER, 0, 0);
     lv_slider_set_range(slider_vol, 0, 100);
     lv_slider_set_value(slider_vol, 0, LV_ANIM_OFF);
     lv_obj_set_style_bg_color(slider_vol, lv_color_hex(0x242A35), 0);
@@ -751,7 +751,7 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_set_style_text_color(lbl_vol_percent, COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_align(lbl_vol_percent, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(lbl_vol_percent, 50);
-    lv_obj_align(lbl_vol_percent, LV_ALIGN_CENTER, 0, 10);
+    lv_obj_align(lbl_vol_percent, LV_ALIGN_CENTER, 0, 16);
 }
 
 // Build Presets Drawer / List Tab (12 Presets)
