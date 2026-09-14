@@ -243,60 +243,62 @@ void NetworkManager::saveActiveDevice(const WiiMDevice& dev) {
 
 void NetworkManager::startWiFiScan() {
     if (_wifiScanning) return;
-    log_i("Starting async Wi-Fi network scan...");
     _wifiScanning = true;
-    WiFi.setSleep(WIFI_PS_NONE);
-    WiFi.scanNetworks(true, false);
-}
+    log_i("Starting synchronous Wi-Fi network scan on Core 0 (current status: %d)...", WiFi.status());
 
-void NetworkManager::checkWiFiScanStatus() {
-    int16_t n = WiFi.scanComplete();
-    if (n == WIFI_SCAN_RUNNING) return;
-
-    _wifiScanning = false;
-    if (_wifiConnected) {
-        WiFi.setSleep(WIFI_PS_MIN_MODEM);
+    bool wasConnected = (WiFi.status() == WL_CONNECTED);
+    if (wasConnected) {
+        log_i("Temporarily disconnecting from AP for clean channel scan...");
+        WiFi.disconnect(false, false);
+        unsigned long waitStart = millis();
+        while (WiFi.status() == WL_CONNECTED && millis() - waitStart < 1000) {
+            vTaskDelay(pdMS_TO_TICKS(50));
+        }
+        vTaskDelay(pdMS_TO_TICKS(100));
     }
+
+    WiFi.mode(WIFI_STA);
+    WiFi.setSleep(WIFI_PS_NONE);
+    WiFi.scanDelete();
+
+    int16_t n = WiFi.scanNetworks(false, false, false, 150);
+    log_i("WiFi.scanNetworks returned: %d", n);
 
     if (n < 0) {
-        log_w("Wi-Fi scan failed or aborted (%d)", n);
+        log_w("Scan returned %d, retrying after 200ms...", n);
+        vTaskDelay(pdMS_TO_TICKS(200));
         WiFi.scanDelete();
-        WiFiScanList* pScan = (WiFiScanList*)malloc(sizeof(WiFiScanList));
-        if (pScan) {
-            pScan->count = 0;
-            UiEvent evt;
-            evt.type = UI_EVT_WIFI_SCAN_RESULT;
-            evt.data.wifi_scan = pScan;
-            xQueueSend(xQueueUiState, &evt, 0);
-        }
-        return;
+        n = WiFi.scanNetworks(false, false, false, 200);
+        log_i("Retry scan returned: %d", n);
     }
 
-    log_i("Wi-Fi scan complete! Found %d networks", n);
+    _wifiScanning = false;
 
     WiFiScanList* pScan = (WiFiScanList*)malloc(sizeof(WiFiScanList));
     if (pScan) {
         pScan->count = 0;
-        for (int16_t i = 0; i < n && pScan->count < 20; ++i) {
-            String ssid = WiFi.SSID(i);
-            if (ssid.length() == 0) continue;
+        if (n > 0) {
+            for (int16_t i = 0; i < n && pScan->count < 20; ++i) {
+                String ssid = WiFi.SSID(i);
+                if (ssid.length() == 0) continue;
 
-            bool dup = false;
-            for (uint8_t j = 0; j < pScan->count; ++j) {
-                if (strcmp(pScan->networks[j].ssid, ssid.c_str()) == 0) {
-                    dup = true;
-                    break;
+                bool dup = false;
+                for (uint8_t j = 0; j < pScan->count; ++j) {
+                    if (strcmp(pScan->networks[j].ssid, ssid.c_str()) == 0) {
+                        dup = true;
+                        break;
+                    }
                 }
+                if (dup) continue;
+
+                WiFiNetworkInfo& net = pScan->networks[pScan->count++];
+                strncpy(net.ssid, ssid.c_str(), sizeof(net.ssid) - 1);
+                net.ssid[sizeof(net.ssid) - 1] = '\0';
+                net.rssi = WiFi.RSSI(i);
+                net.is_open = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
+                log_i("  [%d] SSID: '%s', RSSI: %d dBm, Open: %d", pScan->count, net.ssid, net.rssi, net.is_open ? 1 : 0);
             }
-            if (dup) continue;
-
-            WiFiNetworkInfo& net = pScan->networks[pScan->count++];
-            strncpy(net.ssid, ssid.c_str(), sizeof(net.ssid) - 1);
-            net.ssid[sizeof(net.ssid) - 1] = '\0';
-            net.rssi = WiFi.RSSI(i);
-            net.is_open = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
         }
-
         UiEvent evt;
         evt.type = UI_EVT_WIFI_SCAN_RESULT;
         evt.data.wifi_scan = pScan;
@@ -325,7 +327,13 @@ void NetworkManager::forgetWiFi() {
     _wifiConnected = false;
     _pendingConnectSsid = "";
     _pendingConnectPass = "";
-    WiFi.disconnect(true, true);
+    WiFi.disconnect(false, true);
+
+    unsigned long waitStart = millis();
+    while (WiFi.status() == WL_CONNECTED && millis() - waitStart < 1000) {
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
 
     UiEvent evtStatus;
     evtStatus.type = UI_EVT_WIFI_STATUS;
@@ -335,10 +343,11 @@ void NetworkManager::forgetWiFi() {
     evtStatus.data.wifi.ssid[0] = '\0';
     xQueueSend(xQueueUiState, &evtStatus, 0);
 
-    startWiFiScan();
     UiEvent evt;
     evt.type = UI_EVT_WIFI_SETUP_REQUIRED;
     xQueueSend(xQueueUiState, &evt, 0);
+
+    startWiFiScan();
 }
 
 void NetworkManager::handleWiFi() {
@@ -1175,6 +1184,17 @@ void NetworkManager::processIncomingCommands() {
             case CMD_WIFI_FORGET:
                 forgetWiFi();
                 break;
+
+            case CMD_WIFI_RECONNECT: {
+                bool setupDone = prefs.getBool("user_setup_done", false);
+                String savedSsid = setupDone ? prefs.getString("wifi_ssid", "") : "";
+                String savedPass = setupDone ? prefs.getString("wifi_pass", "") : "";
+                if (savedSsid.length() > 0 && WiFi.status() != WL_CONNECTED) {
+                    log_i("Reconnecting to saved Wi-Fi: %s", savedSsid.c_str());
+                    connectWiFi(savedSsid.c_str(), savedPass.c_str());
+                }
+                break;
+            }
         }
     }
 
@@ -1198,10 +1218,6 @@ void NetworkManager::runTaskLoop() {
     processIncomingCommands();
 
     handleWiFi();
-
-    if (_wifiScanning) {
-        checkWiFiScanStatus();
-    }
 
     if (_wifiConnected) {
         // 2. Background network discovery

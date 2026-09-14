@@ -99,7 +99,6 @@ private:
 
     // Wi-Fi Provisioning & Scanning
     void startWiFiScan();
-    void checkWiFiScanStatus();
     void connectWiFi(const char* ssid, const char* pass);
     void forgetWiFi();
     bool _wifiScanning;

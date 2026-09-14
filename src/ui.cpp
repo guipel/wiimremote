@@ -724,6 +724,9 @@ static void event_btn_close_wifi_modal(lv_event_t* e) {
     if (modal_wifi_selector) {
         lv_obj_add_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN);
     }
+    UiCommand cmd;
+    cmd.type = CMD_WIFI_RECONNECT;
+    xQueueSend(xQueueUiCmd, &cmd, 0);
 }
 
 static void event_btn_wifi_forget(lv_event_t* e) {
