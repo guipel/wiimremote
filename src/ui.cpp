@@ -20,8 +20,15 @@ static lv_obj_t* lbl_active_device = nullptr;
 
 // UI Widgets - Tabview
 static lv_obj_t* tabview = nullptr;
+static lv_obj_t* tab_lyrics = nullptr;
 static lv_obj_t* tab_player = nullptr;
 static lv_obj_t* tab_presets = nullptr;
+
+// UI Widgets - Lyrics Tab
+static lv_obj_t* lbl_lyrics_title = nullptr;
+static lv_obj_t* lbl_lyrics_artist = nullptr;
+static lv_obj_t* cont_lyrics_scroll = nullptr;
+static lv_obj_t* lbl_lyrics_body = nullptr;
 
 
 // UI Widgets - Player Tab
@@ -357,8 +364,8 @@ static void event_btn_preset(lv_event_t* e) {
     cmd.data.preset_index = (uint8_t)index;
     xQueueSend(xQueueUiCmd, &cmd, 0);
 
-    // Switch back to player tab for immediate playback feedback
-    lv_tabview_set_act(tabview, 0, LV_ANIM_ON);
+    // Switch back to player tab for immediate playback feedback (Player is tab 1)
+    lv_tabview_set_act(tabview, 1, LV_ANIM_ON);
 }
 
 // Event Callbacks - Modal Device Selector
@@ -749,6 +756,60 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_set_style_text_align(lbl_vol_percent, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(lbl_vol_percent, 50);
     lv_obj_align(lbl_vol_percent, LV_ALIGN_CENTER, 0, 14);
+}
+
+// Build Lyrics Tab (Left Tab, Index 0)
+static void build_lyrics_tab(lv_obj_t* parent) {
+    lv_obj_set_style_bg_color(parent, COLOR_BG, 0);
+    lv_obj_set_style_pad_all(parent, 8, 0);
+    lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Track Title Header
+    lbl_lyrics_title = lv_label_create(parent);
+    lv_label_set_text(lbl_lyrics_title, "Lyrics");
+    lv_obj_set_style_text_font(lbl_lyrics_title, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(lbl_lyrics_title, COLOR_ACCENT, 0);
+    lv_obj_set_style_text_align(lbl_lyrics_title, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(lbl_lyrics_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_width(lbl_lyrics_title, 224);
+    lv_obj_align(lbl_lyrics_title, LV_ALIGN_TOP_MID, 0, 4);
+
+    // Track Artist Header
+    lbl_lyrics_artist = lv_label_create(parent);
+    lv_label_set_text(lbl_lyrics_artist, "");
+    lv_obj_set_style_text_font(lbl_lyrics_artist, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_lyrics_artist, COLOR_TEXT_MUTED, 0);
+    lv_obj_set_style_text_align(lbl_lyrics_artist, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(lbl_lyrics_artist, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_width(lbl_lyrics_artist, 224);
+    lv_obj_align(lbl_lyrics_artist, LV_ALIGN_TOP_MID, 0, 26);
+
+    // Separator line
+    lv_obj_t* sep = lv_obj_create(parent);
+    lv_obj_set_size(sep, 216, 1);
+    lv_obj_align(sep, LV_ALIGN_TOP_MID, 0, 46);
+    lv_obj_set_style_bg_color(sep, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_border_opa(sep, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(sep, 0, 0);
+
+    // Scrollable container for lyrics body
+    cont_lyrics_scroll = lv_obj_create(parent);
+    lv_obj_set_size(cont_lyrics_scroll, 224, 206);
+    lv_obj_align(cont_lyrics_scroll, LV_ALIGN_TOP_MID, 0, 52);
+    lv_obj_set_style_bg_opa(cont_lyrics_scroll, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_opa(cont_lyrics_scroll, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(cont_lyrics_scroll, 4, 0);
+    lv_obj_add_flag(cont_lyrics_scroll, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_scroll_dir(cont_lyrics_scroll, LV_DIR_VER);
+
+    lbl_lyrics_body = lv_label_create(cont_lyrics_scroll);
+    lv_label_set_text(lbl_lyrics_body, "Play a track to view lyrics.");
+    lv_obj_set_style_text_font(lbl_lyrics_body, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_lyrics_body, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_line_space(lbl_lyrics_body, 6, 0);
+    lv_obj_set_style_text_align(lbl_lyrics_body, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(lbl_lyrics_body, 214);
+    lv_obj_align(lbl_lyrics_body, LV_ALIGN_TOP_MID, 0, 4);
 }
 
 // Build Presets Drawer / List Tab (12 Presets)
@@ -1265,12 +1326,17 @@ void ui_init() {
     lv_obj_set_style_border_color(tab_btns, COLOR_ACCENT, LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_border_width(tab_btns, 2, LV_PART_ITEMS | LV_STATE_CHECKED);
 
-    // Add Tabs
+    // Add Tabs: Lyrics (Left), Player (Center - Default), Presets (Right)
+    tab_lyrics = lv_tabview_add_tab(tabview, LV_SYMBOL_FILE " Lyrics");
     tab_player = lv_tabview_add_tab(tabview, LV_SYMBOL_AUDIO " Player");
     tab_presets = lv_tabview_add_tab(tabview, LV_SYMBOL_LIST " Presets");
 
+    build_lyrics_tab(tab_lyrics);
     build_player_tab(tab_player);
     build_presets_tab(tab_presets);
+
+    // Set Player as default active tab (Center)
+    lv_tabview_set_act(tabview, 1, LV_ANIM_OFF);
 
     // 3. Build modal pickers
     build_device_modal();
@@ -1762,8 +1828,38 @@ void ui_process_events() {
             case UI_EVT_SCAN_STATUS:
                 ui_set_scanning(evt.data.scan.is_scanning);
                 break;
+            case UI_EVT_LYRICS_UPDATED:
+                if (evt.data.lyrics) {
+                    ui_set_lyrics(*evt.data.lyrics);
+                }
+                break;
         }
         ui_event_free(&evt);
+    }
+}
+
+void ui_set_lyrics(const LyricsInfo& info) {
+    if (lbl_lyrics_title) {
+        if (strlen(info.title) > 0) {
+            lv_label_set_text(lbl_lyrics_title, info.title);
+        } else {
+            lv_label_set_text(lbl_lyrics_title, "Lyrics");
+        }
+    }
+    if (lbl_lyrics_artist) {
+        lv_label_set_text(lbl_lyrics_artist, info.artist);
+    }
+    if (lbl_lyrics_body) {
+        if (info.text && strlen(info.text) > 0) {
+            lv_label_set_text(lbl_lyrics_body, info.text);
+        } else if (info.is_loading) {
+            lv_label_set_text(lbl_lyrics_body, "Fetching lyrics from LRCLIB...");
+        } else {
+            lv_label_set_text(lbl_lyrics_body, "No lyrics found for this track.");
+        }
+    }
+    if (cont_lyrics_scroll) {
+        lv_obj_scroll_to_y(cont_lyrics_scroll, 0, LV_ANIM_OFF);
     }
 }
 

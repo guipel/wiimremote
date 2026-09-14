@@ -74,6 +74,26 @@ static String decodeHexString(const char* hex) {
     return toValidUtf8(decoded);
 }
 
+// URL-encoder for external API parameters
+static String urlEncode(const char* str) {
+    if (!str) return "";
+    String encoded = "";
+    size_t len = strlen(str);
+    for (size_t i = 0; i < len; ++i) {
+        char c = str[i];
+        if (isalnum((unsigned char)c) || c == '-' || c == '_' || c == '.' || c == '~') {
+            encoded += c;
+        } else if (c == ' ') {
+            encoded += "+";
+        } else {
+            char buf[4];
+            snprintf(buf, sizeof(buf), "%%%02X", (unsigned char)c);
+            encoded += buf;
+        }
+    }
+    return encoded;
+}
+
 // Simple XML tag extractor for UPnP description.xml
 static String extractXmlTag(const String& xml, const String& tag) {
     String openTag = "<" + tag + ">";
@@ -102,6 +122,8 @@ NetworkManager::NetworkManager()
       _hasActiveDevice(false),
       _initialPresetsFetched(false),
       _lastKnownTrackTitle(""),
+      _lastLyricsTitle(""),
+      _lastLyricsArtist(""),
       _metaResolved(false),
       _cachedTrackDuration_ms(0),
       _activeMode(0),
@@ -981,7 +1003,109 @@ bool NetworkManager::fetchTrackMeta() {
         free(pMeta);
     }
 
+    // Trigger lyrics fetch if track title or artist changed
+    if (_lastLyricsTitle != decTitle || _lastLyricsArtist != decArtist) {
+        _lastLyricsTitle = decTitle;
+        _lastLyricsArtist = decArtist;
+        fetchLyrics(decTitle.c_str(), decArtist.c_str());
+    }
+
     return (sampleRate > 0);
+}
+
+void NetworkManager::fetchLyrics(const char* title, const char* artist) {
+    if (!title || strlen(title) == 0 || strcmp(title, "Ready for stream") == 0 || strcmp(title, "No Track Playing") == 0) {
+        return;
+    }
+
+    // 1. Send loading status to UI
+    LyricsInfo* pLoading = (LyricsInfo*)malloc(sizeof(LyricsInfo));
+    if (pLoading) {
+        memset(pLoading, 0, sizeof(LyricsInfo));
+        strncpy(pLoading->title, title, sizeof(pLoading->title) - 1);
+        strncpy(pLoading->artist, (artist ? artist : ""), sizeof(pLoading->artist) - 1);
+        pLoading->text = strdup("Fetching lyrics from LRCLIB...");
+        pLoading->is_loading = true;
+        UiEvent evt;
+        evt.type = UI_EVT_LYRICS_UPDATED;
+        evt.data.lyrics = pLoading;
+        if (xQueueSend(xQueueUiState, &evt, 0) != pdTRUE) {
+            if (pLoading->text) free(pLoading->text);
+            free(pLoading);
+        }
+    }
+
+    // 2. Query LRCLIB
+    String cleanTitle = title;
+    String cleanArtist = (artist ? artist : "");
+
+    auto queryLrclib = [](const String& t, const String& a, String& outLyrics) -> bool {
+        WiFiClientSecure secureClient;
+        secureClient.setInsecure();
+        secureClient.setTimeout(4000);
+
+        HTTPClient http;
+        String url = "https://lrclib.net/api/get?track_name=" + urlEncode(t.c_str());
+        if (a.length() > 0) {
+            url += "&artist_name=" + urlEncode(a.c_str());
+        }
+
+        http.begin(secureClient, url);
+        http.setUserAgent("WiiMRemote/1.0 (ESP32-S3)");
+        int code = http.GET();
+        if (code == 200) {
+            String payload = http.getString();
+            JsonDocument doc;
+            DeserializationError err = deserializeJson(doc, payload);
+            if (!err) {
+                const char* plain = doc["plainLyrics"];
+                if (plain && strlen(plain) > 0) {
+                    outLyrics = plain;
+                    http.end();
+                    return true;
+                }
+            }
+        }
+        http.end();
+        return false;
+    };
+
+    String lyricsText;
+    bool found = queryLrclib(cleanTitle, cleanArtist, lyricsText);
+
+    // If not found and title has parenthesized/bracketed additions, e.g. "Song (Remastered 2011)", try stripped title
+    if (!found && (cleanTitle.indexOf('(') >= 0 || cleanTitle.indexOf('-') >= 0)) {
+        String strippedTitle = cleanTitle;
+        int p = strippedTitle.indexOf('(');
+        if (p > 0) strippedTitle = strippedTitle.substring(0, p);
+        p = strippedTitle.indexOf('-');
+        if (p > 0) strippedTitle = strippedTitle.substring(0, p);
+        strippedTitle.trim();
+        if (strippedTitle.length() > 0 && strippedTitle != cleanTitle) {
+            found = queryLrclib(strippedTitle, cleanArtist, lyricsText);
+        }
+    }
+
+    // 3. Post result to UI
+    LyricsInfo* pResult = (LyricsInfo*)malloc(sizeof(LyricsInfo));
+    if (pResult) {
+        memset(pResult, 0, sizeof(LyricsInfo));
+        strncpy(pResult->title, title, sizeof(pResult->title) - 1);
+        strncpy(pResult->artist, (artist ? artist : ""), sizeof(pResult->artist) - 1);
+        pResult->is_loading = false;
+        if (found && lyricsText.length() > 0) {
+            pResult->text = strdup(lyricsText.c_str());
+        } else {
+            pResult->text = strdup("No lyrics found for this track.");
+        }
+        UiEvent evt;
+        evt.type = UI_EVT_LYRICS_UPDATED;
+        evt.data.lyrics = pResult;
+        if (xQueueSend(xQueueUiState, &evt, 0) != pdTRUE) {
+            if (pResult->text) free(pResult->text);
+            free(pResult);
+        }
+    }
 }
 
 

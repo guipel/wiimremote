@@ -21,3 +21,4 @@ void ui_set_wifi_scan_results(const WiFiScanList& list);
 void ui_open_wifi_modal();
 void ui_wifi_on_connected(const char* ip);
 void ui_wifi_on_connect_failed();
+void ui_set_lyrics(const LyricsInfo& info);

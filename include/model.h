@@ -82,6 +82,13 @@ struct WiFiScanList {
     WiFiNetworkInfo networks[20];
 };
 
+struct LyricsInfo {
+    char title[128];
+    char artist[96];
+    char* text; // dynamically allocated lyrics text or nullptr
+    bool is_loading;
+};
+
 // =============================================================================
 // Inter-Task Communication (FreeRTOS Queues)
 // =============================================================================
@@ -97,7 +104,8 @@ enum UiEventType {
     UI_EVT_WIFI_SCAN_RESULT,
     UI_EVT_WIFI_SETUP_REQUIRED,
     UI_EVT_WIFI_CONNECT_SUCCESS,
-    UI_EVT_WIFI_CONNECT_FAILED
+    UI_EVT_WIFI_CONNECT_FAILED,
+    UI_EVT_LYRICS_UPDATED
 };
 
 struct UiEvent {
@@ -117,6 +125,7 @@ struct UiEvent {
             bool is_scanning;
         } scan;
         WiFiScanList* wifi_scan;
+        LyricsInfo* lyrics;
     } data;
 };
 
@@ -134,6 +143,13 @@ inline void ui_event_free(UiEvent* evt) {
     } else if (evt->type == UI_EVT_WIFI_SCAN_RESULT && evt->data.wifi_scan) {
         free(evt->data.wifi_scan);
         evt->data.wifi_scan = nullptr;
+    } else if (evt->type == UI_EVT_LYRICS_UPDATED && evt->data.lyrics) {
+        if (evt->data.lyrics->text) {
+            free(evt->data.lyrics->text);
+            evt->data.lyrics->text = nullptr;
+        }
+        free(evt->data.lyrics);
+        evt->data.lyrics = nullptr;
     }
 }
 

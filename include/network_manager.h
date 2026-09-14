@@ -49,6 +49,7 @@ private:
     void pollActiveDevice();
     void fetchDeviceConfig();
     bool fetchTrackMeta();
+    void fetchLyrics(const char* title, const char* artist);
     void fetchPresetInfo();
     void fetchUpnpTrackDuration();
 
@@ -84,6 +85,8 @@ private:
     bool _hasActiveDevice;
     bool _initialPresetsFetched;
     String _lastKnownTrackTitle;
+    String _lastLyricsTitle;
+    String _lastLyricsArtist;
     bool _metaResolved;
     uint32_t _cachedTrackDuration_ms;
     uint8_t _activeMode;
