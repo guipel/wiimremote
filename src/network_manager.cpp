@@ -90,6 +90,7 @@ NetworkManager::NetworkManager()
     : _wifiConnected(false),
       _lastWiFiCheck(0),
       _lastStatusPoll(0),
+      _lastConfigPoll(0),
       _lastMetaPoll(0),
       _lastSSDPBroadcast(0),
       _lastVolumeSent(0),
@@ -116,6 +117,7 @@ NetworkManager::NetworkManager()
 {
     _deviceMux = portMUX_INITIALIZER_UNLOCKED;
     memset(&_activeDevice, 0, sizeof(_activeDevice));
+    memset(&_lastPlayerState, 0, sizeof(_lastPlayerState));
     memset(&_deviceList, 0, sizeof(_deviceList));
 }
 
@@ -227,7 +229,7 @@ void NetworkManager::loadSavedDevice() {
         strncpy(_activeDevice.uuid, savedUuid.c_str(), sizeof(_activeDevice.uuid) - 1);
         strncpy(_activeDevice.name, savedName.c_str(), sizeof(_activeDevice.name) - 1);
         _activeDevice.is_active = true;
-        _activeDevice.is_fixed_volume = prefs.getBool("fixed_vol", true);
+        _activeDevice.is_fixed_volume = prefs.getBool("fixed_vol", false);
         _hasActiveDevice = true;
         log_i("Loaded saved active device: %s (%s, Fixed=%d)", _activeDevice.name, _activeDevice.ip, _activeDevice.is_fixed_volume ? 1 : 0);
     }
@@ -769,6 +771,7 @@ void NetworkManager::selectDevice(const char* ip) {
         fetchTrackMeta();
         fetchPresetInfo();
         pollActiveDevice();
+        fetchDeviceConfig();
     }
 }
 
@@ -890,6 +893,7 @@ void NetworkManager::pollActiveDevice() {
     evt.data.player.stream.sample_rate = atoi(rate);
     evt.data.player.stream.bit_depth = (uint8_t)atoi(bitDepth);
 
+    _lastPlayerState = evt.data.player;
     xQueueSend(xQueueUiState, &evt, 0);
 
     // Track metadata decoding (Title and Artist in getPlayerStatus are hex encoded)
@@ -1072,6 +1076,37 @@ void NetworkManager::fetchPresetInfo() {
     }
 }
 
+void NetworkManager::fetchDeviceConfig() {
+    if (!_hasActiveDevice || !_wifiConnected) return;
+
+    String payload;
+    int httpCode = executeApiGet("getStatusEx", payload);
+    if (httpCode != HTTP_CODE_OK || payload.length() == 0) {
+        return;
+    }
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, payload);
+    if (err) return;
+
+    const char* vc = doc["volume_control"] | "0";
+    bool isFixed = (strcmp(vc, "1") == 0);
+
+    bool changed = (_activeDevice.is_fixed_volume != isFixed);
+    _activeDevice.is_fixed_volume = isFixed;
+
+    if (changed) {
+        log_i("Streamer volume mode updated: Fixed=%d", isFixed ? 1 : 0);
+        saveActiveDevice(_activeDevice);
+
+        _lastPlayerState.is_fixed_volume = isFixed;
+        UiEvent evt;
+        evt.type = UI_EVT_PLAYER_STATE;
+        evt.data.player = _lastPlayerState;
+        xQueueSend(xQueueUiState, &evt, 0);
+    }
+}
+
 void NetworkManager::seekPosition(uint32_t seek_ms) {
     if (!_hasActiveDevice || !_wifiConnected) return;
 
@@ -1224,12 +1259,13 @@ void NetworkManager::runTaskLoop() {
         processSSDPPackets();
         runSubnetScanStep();
 
-        // 3. Auto-fetch presets and metadata once connected
+        // 3. Auto-fetch presets, metadata, and device config once connected
         if (_hasActiveDevice && !_initialPresetsFetched) {
             _initialPresetsFetched = true;
-            log_i("Auto-fetching presets and metadata for %s...", _activeDevice.name);
+            log_i("Auto-fetching presets, metadata, and config for %s...", _activeDevice.name);
             fetchPresetInfo();
             fetchTrackMeta();
+            fetchDeviceConfig();
         }
 
         unsigned long now = millis();
@@ -1239,7 +1275,13 @@ void NetworkManager::runTaskLoop() {
             pollActiveDevice();
         }
 
-        // 5. Periodic SSDP refresh only if no devices found yet
+        // 5. Poll device configuration (volume_control / fixed mode) every 3000ms
+        if (now - _lastConfigPoll >= 3000) {
+            _lastConfigPoll = now;
+            fetchDeviceConfig();
+        }
+
+        // 6. Periodic SSDP refresh only if no devices found yet
         if (_deviceList.count == 0 && (now - _lastSSDPBroadcast >= SSDP_DISCOVERY_INTERVAL_MS)) {
             sendSSDPQuery();
         }

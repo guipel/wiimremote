@@ -41,6 +41,16 @@ static lv_obj_t* lbl_mute = nullptr;
 static lv_obj_t* img_lock = nullptr;
 static lv_obj_t* lbl_x = nullptr;
 
+// UI Widgets - Variable Volume Controls
+static lv_obj_t* obj_vol_var_cont = nullptr;
+static lv_obj_t* btn_var_mute = nullptr;
+static lv_obj_t* lbl_var_mute = nullptr;
+static lv_obj_t* lbl_var_x = nullptr;
+static lv_obj_t* slider_vol = nullptr;
+static lv_obj_t* lbl_vol_percent = nullptr;
+static bool is_user_adjusting_volume = false;
+static uint8_t current_volume = 0;
+
 // 10x12 Pixel Alpha Bitmap for clean Padlock Icon
 static const uint8_t lock_alpha_map[120] = {
     0, 0, 255, 255, 255, 255, 255, 255, 0, 0,
@@ -222,6 +232,48 @@ static void event_slider_seek(lv_event_t* e) {
                 xQueueSend(xQueueUiCmd, &cmd, 0);
             }
         }
+    }
+}
+
+// Event Callback - Interactive Volume Slider
+static void event_slider_vol(lv_event_t* e) {
+    lv_event_code_t code = lv_event_get_code(e);
+
+    if (code == LV_EVENT_PRESSED) {
+        is_user_adjusting_volume = true;
+    } else if (code == LV_EVENT_VALUE_CHANGED) {
+        int32_t val = lv_slider_get_value(slider_vol);
+        if (val < 0) val = 0;
+        if (val > 100) val = 100;
+        current_volume = (uint8_t)val;
+
+        if (lbl_vol_percent) {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d%%", (int)val);
+            lv_label_set_text(lbl_vol_percent, buf);
+        }
+
+        UiCommand cmd;
+        cmd.type = CMD_SET_VOL;
+        cmd.data.volume = (uint8_t)val;
+        xQueueSend(xQueueUiCmd, &cmd, 0);
+    } else if (code == LV_EVENT_RELEASED) {
+        is_user_adjusting_volume = false;
+        int32_t val = lv_slider_get_value(slider_vol);
+        if (val < 0) val = 0;
+        if (val > 100) val = 100;
+        current_volume = (uint8_t)val;
+
+        if (lbl_vol_percent) {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d%%", (int)val);
+            lv_label_set_text(lbl_vol_percent, buf);
+        }
+
+        UiCommand cmd;
+        cmd.type = CMD_SET_VOL;
+        cmd.data.volume = (uint8_t)val;
+        xQueueSend(xQueueUiCmd, &cmd, 0);
     }
 }
 
@@ -587,6 +639,87 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_set_style_text_color(lbl_x, lv_color_hex(0xFFFFFF), 0);
     lv_obj_align(lbl_x, LV_ALIGN_LEFT_MID, 38, 0);
     lv_obj_add_flag(lbl_x, LV_OBJ_FLAG_HIDDEN);
+
+    // 6B. Variable Volume Row Container (Y = 186, width 224, height 40)
+    obj_vol_var_cont = lv_obj_create(parent);
+    lv_obj_set_size(obj_vol_var_cont, 224, 40);
+    lv_obj_align(obj_vol_var_cont, LV_ALIGN_TOP_MID, 0, 186);
+    lv_obj_set_style_bg_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(obj_vol_var_cont, 0, 0);
+    lv_obj_clear_flag(obj_vol_var_cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(obj_vol_var_cont, LV_OBJ_FLAG_HIDDEN); // Hidden by default
+
+    // Variable Mute Button (Left, 38x38)
+    btn_var_mute = lv_btn_create(obj_vol_var_cont);
+    lv_obj_set_size(btn_var_mute, 38, 38);
+    lv_obj_align(btn_var_mute, LV_ALIGN_LEFT_MID, 0, 0);
+    lv_obj_set_style_bg_color(btn_var_mute, lv_color_hex(0x222732), 0);
+    lv_obj_set_style_border_width(btn_var_mute, 1, 0);
+    lv_obj_set_style_border_color(btn_var_mute, lv_color_hex(0x3A4252), 0);
+    lv_obj_set_style_radius(btn_var_mute, 8, 0);
+    lv_obj_set_style_pad_all(btn_var_mute, 0, 0);
+    lv_obj_clear_flag(btn_var_mute, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(btn_var_mute, event_btn_mute, LV_EVENT_CLICKED, nullptr);
+
+    // Pressed feedback for Variable Mute button
+    lv_obj_set_style_transform_width(btn_var_mute, -2, LV_STATE_PRESSED);
+    lv_obj_set_style_transform_height(btn_var_mute, -2, LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(btn_var_mute, lv_color_hex(0x3B4455), LV_STATE_PRESSED);
+    lv_obj_set_style_border_color(btn_var_mute, COLOR_ACCENT, LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(btn_var_mute, 2, LV_STATE_PRESSED);
+
+    lbl_var_mute = lv_label_create(btn_var_mute);
+    lv_label_set_text(lbl_var_mute, LV_SYMBOL_VOLUME_MAX);
+    lv_obj_set_style_text_font(lbl_var_mute, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(lbl_var_mute, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_center(lbl_var_mute);
+
+    lbl_var_x = lv_label_create(btn_var_mute);
+    lv_label_set_text(lbl_var_x, LV_SYMBOL_CLOSE);
+    lv_obj_set_style_text_font(lbl_var_x, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_var_x, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_align(lbl_var_x, LV_ALIGN_CENTER, 8, -6);
+    lv_obj_add_flag(lbl_var_x, LV_OBJ_FLAG_HIDDEN);
+
+    // Interactive Volume Slider (Center, 130x8)
+    slider_vol = lv_slider_create(obj_vol_var_cont);
+    lv_obj_set_size(slider_vol, 130, 8);
+    lv_obj_align(slider_vol, LV_ALIGN_LEFT_MID, 46, 0);
+    lv_slider_set_range(slider_vol, 0, 100);
+    lv_slider_set_value(slider_vol, 0, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(slider_vol, lv_color_hex(0x242A35), 0);
+    lv_obj_set_style_bg_opa(slider_vol, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(slider_vol, lv_color_hex(0x3A4252), 0);
+    lv_obj_set_style_border_width(slider_vol, 1, 0);
+    lv_obj_set_style_radius(slider_vol, 4, 0);
+
+    // Indicator (Filled cyan bar)
+    lv_obj_set_style_bg_color(slider_vol, COLOR_ACCENT, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(slider_vol, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(slider_vol, 4, LV_PART_INDICATOR);
+
+    // Knob / Thumb
+    lv_obj_set_style_bg_color(slider_vol, COLOR_ACCENT, LV_PART_KNOB);
+    lv_obj_set_style_bg_opa(slider_vol, LV_OPA_COVER, LV_PART_KNOB);
+    lv_obj_set_style_border_color(slider_vol, lv_color_hex(0xFFFFFF), LV_PART_KNOB);
+    lv_obj_set_style_border_width(slider_vol, 2, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(slider_vol, 4, LV_PART_KNOB);
+    lv_obj_set_style_radius(slider_vol, 8, LV_PART_KNOB);
+
+    // Generous touch hit area
+    lv_obj_set_ext_click_area(slider_vol, 14);
+    lv_obj_clear_flag(slider_vol, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_event_cb(slider_vol, event_slider_vol, LV_EVENT_ALL, nullptr);
+
+    // Live Percentage Label (Right, 42px)
+    lbl_vol_percent = lv_label_create(obj_vol_var_cont);
+    lv_label_set_text(lbl_vol_percent, "0%");
+    lv_obj_set_style_text_font(lbl_vol_percent, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_vol_percent, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_align(lbl_vol_percent, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_width(lbl_vol_percent, 42);
+    lv_obj_align(lbl_vol_percent, LV_ALIGN_RIGHT_MID, 0, 0);
 }
 
 // Build Presets Drawer / List Tab (12 Presets)
@@ -746,10 +879,6 @@ static void event_btn_wifi_forget(lv_event_t* e) {
     }
     if (list_wifi) {
         lv_obj_clean(list_wifi);
-        lv_obj_t* btn = lv_list_add_btn(list_wifi, LV_SYMBOL_REFRESH, "Scanning nearby Wi-Fi...");
-        lv_obj_set_style_bg_color(btn, COLOR_SURFACE, 0);
-        lv_obj_set_style_text_color(btn, COLOR_TEXT_MUTED, 0);
-        lv_obj_set_style_text_font(btn, &lv_font_montserrat_12, 0);
     }
 }
 
@@ -760,10 +889,6 @@ static void event_btn_wifi_rescan(lv_event_t* e) {
     }
     if (list_wifi) {
         lv_obj_clean(list_wifi);
-        lv_obj_t* btn = lv_list_add_btn(list_wifi, LV_SYMBOL_REFRESH, "Scanning nearby Wi-Fi...");
-        lv_obj_set_style_bg_color(btn, COLOR_SURFACE, 0);
-        lv_obj_set_style_text_color(btn, COLOR_TEXT_MUTED, 0);
-        lv_obj_set_style_text_font(btn, &lv_font_montserrat_12, 0);
     }
     UiCommand cmd;
     cmd.type = CMD_WIFI_START_SCAN;
@@ -1232,38 +1357,75 @@ void ui_set_player_state(const PlayerState& state) {
         }
     }
 
-    // 2. Mute & Fixed Output State
-    if (btn_mute && lbl_mute) {
-        if (state.mute) {
-            // Muted: Vibrant Red with Speaker + X (no border)
-            lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0xE63946), 0);
-            lv_obj_set_style_border_width(btn_mute, 0, 0);
-            lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x9E1B26), LV_STATE_PRESSED);
-            lv_obj_set_style_border_color(btn_mute, lv_color_hex(0xFFFFFF), LV_STATE_PRESSED);
-            lv_obj_set_style_border_width(btn_mute, 2, LV_STATE_PRESSED);
-            lv_label_set_text(lbl_mute, LV_SYMBOL_VOLUME_MAX);
-            lv_obj_set_style_text_color(lbl_mute, lv_color_hex(0xFFFFFF), 0);
-            lv_obj_align(lbl_mute, LV_ALIGN_LEFT_MID, 12, 0);
-            if (img_lock) lv_obj_add_flag(img_lock, LV_OBJ_FLAG_HIDDEN);
-            if (lbl_x) {
-                lv_obj_clear_flag(lbl_x, LV_OBJ_FLAG_HIDDEN);
-                lv_obj_align(lbl_x, LV_ALIGN_LEFT_MID, 38, 0);
+    // 2. Adaptive Volume Controls (Fixed Mode vs Variable Mode)
+    if (state.is_fixed_volume) {
+        // FIXED VOLUME MODE
+        if (obj_vol_var_cont) lv_obj_add_flag(obj_vol_var_cont, LV_OBJ_FLAG_HIDDEN);
+        if (btn_mute) lv_obj_clear_flag(btn_mute, LV_OBJ_FLAG_HIDDEN);
+
+        if (btn_mute && lbl_mute) {
+            if (state.mute) {
+                // Muted: Vibrant Red with Speaker + X (no border)
+                lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0xE63946), 0);
+                lv_obj_set_style_border_width(btn_mute, 0, 0);
+                lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x9E1B26), LV_STATE_PRESSED);
+                lv_obj_set_style_border_color(btn_mute, lv_color_hex(0xFFFFFF), LV_STATE_PRESSED);
+                lv_obj_set_style_border_width(btn_mute, 2, LV_STATE_PRESSED);
+                lv_label_set_text(lbl_mute, LV_SYMBOL_VOLUME_MAX);
+                lv_obj_set_style_text_color(lbl_mute, lv_color_hex(0xFFFFFF), 0);
+                lv_obj_align(lbl_mute, LV_ALIGN_LEFT_MID, 12, 0);
+                if (img_lock) lv_obj_add_flag(img_lock, LV_OBJ_FLAG_HIDDEN);
+                if (lbl_x) {
+                    lv_obj_clear_flag(lbl_x, LV_OBJ_FLAG_HIDDEN);
+                    lv_obj_align(lbl_x, LV_ALIGN_LEFT_MID, 38, 0);
+                }
+            } else {
+                // Unmuted: Charcoal with Speaker + Padlock
+                lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x222732), 0);
+                lv_obj_set_style_border_width(btn_mute, 1, 0);
+                lv_obj_set_style_border_color(btn_mute, lv_color_hex(0x3A4252), 0);
+                lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x3B4455), LV_STATE_PRESSED);
+                lv_obj_set_style_border_color(btn_mute, COLOR_ACCENT, LV_STATE_PRESSED);
+                lv_obj_set_style_border_width(btn_mute, 2, LV_STATE_PRESSED);
+                lv_label_set_text(lbl_mute, LV_SYMBOL_VOLUME_MAX);
+                lv_obj_set_style_text_color(lbl_mute, COLOR_TEXT_PRIMARY, 0);
+                lv_obj_align(lbl_mute, LV_ALIGN_LEFT_MID, 12, 0);
+                if (lbl_x) lv_obj_add_flag(lbl_x, LV_OBJ_FLAG_HIDDEN);
+                if (img_lock) {
+                    lv_obj_clear_flag(img_lock, LV_OBJ_FLAG_HIDDEN);
+                    lv_obj_align(img_lock, LV_ALIGN_LEFT_MID, 38, 0);
+                }
             }
-        } else {
-            // Unmuted: Slightly Brighter Charcoal with Speaker + Padlock + 0x3A4252 Border
-            lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x222732), 0);
-            lv_obj_set_style_border_width(btn_mute, 1, 0);
-            lv_obj_set_style_border_color(btn_mute, lv_color_hex(0x3A4252), 0);
-            lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x3B4455), LV_STATE_PRESSED);
-            lv_obj_set_style_border_color(btn_mute, COLOR_ACCENT, LV_STATE_PRESSED);
-            lv_obj_set_style_border_width(btn_mute, 2, LV_STATE_PRESSED);
-            lv_label_set_text(lbl_mute, LV_SYMBOL_VOLUME_MAX);
-            lv_obj_set_style_text_color(lbl_mute, COLOR_TEXT_PRIMARY, 0);
-            lv_obj_align(lbl_mute, LV_ALIGN_LEFT_MID, 12, 0);
-            if (lbl_x) lv_obj_add_flag(lbl_x, LV_OBJ_FLAG_HIDDEN);
-            if (img_lock) {
-                lv_obj_clear_flag(img_lock, LV_OBJ_FLAG_HIDDEN);
-                lv_obj_align(img_lock, LV_ALIGN_LEFT_MID, 38, 0);
+        }
+    } else {
+        // VARIABLE VOLUME MODE
+        if (btn_mute) lv_obj_add_flag(btn_mute, LV_OBJ_FLAG_HIDDEN);
+        if (obj_vol_var_cont) lv_obj_clear_flag(obj_vol_var_cont, LV_OBJ_FLAG_HIDDEN);
+
+        // Update Slider and Percentage (only if user is not currently dragging it)
+        if (!is_user_adjusting_volume) {
+            current_volume = state.volume;
+            if (slider_vol) lv_slider_set_value(slider_vol, state.volume, LV_ANIM_OFF);
+            if (lbl_vol_percent) {
+                char buf[8];
+                snprintf(buf, sizeof(buf), "%d%%", state.volume);
+                lv_label_set_text(lbl_vol_percent, buf);
+            }
+        }
+
+        // Update Variable Mute Button
+        if (btn_var_mute && lbl_var_mute) {
+            if (state.mute) {
+                lv_obj_set_style_bg_color(btn_var_mute, lv_color_hex(0xE63946), 0);
+                lv_obj_set_style_border_width(btn_var_mute, 0, 0);
+                lv_obj_set_style_text_color(lbl_var_mute, lv_color_hex(0xFFFFFF), 0);
+                if (lbl_var_x) lv_obj_clear_flag(lbl_var_x, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_set_style_bg_color(btn_var_mute, lv_color_hex(0x222732), 0);
+                lv_obj_set_style_border_width(btn_var_mute, 1, 0);
+                lv_obj_set_style_border_color(btn_var_mute, lv_color_hex(0x3A4252), 0);
+                lv_obj_set_style_text_color(lbl_var_mute, COLOR_TEXT_PRIMARY, 0);
+                if (lbl_var_x) lv_obj_add_flag(lbl_var_x, LV_OBJ_FLAG_HIDDEN);
             }
         }
     }
@@ -1438,10 +1600,6 @@ void ui_open_wifi_modal() {
 
     if (list_wifi && current_wifi_scan_list.count == 0) {
         lv_obj_clean(list_wifi);
-        lv_obj_t* btn = lv_list_add_btn(list_wifi, LV_SYMBOL_REFRESH, "Scanning nearby Wi-Fi...");
-        lv_obj_set_style_bg_color(btn, COLOR_SURFACE, 0);
-        lv_obj_set_style_text_color(btn, COLOR_TEXT_MUTED, 0);
-        lv_obj_set_style_text_font(btn, &lv_font_montserrat_12, 0);
     }
 
     UiCommand cmd;

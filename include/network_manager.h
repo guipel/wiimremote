@@ -47,6 +47,7 @@ private:
 
     bool queryDeviceStatus(const char* ip, WiiMDevice* outDevice);
     void pollActiveDevice();
+    void fetchDeviceConfig();
     bool fetchTrackMeta();
     void fetchPresetInfo();
     void fetchUpnpTrackDuration();
@@ -65,6 +66,7 @@ private:
     bool _wifiConnected;
     unsigned long _lastWiFiCheck;
     unsigned long _lastStatusPoll;
+    unsigned long _lastConfigPoll;
     unsigned long _lastMetaPoll;
     unsigned long _lastSSDPBroadcast;
     unsigned long _lastVolumeSent;
@@ -78,6 +80,7 @@ private:
 
     // Active device
     WiiMDevice _activeDevice;
+    PlayerState _lastPlayerState;
     bool _hasActiveDevice;
     bool _initialPresetsFetched;
     String _lastKnownTrackTitle;
