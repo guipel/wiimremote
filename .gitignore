@@ -1,0 +1,22 @@
+# PlatformIO build artifacts and library cache
+.pio/
+.pioenvs/
+.piolibdeps/
+
+# IDE configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Local secrets (Wi-Fi credentials)
+include/secrets.h
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS generated
+.DS_Store
+Thumbs.db
