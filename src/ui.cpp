@@ -257,7 +257,7 @@ static void event_slider_vol(lv_event_t* e) {
         cmd.type = CMD_SET_VOL;
         cmd.data.volume = (uint8_t)val;
         xQueueSend(xQueueUiCmd, &cmd, 0);
-    } else if (code == LV_EVENT_RELEASED) {
+    } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
         is_user_adjusting_volume = false;
         int32_t val = lv_slider_get_value(slider_vol);
         if (val < 0) val = 0;
@@ -647,7 +647,7 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_set_style_bg_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(obj_vol_var_cont, 0, 0);
-    lv_obj_clear_flag(obj_vol_var_cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag(obj_vol_var_cont, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_GESTURE_BUBBLE | LV_OBJ_FLAG_SCROLL_CHAIN);
     lv_obj_add_flag(obj_vol_var_cont, LV_OBJ_FLAG_HIDDEN); // Hidden by default
 
     // Variable Mute Button (Left, 38x38)
@@ -682,9 +682,9 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_align(lbl_var_x, LV_ALIGN_CENTER, 8, -6);
     lv_obj_add_flag(lbl_var_x, LV_OBJ_FLAG_HIDDEN);
 
-    // Interactive Volume Slider (Center, 130x8)
+    // Interactive Volume Slider (Center, 130x14)
     slider_vol = lv_slider_create(obj_vol_var_cont);
-    lv_obj_set_size(slider_vol, 130, 8);
+    lv_obj_set_size(slider_vol, 130, 14);
     lv_obj_align(slider_vol, LV_ALIGN_LEFT_MID, 46, 0);
     lv_slider_set_range(slider_vol, 0, 100);
     lv_slider_set_value(slider_vol, 0, LV_ANIM_OFF);
@@ -692,23 +692,24 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_set_style_bg_opa(slider_vol, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(slider_vol, lv_color_hex(0x3A4252), 0);
     lv_obj_set_style_border_width(slider_vol, 1, 0);
-    lv_obj_set_style_radius(slider_vol, 4, 0);
+    lv_obj_set_style_radius(slider_vol, 7, 0);
 
     // Indicator (Filled cyan bar)
     lv_obj_set_style_bg_color(slider_vol, COLOR_ACCENT, LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(slider_vol, LV_OPA_COVER, LV_PART_INDICATOR);
-    lv_obj_set_style_radius(slider_vol, 4, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(slider_vol, 7, LV_PART_INDICATOR);
 
     // Knob / Thumb
     lv_obj_set_style_bg_color(slider_vol, COLOR_ACCENT, LV_PART_KNOB);
     lv_obj_set_style_bg_opa(slider_vol, LV_OPA_COVER, LV_PART_KNOB);
     lv_obj_set_style_border_color(slider_vol, lv_color_hex(0xFFFFFF), LV_PART_KNOB);
     lv_obj_set_style_border_width(slider_vol, 2, LV_PART_KNOB);
-    lv_obj_set_style_pad_all(slider_vol, 4, LV_PART_KNOB);
-    lv_obj_set_style_radius(slider_vol, 8, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(slider_vol, 6, LV_PART_KNOB);
+    lv_obj_set_style_radius(slider_vol, 12, LV_PART_KNOB);
 
     // Generous touch hit area
-    lv_obj_set_ext_click_area(slider_vol, 14);
+    lv_obj_add_flag(slider_vol, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(slider_vol, 20);
     lv_obj_clear_flag(slider_vol, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(slider_vol, event_slider_vol, LV_EVENT_ALL, nullptr);
 

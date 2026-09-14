@@ -815,7 +815,8 @@ void NetworkManager::pollActiveDevice() {
     }
 
     // Volume & Mute
-    evt.data.player.volume = doc["vol"] | 0;
+    const char* volStr = doc["vol"] | "0";
+    evt.data.player.volume = (uint8_t)atoi(volStr);
     const char* muteStr = doc["mute"] | "0";
     evt.data.player.mute = (strcmp(muteStr, "1") == 0 || atoi(muteStr) == 1);
     evt.data.player.is_fixed_volume = _activeDevice.is_fixed_volume;
