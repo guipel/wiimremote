@@ -682,9 +682,9 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_align(lbl_var_x, LV_ALIGN_CENTER, 8, -6);
     lv_obj_add_flag(lbl_var_x, LV_OBJ_FLAG_HIDDEN);
 
-    // Interactive Volume Slider (Center, 130x14)
+    // Interactive Volume Slider (Center, 130x6, matching progress bar thickness)
     slider_vol = lv_slider_create(obj_vol_var_cont);
-    lv_obj_set_size(slider_vol, 130, 14);
+    lv_obj_set_size(slider_vol, 130, 6);
     lv_obj_align(slider_vol, LV_ALIGN_LEFT_MID, 46, 0);
     lv_slider_set_range(slider_vol, 0, 100);
     lv_slider_set_value(slider_vol, 0, LV_ANIM_OFF);
@@ -692,20 +692,20 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_set_style_bg_opa(slider_vol, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(slider_vol, lv_color_hex(0x3A4252), 0);
     lv_obj_set_style_border_width(slider_vol, 1, 0);
-    lv_obj_set_style_radius(slider_vol, 7, 0);
+    lv_obj_set_style_radius(slider_vol, 3, 0);
 
     // Indicator (Filled cyan bar)
     lv_obj_set_style_bg_color(slider_vol, COLOR_ACCENT, LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(slider_vol, LV_OPA_COVER, LV_PART_INDICATOR);
-    lv_obj_set_style_radius(slider_vol, 7, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(slider_vol, 3, LV_PART_INDICATOR);
 
-    // Knob / Thumb
+    // Knob / Thumb (16px circular thumb with white perimeter)
     lv_obj_set_style_bg_color(slider_vol, COLOR_ACCENT, LV_PART_KNOB);
     lv_obj_set_style_bg_opa(slider_vol, LV_OPA_COVER, LV_PART_KNOB);
     lv_obj_set_style_border_color(slider_vol, lv_color_hex(0xFFFFFF), LV_PART_KNOB);
     lv_obj_set_style_border_width(slider_vol, 2, LV_PART_KNOB);
-    lv_obj_set_style_pad_all(slider_vol, 6, LV_PART_KNOB);
-    lv_obj_set_style_radius(slider_vol, 12, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(slider_vol, 5, LV_PART_KNOB);
+    lv_obj_set_style_radius(slider_vol, 8, LV_PART_KNOB);
 
     // Generous touch hit area
     lv_obj_add_flag(slider_vol, LV_OBJ_FLAG_CLICKABLE);
