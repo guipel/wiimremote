@@ -93,9 +93,14 @@ static lv_obj_t* kb_wifi = nullptr;
 static lv_obj_t* lbl_wifi_connecting_msg = nullptr;
 static lv_obj_t* spinner_wifi = nullptr;
 static lv_obj_t* btn_wifi_status_back = nullptr;
+static lv_obj_t* box_wifi_connected = nullptr;
+static lv_obj_t* lbl_wifi_curr_ssid = nullptr;
+static lv_obj_t* btn_wifi_forget = nullptr;
 
 static WiFiScanList current_wifi_scan_list;
 static char selected_wifi_ssid[33] = "";
+static char current_connected_ssid[33] = "";
+static bool current_wifi_connected = false;
 static lv_timer_t* timer_wifi_close = nullptr;
 
 // Local state tracking to prevent UI flicker
@@ -712,8 +717,36 @@ static void build_device_modal() {
 
 // Wi-Fi Configuration Modal Callbacks
 static void event_btn_close_wifi_modal(lv_event_t* e) {
+    if (timer_wifi_close) {
+        lv_timer_del(timer_wifi_close);
+        timer_wifi_close = nullptr;
+    }
     if (modal_wifi_selector) {
         lv_obj_add_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void event_btn_wifi_forget(lv_event_t* e) {
+    log_i("User tapped Forget Network");
+    UiCommand cmd;
+    cmd.type = CMD_WIFI_FORGET;
+    xQueueSend(xQueueUiCmd, &cmd, 0);
+
+    current_wifi_connected = false;
+    current_connected_ssid[0] = '\0';
+    if (box_wifi_connected) {
+        lv_obj_add_flag(box_wifi_connected, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (lbl_wifi_scan_status) {
+        lv_label_set_text(lbl_wifi_scan_status, "Forgetting network & scanning...");
+        lv_obj_set_style_text_color(lbl_wifi_scan_status, COLOR_ACCENT, 0);
+    }
+    if (list_wifi) {
+        lv_obj_clean(list_wifi);
+        lv_obj_t* btn = lv_list_add_btn(list_wifi, LV_SYMBOL_REFRESH, "Scanning nearby Wi-Fi...");
+        lv_obj_set_style_bg_color(btn, COLOR_SURFACE, 0);
+        lv_obj_set_style_text_color(btn, COLOR_TEXT_MUTED, 0);
+        lv_obj_set_style_text_font(btn, &lv_font_montserrat_12, 0);
     }
 }
 
@@ -721,6 +754,13 @@ static void event_btn_wifi_rescan(lv_event_t* e) {
     if (lbl_wifi_scan_status) {
         lv_label_set_text(lbl_wifi_scan_status, "Scanning for networks...");
         lv_obj_set_style_text_color(lbl_wifi_scan_status, COLOR_ACCENT, 0);
+    }
+    if (list_wifi) {
+        lv_obj_clean(list_wifi);
+        lv_obj_t* btn = lv_list_add_btn(list_wifi, LV_SYMBOL_REFRESH, "Scanning nearby Wi-Fi...");
+        lv_obj_set_style_bg_color(btn, COLOR_SURFACE, 0);
+        lv_obj_set_style_text_color(btn, COLOR_TEXT_MUTED, 0);
+        lv_obj_set_style_text_font(btn, &lv_font_montserrat_12, 0);
     }
     UiCommand cmd;
     cmd.type = CMD_WIFI_START_SCAN;
@@ -842,20 +882,54 @@ static void build_wifi_modal() {
     lv_obj_clear_flag(wifi_view_list, LV_OBJ_FLAG_SCROLLABLE);
 
     lv_obj_t* lbl_title = lv_label_create(wifi_view_list);
-    lv_label_set_text(lbl_title, "Select Wi-Fi Network");
+    lv_label_set_text(lbl_title, "Wi-Fi Networks");
     lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lbl_title, COLOR_TEXT_PRIMARY, 0);
     lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, 0);
+
+    // Connected Network banner (shown when Wi-Fi is connected)
+    box_wifi_connected = lv_obj_create(wifi_view_list);
+    lv_obj_set_size(box_wifi_connected, 212, 32);
+    lv_obj_align(box_wifi_connected, LV_ALIGN_TOP_MID, 0, 20);
+    lv_obj_set_style_bg_color(box_wifi_connected, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_border_width(box_wifi_connected, 0, 0);
+    lv_obj_set_style_pad_all(box_wifi_connected, 4, 0);
+    lv_obj_set_style_radius(box_wifi_connected, 6, 0);
+    lv_obj_clear_flag(box_wifi_connected, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(box_wifi_connected, LV_OBJ_FLAG_HIDDEN);
+
+    lbl_wifi_curr_ssid = lv_label_create(box_wifi_connected);
+    lv_label_set_text(lbl_wifi_curr_ssid, LV_SYMBOL_OK " Connected");
+    lv_obj_set_style_text_font(lbl_wifi_curr_ssid, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_wifi_curr_ssid, COLOR_SUCCESS, 0);
+    lv_obj_set_width(lbl_wifi_curr_ssid, 130);
+    lv_label_set_long_mode(lbl_wifi_curr_ssid, LV_LABEL_LONG_DOT);
+    lv_obj_align(lbl_wifi_curr_ssid, LV_ALIGN_LEFT_MID, 4, 0);
+
+    btn_wifi_forget = lv_btn_create(box_wifi_connected);
+    lv_obj_set_size(btn_wifi_forget, 62, 24);
+    lv_obj_align(btn_wifi_forget, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_bg_color(btn_wifi_forget, lv_color_hex(0x3A2222), 0);
+    lv_obj_set_style_border_color(btn_wifi_forget, lv_color_hex(0xE63946), 0);
+    lv_obj_set_style_border_width(btn_wifi_forget, 1, 0);
+    lv_obj_set_style_radius(btn_wifi_forget, 4, 0);
+    lv_obj_set_style_pad_all(btn_wifi_forget, 0, 0);
+    lv_obj_add_event_cb(btn_wifi_forget, event_btn_wifi_forget, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* lbl_f = lv_label_create(btn_wifi_forget);
+    lv_label_set_text(lbl_f, "Forget");
+    lv_obj_set_style_text_color(lbl_f, lv_color_hex(0xFF6B6B), 0);
+    lv_obj_set_style_text_font(lbl_f, &lv_font_montserrat_10, 0);
+    lv_obj_center(lbl_f);
 
     lbl_wifi_scan_status = lv_label_create(wifi_view_list);
     lv_label_set_text(lbl_wifi_scan_status, "Ready");
     lv_obj_set_style_text_font(lbl_wifi_scan_status, &lv_font_montserrat_10, 0);
     lv_obj_set_style_text_color(lbl_wifi_scan_status, COLOR_TEXT_MUTED, 0);
-    lv_obj_align(lbl_wifi_scan_status, LV_ALIGN_TOP_MID, 0, 18);
+    lv_obj_align(lbl_wifi_scan_status, LV_ALIGN_TOP_MID, 0, 56);
 
     list_wifi = lv_list_create(wifi_view_list);
-    lv_obj_set_size(list_wifi, 212, 192);
-    lv_obj_align(list_wifi, LV_ALIGN_TOP_MID, 0, 36);
+    lv_obj_set_size(list_wifi, 212, 176);
+    lv_obj_align(list_wifi, LV_ALIGN_TOP_MID, 0, 72);
     lv_obj_set_style_bg_color(list_wifi, COLOR_BG, 0);
     lv_obj_set_style_border_side(list_wifi, LV_BORDER_SIDE_NONE, 0);
     lv_obj_set_style_radius(list_wifi, 8, 0);
@@ -1049,7 +1123,15 @@ void ui_init() {
     lv_timer_create(timer_progress_cb, 50, nullptr);
 }
 
-void ui_set_wifi_status(bool connected, int8_t rssi, const char* ip) {
+void ui_set_wifi_status(bool connected, int8_t rssi, const char* ip, const char* ssid) {
+    current_wifi_connected = connected;
+    if (ssid && strlen(ssid) > 0) {
+        strncpy(current_connected_ssid, ssid, sizeof(current_connected_ssid) - 1);
+        current_connected_ssid[sizeof(current_connected_ssid) - 1] = '\0';
+    } else if (!connected) {
+        current_connected_ssid[0] = '\0';
+    }
+
     if (!lbl_wifi) return;
     lv_label_set_text(lbl_wifi, LV_SYMBOL_WIFI " " LV_SYMBOL_DOWN);
     if (connected) {
@@ -1062,6 +1144,18 @@ void ui_set_wifi_status(bool connected, int8_t rssi, const char* ip) {
         }
     } else {
         lv_obj_set_style_text_color(lbl_wifi, COLOR_TEXT_MUTED, 0); // Disconnected
+    }
+
+    // Update the connected banner in wifi_view_list if initialized
+    if (box_wifi_connected && lbl_wifi_curr_ssid) {
+        if (connected && strlen(current_connected_ssid) > 0) {
+            char buf[48];
+            snprintf(buf, sizeof(buf), LV_SYMBOL_OK " %s", current_connected_ssid);
+            lv_label_set_text(lbl_wifi_curr_ssid, buf);
+            lv_obj_clear_flag(box_wifi_connected, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(box_wifi_connected, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 }
 
@@ -1311,13 +1405,40 @@ static void timer_close_wifi_modal_cb(lv_timer_t* timer) {
 
 void ui_open_wifi_modal() {
     if (!modal_wifi_selector) return;
+
+    if (timer_wifi_close) {
+        lv_timer_del(timer_wifi_close);
+        timer_wifi_close = nullptr;
+    }
+
     lv_obj_clear_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN);
     if (wifi_view_list) lv_obj_clear_flag(wifi_view_list, LV_OBJ_FLAG_HIDDEN);
     if (wifi_view_pass) lv_obj_add_flag(wifi_view_pass, LV_OBJ_FLAG_HIDDEN);
     if (wifi_view_status) lv_obj_add_flag(wifi_view_status, LV_OBJ_FLAG_HIDDEN);
+
+    // Update banner for currently connected network
+    if (box_wifi_connected && lbl_wifi_curr_ssid) {
+        if (current_wifi_connected && strlen(current_connected_ssid) > 0) {
+            char buf[48];
+            snprintf(buf, sizeof(buf), LV_SYMBOL_OK " %s", current_connected_ssid);
+            lv_label_set_text(lbl_wifi_curr_ssid, buf);
+            lv_obj_clear_flag(box_wifi_connected, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(box_wifi_connected, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
     if (lbl_wifi_scan_status) {
         lv_label_set_text(lbl_wifi_scan_status, "Scanning for networks...");
         lv_obj_set_style_text_color(lbl_wifi_scan_status, COLOR_ACCENT, 0);
+    }
+
+    if (list_wifi && current_wifi_scan_list.count == 0) {
+        lv_obj_clean(list_wifi);
+        lv_obj_t* btn = lv_list_add_btn(list_wifi, LV_SYMBOL_REFRESH, "Scanning nearby Wi-Fi...");
+        lv_obj_set_style_bg_color(btn, COLOR_SURFACE, 0);
+        lv_obj_set_style_text_color(btn, COLOR_TEXT_MUTED, 0);
+        lv_obj_set_style_text_font(btn, &lv_font_montserrat_12, 0);
     }
 
     UiCommand cmd;
@@ -1365,6 +1486,9 @@ void ui_set_wifi_scan_results(const WiFiScanList& list) {
 void ui_wifi_on_connected(const char* ip) {
     if (!modal_wifi_selector || lv_obj_has_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN)) return;
 
+    // Only proceed if user was actively on the connecting screen
+    if (!wifi_view_status || lv_obj_has_flag(wifi_view_status, LV_OBJ_FLAG_HIDDEN)) return;
+
     if (spinner_wifi) lv_obj_add_flag(spinner_wifi, LV_OBJ_FLAG_HIDDEN);
     if (lbl_wifi_connecting_msg) {
         char buf[64];
@@ -1397,10 +1521,10 @@ void ui_process_events() {
     while (xQueueReceive(xQueueUiState, &evt, 0) == pdTRUE) {
         switch (evt.type) {
             case UI_EVT_WIFI_STATUS:
-                ui_set_wifi_status(evt.data.wifi.connected, evt.data.wifi.rssi, evt.data.wifi.ip);
-                if (evt.data.wifi.connected) {
-                    ui_wifi_on_connected(evt.data.wifi.ip);
-                }
+                ui_set_wifi_status(evt.data.wifi.connected, evt.data.wifi.rssi, evt.data.wifi.ip, evt.data.wifi.ssid);
+                break;
+            case UI_EVT_WIFI_CONNECT_SUCCESS:
+                ui_wifi_on_connected(evt.data.wifi.ip);
                 break;
             case UI_EVT_WIFI_SCAN_RESULT:
                 if (evt.data.wifi_scan) {

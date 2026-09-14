@@ -11,7 +11,7 @@ void ui_init();
 void ui_process_events();
 
 // UI State setters
-void ui_set_wifi_status(bool connected, int8_t rssi, const char* ip);
+void ui_set_wifi_status(bool connected, int8_t rssi, const char* ip, const char* ssid = nullptr);
 void ui_set_devices(const DeviceList& list);
 void ui_set_player_state(const PlayerState& state);
 void ui_set_track_meta(const TrackMeta& meta);

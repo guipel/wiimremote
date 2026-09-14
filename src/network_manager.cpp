@@ -186,27 +186,28 @@ void NetworkManager::init() {
     prefs.begin("wiimremote", false);
     loadSavedDevice();
 
-    // Start Wi-Fi in station mode with power management
+    // Start Wi-Fi in station mode
     WiFi.mode(WIFI_STA);
-    WiFi.setSleep(WIFI_PS_MIN_MODEM); // DTIM beacon sleep: saves 30-40% radio power while maintaining low wake latency
 
-    String savedSsid = prefs.getString("wifi_ssid", "");
-    String savedPass = prefs.getString("wifi_pass", "");
-
-    if (savedSsid.length() == 0 && strcmp(WIFI_SSID, "YOUR_WIFI_SSID") != 0) {
-        savedSsid = WIFI_SSID;
-        savedPass = WIFI_PASSWORD;
-    }
+    bool setupDone = prefs.getBool("user_setup_done", false);
+    String savedSsid = setupDone ? prefs.getString("wifi_ssid", "") : "";
+    String savedPass = setupDone ? prefs.getString("wifi_pass", "") : "";
 
     if (savedSsid.length() > 0) {
         log_i("Connecting to saved Wi-Fi SSID: %s", savedSsid.c_str());
+        WiFi.setSleep(WIFI_PS_MIN_MODEM);
         _wifiConnecting = true;
         _wifiConnectStart = millis();
         _pendingConnectSsid = savedSsid;
         _pendingConnectPass = savedPass;
         WiFi.begin(savedSsid.c_str(), savedPass.c_str());
     } else {
-        log_w("No saved Wi-Fi credentials. Setup required!");
+        log_w("No user-configured Wi-Fi credentials. Setup required!");
+        prefs.remove("wifi_ssid");
+        prefs.remove("wifi_pass");
+        prefs.remove("user_setup_done");
+        WiFi.disconnect(true, true);
+
         UiEvent evt;
         evt.type = UI_EVT_WIFI_SETUP_REQUIRED;
         xQueueSend(xQueueUiState, &evt, 0);
@@ -244,6 +245,7 @@ void NetworkManager::startWiFiScan() {
     if (_wifiScanning) return;
     log_i("Starting async Wi-Fi network scan...");
     _wifiScanning = true;
+    WiFi.setSleep(WIFI_PS_NONE);
     WiFi.scanNetworks(true, false);
 }
 
@@ -252,9 +254,21 @@ void NetworkManager::checkWiFiScanStatus() {
     if (n == WIFI_SCAN_RUNNING) return;
 
     _wifiScanning = false;
+    if (_wifiConnected) {
+        WiFi.setSleep(WIFI_PS_MIN_MODEM);
+    }
+
     if (n < 0) {
         log_w("Wi-Fi scan failed or aborted (%d)", n);
         WiFi.scanDelete();
+        WiFiScanList* pScan = (WiFiScanList*)malloc(sizeof(WiFiScanList));
+        if (pScan) {
+            pScan->count = 0;
+            UiEvent evt;
+            evt.type = UI_EVT_WIFI_SCAN_RESULT;
+            evt.data.wifi_scan = pScan;
+            xQueueSend(xQueueUiState, &evt, 0);
+        }
         return;
     }
 
@@ -307,10 +321,20 @@ void NetworkManager::forgetWiFi() {
     log_i("Forgetting saved Wi-Fi credentials");
     prefs.remove("wifi_ssid");
     prefs.remove("wifi_pass");
+    prefs.remove("user_setup_done");
     _wifiConnected = false;
     _pendingConnectSsid = "";
     _pendingConnectPass = "";
     WiFi.disconnect(true, true);
+
+    UiEvent evtStatus;
+    evtStatus.type = UI_EVT_WIFI_STATUS;
+    evtStatus.data.wifi.connected = false;
+    evtStatus.data.wifi.rssi = -100;
+    evtStatus.data.wifi.ip[0] = '\0';
+    evtStatus.data.wifi.ssid[0] = '\0';
+    xQueueSend(xQueueUiState, &evtStatus, 0);
+
     startWiFiScan();
     UiEvent evt;
     evt.type = UI_EVT_WIFI_SETUP_REQUIRED;
@@ -324,16 +348,24 @@ void NetworkManager::handleWiFi() {
     if (status == WL_CONNECTED) {
         if (!_wifiConnected) {
             _wifiConnected = true;
+            bool wasUserConnecting = (_pendingConnectSsid.length() > 0);
             _wifiConnecting = false;
             log_i("Wi-Fi Connected! IP: %s, RSSI: %d dBm", WiFi.localIP().toString().c_str(), WiFi.RSSI());
 
             // Save to NVS if newly connected via pending credentials
-            if (_pendingConnectSsid.length() > 0) {
+            if (wasUserConnecting) {
                 prefs.putString("wifi_ssid", _pendingConnectSsid);
                 prefs.putString("wifi_pass", _pendingConnectPass);
+                prefs.putBool("user_setup_done", true);
                 log_i("Saved Wi-Fi credentials to NVS: %s", _pendingConnectSsid.c_str());
                 _pendingConnectSsid = "";
                 _pendingConnectPass = "";
+
+                // Notify UI of connection success to close the modal
+                UiEvent evtSuccess;
+                evtSuccess.type = UI_EVT_WIFI_CONNECT_SUCCESS;
+                strncpy(evtSuccess.data.wifi.ip, WiFi.localIP().toString().c_str(), sizeof(evtSuccess.data.wifi.ip) - 1);
+                xQueueSend(xQueueUiState, &evtSuccess, 0);
             }
 
             // Initialize UDP listener for SSDP
@@ -345,6 +377,8 @@ void NetworkManager::handleWiFi() {
             evt.data.wifi.connected = true;
             evt.data.wifi.rssi = WiFi.RSSI();
             strncpy(evt.data.wifi.ip, WiFi.localIP().toString().c_str(), sizeof(evt.data.wifi.ip) - 1);
+            strncpy(evt.data.wifi.ssid, WiFi.SSID().c_str(), sizeof(evt.data.wifi.ssid) - 1);
+            evt.data.wifi.ssid[sizeof(evt.data.wifi.ssid) - 1] = '\0';
             xQueueSend(xQueueUiState, &evt, 0);
 
             // Start discovery immediately
@@ -357,6 +391,8 @@ void NetworkManager::handleWiFi() {
             evt.data.wifi.connected = true;
             evt.data.wifi.rssi = WiFi.RSSI();
             strncpy(evt.data.wifi.ip, WiFi.localIP().toString().c_str(), sizeof(evt.data.wifi.ip) - 1);
+            strncpy(evt.data.wifi.ssid, WiFi.SSID().c_str(), sizeof(evt.data.wifi.ssid) - 1);
+            evt.data.wifi.ssid[sizeof(evt.data.wifi.ssid) - 1] = '\0';
             xQueueSend(xQueueUiState, &evt, 0);
         }
     } else {
@@ -369,6 +405,7 @@ void NetworkManager::handleWiFi() {
             evt.data.wifi.connected = false;
             evt.data.wifi.rssi = -100;
             evt.data.wifi.ip[0] = '\0';
+            evt.data.wifi.ssid[0] = '\0';
             xQueueSend(xQueueUiState, &evt, 0);
         }
 
@@ -384,10 +421,8 @@ void NetworkManager::handleWiFi() {
                 startWiFiScan();
             }
         } else {
-            String savedSsid = prefs.getString("wifi_ssid", "");
-            if (savedSsid.length() == 0 && strcmp(WIFI_SSID, "YOUR_WIFI_SSID") != 0) {
-                savedSsid = WIFI_SSID;
-            }
+            bool setupDone = prefs.getBool("user_setup_done", false);
+            String savedSsid = setupDone ? prefs.getString("wifi_ssid", "") : "";
             if (savedSsid.length() > 0 && now - _lastWiFiCheck >= WIFI_RECONNECT_INTERVAL_MS) {
                 _lastWiFiCheck = now;
                 log_i("Reconnecting to Wi-Fi...");

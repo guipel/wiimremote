@@ -96,6 +96,7 @@ enum UiEventType {
     UI_EVT_SCAN_STATUS,
     UI_EVT_WIFI_SCAN_RESULT,
     UI_EVT_WIFI_SETUP_REQUIRED,
+    UI_EVT_WIFI_CONNECT_SUCCESS,
     UI_EVT_WIFI_CONNECT_FAILED
 };
 
@@ -106,6 +107,7 @@ struct UiEvent {
             bool connected;
             int8_t rssi;
             char ip[24];
+            char ssid[33];
         } wifi;
         DeviceList* devices;
         PlayerState player;
