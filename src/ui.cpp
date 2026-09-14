@@ -1469,11 +1469,7 @@ void ui_set_wifi_scan_results(const WiFiScanList& list) {
 
     for (uint8_t i = 0; i < list.count; ++i) {
         char item_text[64];
-        if (list.networks[i].is_open) {
-            snprintf(item_text, sizeof(item_text), "%s (%d dBm)", list.networks[i].ssid, list.networks[i].rssi);
-        } else {
-            snprintf(item_text, sizeof(item_text), "%s " LV_SYMBOL_SETTINGS " (%d dBm)", list.networks[i].ssid, list.networks[i].rssi);
-        }
+        snprintf(item_text, sizeof(item_text), "%s (%d dBm)", list.networks[i].ssid, list.networks[i].rssi);
 
         lv_obj_t* btn = lv_list_add_btn(list_wifi, LV_SYMBOL_WIFI, item_text);
         lv_obj_set_style_bg_color(btn, COLOR_SURFACE, 0);
@@ -1481,6 +1477,24 @@ void ui_set_wifi_scan_results(const WiFiScanList& list) {
         lv_obj_set_style_text_font(btn, &lv_font_montserrat_12, 0);
         lv_obj_set_style_radius(btn, 6, 0);
         lv_obj_set_style_pad_bottom(btn, 4, 0);
+
+        // Prevent marquee / rotating text
+        uint32_t child_cnt = lv_obj_get_child_cnt(btn);
+        for (uint32_t c = 0; c < child_cnt; ++c) {
+            lv_obj_t* child = lv_obj_get_child(btn, c);
+            if (lv_obj_check_type(child, &lv_label_class)) {
+                lv_label_set_long_mode(child, LV_LABEL_LONG_DOT);
+            }
+        }
+
+        // Add volume padlock icon on the right side if password-protected
+        if (!list.networks[i].is_open) {
+            lv_obj_t* img = lv_img_create(btn);
+            lv_img_set_src(img, &img_lock_dsc);
+            lv_obj_set_style_img_recolor(img, COLOR_TEXT_MUTED, 0);
+            lv_obj_set_style_img_recolor_opa(img, 255, 0);
+            lv_obj_align(img, LV_ALIGN_RIGHT_MID, -6, 0);
+        }
 
         lv_obj_add_event_cb(btn, event_wifi_item_clicked, LV_EVENT_CLICKED, (void*)(uintptr_t)i);
     }
