@@ -18,18 +18,11 @@
    MEMORY SETTINGS
  *=========================*/
 /* 1: use custom malloc/free, 0: use the built-in `lv_mem_alloc()` and `lv_mem_free()` */
-#define LV_MEM_CUSTOM 0
-#if LV_MEM_CUSTOM == 0
-    /* Size of the memory available for `lv_mem_alloc()` in bytes (>= 2kB) */
-    #define LV_MEM_SIZE (48U * 1024U)          /*[bytes]*/
-    /* Set an address for the memory pool instead of allocating it as a normal array */
-    #define LV_MEM_ADR 0                        /*0: unused*/
-#else       /*LV_MEM_CUSTOM*/
-    #define LV_MEM_CUSTOM_INCLUDE <stdlib.h>   /*Header for the dynamic memory function*/
-    #define LV_MEM_CUSTOM_ALLOC   malloc
-    #define LV_MEM_CUSTOM_FREE    free
-    #define LV_MEM_CUSTOM_REALLOC realloc
-#endif     /*LV_MEM_CUSTOM*/
+#define LV_MEM_CUSTOM 1
+#define LV_MEM_CUSTOM_INCLUDE <esp_heap_caps.h>
+#define LV_MEM_CUSTOM_ALLOC(size)    heap_caps_malloc(size, MALLOC_CAP_SPIRAM)
+#define LV_MEM_CUSTOM_FREE(p)        heap_caps_free(p)
+#define LV_MEM_CUSTOM_REALLOC(p, s)  heap_caps_realloc(p, s, MALLOC_CAP_SPIRAM)
 
 /* Number of the intermediate memory buffer used during rendering and other
  * internal processing mechanisms. */
@@ -94,7 +87,7 @@
 #define LV_FONT_MONTSERRAT_18 0
 #define LV_FONT_MONTSERRAT_20 1
 #define LV_FONT_MONTSERRAT_22 1
-#define LV_FONT_MONTSERRAT_24 1
+#define LV_FONT_MONTSERRAT_24 0
 #define LV_FONT_MONTSERRAT_28 0
 #define LV_FONT_MONTSERRAT_32 0
 
@@ -129,7 +122,7 @@
 #define LV_USE_BTN        1
 #define LV_USE_BTNMATRIX  1
 #define LV_USE_CANVAS     0
-#define LV_USE_CHECKBOX   1
+#define LV_USE_CHECKBOX   0
 #define LV_USE_DROPDOWN   1
 #define LV_USE_IMG        1
 #define LV_USE_LABEL      1
@@ -142,16 +135,16 @@
 #define LV_USE_SLIDER     1
 #define LV_USE_SWITCH     1
 #define LV_USE_TEXTAREA   1
-#define LV_USE_TABLE      1
+#define LV_USE_TABLE      0
 
 /* Extra Widgets */
-#define LV_USE_ANIMIMG    1
+#define LV_USE_ANIMIMG    0
 #define LV_USE_CALENDAR   0
 #define LV_USE_CHART      0
 #define LV_USE_COLORWHEEL 0
-#define LV_USE_IMGBTN     1
+#define LV_USE_IMGBTN     0
 #define LV_USE_KEYBOARD   1
-#define LV_USE_LED        1
+#define LV_USE_LED        0
 #define LV_USE_LIST       1
 #define LV_USE_MENU       0
 #define LV_USE_METER      0
@@ -173,6 +166,6 @@
 
 /* Layouts */
 #define LV_USE_FLEX 1
-#define LV_USE_GRID 1
+#define LV_USE_GRID 0
 
 #endif /* LV_CONF_H */

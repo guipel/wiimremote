@@ -4,7 +4,7 @@
 LGFX_ESP32S3_Custom gfx;
 
 // LVGL Display Buffer allocated in PSRAM
-static const uint32_t DRAW_BUF_PIXELS = SCREEN_WIDTH * 40;
+static const uint32_t DRAW_BUF_PIXELS = SCREEN_WIDTH * 80;
 static lv_color_t *disp_draw_buf1 = nullptr;
 static lv_color_t *disp_draw_buf2 = nullptr;
 static lv_disp_draw_buf_t disp_buf;
@@ -86,6 +86,7 @@ static void display_flush_cb(lv_disp_drv_t *disp, const lv_area_t *area, lv_colo
     uint32_t h = (area->y2 - area->y1 + 1);
 
     gfx.pushImageDMA(area->x1, area->y1, w, h, (const uint16_t *)&color_p->full);
+    gfx.waitDMA();
     lv_disp_flush_ready(disp);
 }
 

@@ -38,9 +38,6 @@ private:
     void sendSSDPQuery();
     void processSSDPPackets();
 
-    // Subnet Scanner Fallback
-    void runSubnetScanStep();
-
     // LinkPlay HTTP API (Persistent TLS Keep-Alive)
     int executeApiGet(const String& cmd, String& outPayload);
     void resetPersistentHttp();
@@ -62,6 +59,8 @@ private:
     void addOrUpdateDevice(const WiiMDevice& dev);
     void loadSavedDevice();
     void saveActiveDevice(const WiiMDevice& dev);
+    void loadSavedDeviceList();
+    void saveSavedDeviceList();
 
     // State variables
     bool _wifiConnected;
@@ -73,11 +72,6 @@ private:
     unsigned long _lastVolumeSent;
     uint8_t _pendingVolume;
     bool _volumePending;
-
-    // Subnet scan state
-    bool _isScanning;
-    int _scanCurrentHost;
-    unsigned long _lastScanStepTime;
 
     // Active device
     WiiMDevice _activeDevice;
@@ -112,6 +106,10 @@ private:
     unsigned long _wifiConnectStart;
     String _pendingConnectSsid;
     String _pendingConnectPass;
+
+    // Cached WiFi credentials (avoid repeated NVS reads)
+    String _cachedSavedSsid;
+    String _cachedSavedPass;
 };
 
 void network_task_entry(void* param);

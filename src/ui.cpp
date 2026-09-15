@@ -177,6 +177,26 @@ static void update_stream_info_labels() {
     }
 }
 
+// Helper: Format scan status string
+static void format_scan_status(char* buf, size_t len, uint8_t count) {
+    if (count == 1) snprintf(buf, len, "1 streamer found");
+    else snprintf(buf, len, "%d streamers found", count);
+}
+
+// Helper: Convert touch X coordinate on progress bar to seek target in ms
+static uint32_t touch_x_to_seek_ms(lv_indev_t* indev, int32_t* out_cx) {
+    lv_point_t p;
+    lv_indev_get_point(indev, &p);
+    int32_t cx = p.x;
+    if (cx < 10) cx = 10;
+    if (cx > 230) cx = 230;
+    if (out_cx) *out_cx = cx;
+    int32_t val = ((cx - 10) * PROGRESS_BAR_MAX) / 220;
+    if (val < 0) val = 0;
+    if (val > PROGRESS_BAR_MAX) val = PROGRESS_BAR_MAX;
+    return (uint32_t)(((uint64_t)val * (uint64_t)current_totlen_ms) / PROGRESS_BAR_MAX);
+}
+
 // Event Callback - Track Progress Bar Seeking
 static void event_slider_seek(lv_event_t* e) {
     lv_event_code_t code = lv_event_get_code(e);
@@ -187,16 +207,9 @@ static void event_slider_seek(lv_event_t* e) {
         if (current_totlen_ms > 0) {
             lv_indev_t* indev = lv_indev_get_act();
             if (indev) {
-                lv_point_t p;
-                lv_indev_get_point(indev, &p);
-                int32_t cx = p.x;
-                if (cx < 10) cx = 10;
-                if (cx > 230) cx = 230;
-                int32_t val = ((cx - 10) * PROGRESS_BAR_MAX) / 220;
-                if (val < 0) val = 0;
-                if (val > PROGRESS_BAR_MAX) val = PROGRESS_BAR_MAX;
+                int32_t cx = 0;
+                uint32_t seek_ms = touch_x_to_seek_ms(indev, &cx);
 
-                uint32_t seek_ms = (uint32_t)(((uint64_t)val * (uint64_t)current_totlen_ms) / PROGRESS_BAR_MAX);
                 char preview_buf[16];
                 format_time(seek_ms, preview_buf, sizeof(preview_buf));
                 if (lbl_time_cur) lv_label_set_text(lbl_time_cur, preview_buf);
@@ -212,16 +225,8 @@ static void event_slider_seek(lv_event_t* e) {
         if (current_totlen_ms > 0) {
             lv_indev_t* indev = lv_indev_get_act();
             if (indev) {
-                lv_point_t p;
-                lv_indev_get_point(indev, &p);
-                int32_t cx = p.x;
-                if (cx < 10) cx = 10;
-                if (cx > 230) cx = 230;
-                int32_t val = ((cx - 10) * PROGRESS_BAR_MAX) / 220;
-                if (val < 0) val = 0;
-                if (val > PROGRESS_BAR_MAX) val = PROGRESS_BAR_MAX;
-
-                uint32_t seek_ms = (uint32_t)(((uint64_t)val * (uint64_t)current_totlen_ms) / PROGRESS_BAR_MAX);
+                int32_t cx = 0;
+                uint32_t seek_ms = touch_x_to_seek_ms(indev, &cx);
                 pending_seek_target_ms = seek_ms;
                 has_pending_seek = true;
                 pending_seek_timestamp = millis();
@@ -268,21 +273,6 @@ static void event_slider_vol(lv_event_t* e) {
         xQueueSend(xQueueUiCmd, &cmd, 0);
     } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
         is_user_adjusting_volume = false;
-        int32_t val = lv_slider_get_value(slider_vol);
-        if (val < 0) val = 0;
-        if (val > 100) val = 100;
-        current_volume = (uint8_t)val;
-
-        if (lbl_vol_percent) {
-            char buf[8];
-            snprintf(buf, sizeof(buf), "%d%%", (int)val);
-            lv_label_set_text(lbl_vol_percent, buf);
-        }
-
-        UiCommand cmd;
-        cmd.type = CMD_SET_VOL;
-        cmd.data.volume = (uint8_t)val;
-        xQueueSend(xQueueUiCmd, &cmd, 0);
     }
 }
 
@@ -372,11 +362,7 @@ static void event_btn_preset(lv_event_t* e) {
 static void event_btn_open_modal(lv_event_t* e) {
     if (lbl_scan_status) {
         char status[32];
-        if (current_device_list.count == 1) {
-            snprintf(status, sizeof(status), "1 streamer found");
-        } else {
-            snprintf(status, sizeof(status), "%d streamers found", current_device_list.count);
-        }
+        format_scan_status(status, sizeof(status), current_device_list.count);
         lv_label_set_text(lbl_scan_status, status);
         lv_obj_set_style_text_color(lbl_scan_status, COLOR_TEXT_MUTED, 0);
     }
@@ -518,7 +504,9 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_add_flag(bar_progress, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(bar_progress, 20);
     lv_obj_clear_flag(bar_progress, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_add_event_cb(bar_progress, event_slider_seek, LV_EVENT_ALL, nullptr);
+    lv_obj_add_event_cb(bar_progress, event_slider_seek, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(bar_progress, event_slider_seek, LV_EVENT_PRESSING, nullptr);
+    lv_obj_add_event_cb(bar_progress, event_slider_seek, LV_EVENT_RELEASED, nullptr);
 
     // Ghost/Secondary Seek Target Indicator (semi-transparent accent circle)
     obj_seek_target = lv_obj_create(parent);
@@ -746,7 +734,10 @@ static void build_player_tab(lv_obj_t* parent) {
     lv_obj_add_flag(slider_vol, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(slider_vol, 20);
     lv_obj_clear_flag(slider_vol, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_add_event_cb(slider_vol, event_slider_vol, LV_EVENT_ALL, nullptr);
+    lv_obj_add_event_cb(slider_vol, event_slider_vol, LV_EVENT_PRESSED, nullptr);
+    lv_obj_add_event_cb(slider_vol, event_slider_vol, LV_EVENT_VALUE_CHANGED, nullptr);
+    lv_obj_add_event_cb(slider_vol, event_slider_vol, LV_EVENT_RELEASED, nullptr);
+    lv_obj_add_event_cb(slider_vol, event_slider_vol, LV_EVENT_PRESS_LOST, nullptr);
 
     // Live Percentage Label (Directly below volume slider, centered to it)
     lbl_vol_percent = lv_label_create(obj_vol_var_cont);
@@ -1429,11 +1420,7 @@ void ui_set_devices(const DeviceList& list) {
     // 3. Update Scan Status in Modal
     if (lbl_scan_status) {
         char status[32];
-        if (list.count == 1) {
-            snprintf(status, sizeof(status), "1 streamer found");
-        } else {
-            snprintf(status, sizeof(status), "%d streamers found", list.count);
-        }
+        format_scan_status(status, sizeof(status), list.count);
         lv_label_set_text(lbl_scan_status, status);
         lv_obj_set_style_text_color(lbl_scan_status, COLOR_TEXT_MUTED, 0);
     }
@@ -1644,11 +1631,7 @@ void ui_set_scanning(bool is_scanning) {
             lv_obj_set_style_text_color(lbl_scan_status, COLOR_ACCENT, 0);
         } else {
             char status[32];
-            if (current_device_list.count == 1) {
-                snprintf(status, sizeof(status), "1 streamer found");
-            } else {
-                snprintf(status, sizeof(status), "%d streamers found", current_device_list.count);
-            }
+            format_scan_status(status, sizeof(status), current_device_list.count);
             lv_label_set_text(lbl_scan_status, status);
             lv_obj_set_style_text_color(lbl_scan_status, COLOR_TEXT_MUTED, 0);
         }

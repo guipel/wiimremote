@@ -116,9 +116,6 @@ NetworkManager::NetworkManager()
       _lastVolumeSent(0),
       _pendingVolume(0),
       _volumePending(false),
-      _isScanning(false),
-      _scanCurrentHost(1),
-      _lastScanStepTime(0),
       _hasActiveDevice(false),
       _initialPresetsFetched(false),
       _lastKnownTrackTitle(""),
@@ -135,7 +132,9 @@ NetworkManager::NetworkManager()
       _wifiConnecting(false),
       _wifiConnectStart(0),
       _pendingConnectSsid(""),
-      _pendingConnectPass("")
+      _pendingConnectPass(""),
+      _cachedSavedSsid(""),
+      _cachedSavedPass("")
 {
     _deviceMux = portMUX_INITIALIZER_UNLOCKED;
     memset(&_activeDevice, 0, sizeof(_activeDevice));
@@ -153,43 +152,45 @@ void NetworkManager::resetPersistentHttp() {
 int NetworkManager::executeApiGet(const String& cmd, String& outPayload) {
     if (!_hasActiveDevice || !_wifiConnected) return -1;
 
-    String targetIp = _activeDevice.ip;
-    String path = "/httpapi.asp?command=" + cmd;
-    String fullUrl = "https://" + targetIp + path;
+    const char* targetIp = _activeDevice.ip;
+    char path[128];
+    snprintf(path, sizeof(path), "/httpapi.asp?command=%s", cmd.c_str());
+    char fullUrl[160];
+    snprintf(fullUrl, sizeof(fullUrl), "https://%s%s", targetIp, path);
 
     // Reset session if target IP changed or client not configured yet
-    if (_persistentIp != targetIp || !_persistentHttpConfigured) {
+    if (strcmp(_persistentIp.c_str(), targetIp) != 0 || !_persistentHttpConfigured) {
         resetPersistentHttp();
         _persistentClient.setInsecure();
         _persistentHttp.setReuse(true);
         _persistentHttp.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
-        _persistentIp = targetIp;
+        _persistentIp = String(targetIp);
         _persistentHttpConfigured = true;
     }
 
     if (!_persistentHttp.connected()) {
-        if (!_persistentHttp.begin(_persistentClient, fullUrl)) {
-            log_e("HTTPS begin failed for: %s", fullUrl.c_str());
+        if (!_persistentHttp.begin(_persistentClient, String(fullUrl))) {
+            log_e("HTTPS begin failed for: %s", fullUrl);
             _persistentClient.stop();
             return -1;
         }
     } else {
-        _persistentHttp.setURL(path);
+        _persistentHttp.setURL(String(path));
     }
 
     int code = _persistentHttp.GET();
 
     // If socket dropped by server (e.g. keep-alive timeout), reconnect once
     if (code <= 0) {
-        log_w("Keep-alive socket dropped (%d), reconnecting to %s...", code, targetIp.c_str());
+        log_w("Keep-alive socket dropped (%d), reconnecting to %s...", code, targetIp);
         resetPersistentHttp();
         _persistentClient.setInsecure();
         _persistentHttp.setReuse(true);
         _persistentHttp.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
-        _persistentIp = targetIp;
+        _persistentIp = String(targetIp);
         _persistentHttpConfigured = true;
 
-        if (_persistentHttp.begin(_persistentClient, fullUrl)) {
+        if (_persistentHttp.begin(_persistentClient, String(fullUrl))) {
             code = _persistentHttp.GET();
         }
     }
@@ -209,22 +210,23 @@ void NetworkManager::init() {
     // Initialize Preferences
     prefs.begin("wiimremote", false);
     loadSavedDevice();
+    loadSavedDeviceList();
 
     // Start Wi-Fi in station mode
     WiFi.mode(WIFI_STA);
 
     bool setupDone = prefs.getBool("user_setup_done", false);
-    String savedSsid = setupDone ? prefs.getString("wifi_ssid", "") : "";
-    String savedPass = setupDone ? prefs.getString("wifi_pass", "") : "";
+    _cachedSavedSsid = setupDone ? prefs.getString("wifi_ssid", "") : "";
+    _cachedSavedPass = setupDone ? prefs.getString("wifi_pass", "") : "";
 
-    if (savedSsid.length() > 0) {
-        log_i("Connecting to saved Wi-Fi SSID: %s", savedSsid.c_str());
+    if (_cachedSavedSsid.length() > 0) {
+        log_i("Connecting to saved Wi-Fi SSID: %s", _cachedSavedSsid.c_str());
         WiFi.setSleep(WIFI_PS_MIN_MODEM);
         _wifiConnecting = true;
         _wifiConnectStart = millis();
-        _pendingConnectSsid = savedSsid;
-        _pendingConnectPass = savedPass;
-        WiFi.begin(savedSsid.c_str(), savedPass.c_str());
+        _pendingConnectSsid = _cachedSavedSsid;
+        _pendingConnectPass = _cachedSavedPass;
+        WiFi.begin(_cachedSavedSsid.c_str(), _cachedSavedPass.c_str());
     } else {
         log_w("No user-configured Wi-Fi credentials. Setup required!");
         prefs.remove("wifi_ssid");
@@ -263,6 +265,60 @@ void NetworkManager::saveActiveDevice(const WiiMDevice& dev) {
     prefs.putString("active_name", dev.name);
     prefs.putBool("fixed_vol", dev.is_fixed_volume);
     log_i("Saved active device to NVS: %s (%s, Fixed=%d)", dev.name, dev.ip, dev.is_fixed_volume ? 1 : 0);
+}
+
+void NetworkManager::loadSavedDeviceList() {
+    uint8_t count = prefs.getUChar("dev_count", 0);
+    if (count > MAX_DISCOVERED_DEVICES) count = MAX_DISCOVERED_DEVICES;
+
+    for (uint8_t i = 0; i < count; ++i) {
+        char keyIp[12], keyUuid[14], keyName[14];
+        snprintf(keyIp, sizeof(keyIp), "dev_ip_%u", i);
+        snprintf(keyUuid, sizeof(keyUuid), "dev_uuid_%u", i);
+        snprintf(keyName, sizeof(keyName), "dev_name_%u", i);
+
+        String ip = prefs.getString(keyIp, "");
+        String uuid = prefs.getString(keyUuid, "");
+        String name = prefs.getString(keyName, "");
+
+        if (ip.length() > 0) {
+            WiiMDevice dev;
+            memset(&dev, 0, sizeof(dev));
+            strncpy(dev.ip, ip.c_str(), sizeof(dev.ip) - 1);
+            strncpy(dev.uuid, uuid.c_str(), sizeof(dev.uuid) - 1);
+            strncpy(dev.name, name.c_str(), sizeof(dev.name) - 1);
+            dev.is_active = false;
+            _deviceList.devices[_deviceList.count++] = dev;
+        }
+    }
+    log_i("Loaded %u saved devices from NVS", _deviceList.count);
+}
+
+void NetworkManager::saveSavedDeviceList() {
+    portENTER_CRITICAL(&_deviceMux);
+    DeviceList snapshot = _deviceList;
+    portEXIT_CRITICAL(&_deviceMux);
+
+    prefs.putUChar("dev_count", snapshot.count);
+    for (uint8_t i = 0; i < snapshot.count; ++i) {
+        char keyIp[12], keyUuid[14], keyName[14];
+        snprintf(keyIp, sizeof(keyIp), "dev_ip_%u", i);
+        snprintf(keyUuid, sizeof(keyUuid), "dev_uuid_%u", i);
+        snprintf(keyName, sizeof(keyName), "dev_name_%u", i);
+        prefs.putString(keyIp, snapshot.devices[i].ip);
+        prefs.putString(keyUuid, snapshot.devices[i].uuid);
+        prefs.putString(keyName, snapshot.devices[i].name);
+    }
+    // Clean up stale keys beyond current count
+    for (uint8_t i = snapshot.count; i < MAX_DISCOVERED_DEVICES; ++i) {
+        char keyIp[12], keyUuid[14], keyName[14];
+        snprintf(keyIp, sizeof(keyIp), "dev_ip_%u", i);
+        snprintf(keyUuid, sizeof(keyUuid), "dev_uuid_%u", i);
+        snprintf(keyName, sizeof(keyName), "dev_name_%u", i);
+        prefs.remove(keyIp);
+        prefs.remove(keyUuid);
+        prefs.remove(keyName);
+    }
 }
 
 void NetworkManager::startWiFiScan() {
@@ -329,6 +385,7 @@ void NetworkManager::startWiFiScan() {
         xQueueSend(xQueueUiState, &evt, 0);
     }
     WiFi.scanDelete();
+    WiFi.setSleep(WIFI_PS_MIN_MODEM);
 }
 
 void NetworkManager::connectWiFi(const char* ssid, const char* pass) {
@@ -383,13 +440,18 @@ void NetworkManager::handleWiFi() {
             _wifiConnected = true;
             bool wasUserConnecting = (_pendingConnectSsid.length() > 0);
             _wifiConnecting = false;
-            log_i("Wi-Fi Connected! IP: %s, RSSI: %d dBm", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+            String localIpStr = WiFi.localIP().toString();
+            int8_t rssi = WiFi.RSSI();
+            String ssidStr = WiFi.SSID();
+            log_i("Wi-Fi Connected! IP: %s, RSSI: %d dBm", localIpStr.c_str(), rssi);
 
             // Save to NVS if newly connected via pending credentials
             if (wasUserConnecting) {
                 prefs.putString("wifi_ssid", _pendingConnectSsid);
                 prefs.putString("wifi_pass", _pendingConnectPass);
                 prefs.putBool("user_setup_done", true);
+                _cachedSavedSsid = _pendingConnectSsid;
+                _cachedSavedPass = _pendingConnectPass;
                 log_i("Saved Wi-Fi credentials to NVS: %s", _pendingConnectSsid.c_str());
                 _pendingConnectSsid = "";
                 _pendingConnectPass = "";
@@ -397,7 +459,8 @@ void NetworkManager::handleWiFi() {
                 // Notify UI of connection success to close the modal
                 UiEvent evtSuccess;
                 evtSuccess.type = UI_EVT_WIFI_CONNECT_SUCCESS;
-                strncpy(evtSuccess.data.wifi.ip, WiFi.localIP().toString().c_str(), sizeof(evtSuccess.data.wifi.ip) - 1);
+                strncpy(evtSuccess.data.wifi.ip, localIpStr.c_str(), sizeof(evtSuccess.data.wifi.ip) - 1);
+                evtSuccess.data.wifi.ip[sizeof(evtSuccess.data.wifi.ip) - 1] = '\0';
                 xQueueSend(xQueueUiState, &evtSuccess, 0);
             }
 
@@ -408,9 +471,10 @@ void NetworkManager::handleWiFi() {
             UiEvent evt;
             evt.type = UI_EVT_WIFI_STATUS;
             evt.data.wifi.connected = true;
-            evt.data.wifi.rssi = WiFi.RSSI();
-            strncpy(evt.data.wifi.ip, WiFi.localIP().toString().c_str(), sizeof(evt.data.wifi.ip) - 1);
-            strncpy(evt.data.wifi.ssid, WiFi.SSID().c_str(), sizeof(evt.data.wifi.ssid) - 1);
+            evt.data.wifi.rssi = rssi;
+            strncpy(evt.data.wifi.ip, localIpStr.c_str(), sizeof(evt.data.wifi.ip) - 1);
+            evt.data.wifi.ip[sizeof(evt.data.wifi.ip) - 1] = '\0';
+            strncpy(evt.data.wifi.ssid, ssidStr.c_str(), sizeof(evt.data.wifi.ssid) - 1);
             evt.data.wifi.ssid[sizeof(evt.data.wifi.ssid) - 1] = '\0';
             xQueueSend(xQueueUiState, &evt, 0);
 
@@ -419,12 +483,16 @@ void NetworkManager::handleWiFi() {
         } else if (now - _lastWiFiCheck >= 5000) {
             // Periodic RSSI refresh
             _lastWiFiCheck = now;
+            String localIpStr = WiFi.localIP().toString();
+            int8_t rssi = WiFi.RSSI();
+            String ssidStr = WiFi.SSID();
             UiEvent evt;
             evt.type = UI_EVT_WIFI_STATUS;
             evt.data.wifi.connected = true;
-            evt.data.wifi.rssi = WiFi.RSSI();
-            strncpy(evt.data.wifi.ip, WiFi.localIP().toString().c_str(), sizeof(evt.data.wifi.ip) - 1);
-            strncpy(evt.data.wifi.ssid, WiFi.SSID().c_str(), sizeof(evt.data.wifi.ssid) - 1);
+            evt.data.wifi.rssi = rssi;
+            strncpy(evt.data.wifi.ip, localIpStr.c_str(), sizeof(evt.data.wifi.ip) - 1);
+            evt.data.wifi.ip[sizeof(evt.data.wifi.ip) - 1] = '\0';
+            strncpy(evt.data.wifi.ssid, ssidStr.c_str(), sizeof(evt.data.wifi.ssid) - 1);
             evt.data.wifi.ssid[sizeof(evt.data.wifi.ssid) - 1] = '\0';
             xQueueSend(xQueueUiState, &evt, 0);
         }
@@ -454,9 +522,7 @@ void NetworkManager::handleWiFi() {
                 startWiFiScan();
             }
         } else {
-            bool setupDone = prefs.getBool("user_setup_done", false);
-            String savedSsid = setupDone ? prefs.getString("wifi_ssid", "") : "";
-            if (savedSsid.length() > 0 && now - _lastWiFiCheck >= WIFI_RECONNECT_INTERVAL_MS) {
+            if (_cachedSavedSsid.length() > 0 && now - _lastWiFiCheck >= WIFI_RECONNECT_INTERVAL_MS) {
                 _lastWiFiCheck = now;
                 log_i("Reconnecting to Wi-Fi...");
                 WiFi.reconnect();
@@ -465,33 +531,26 @@ void NetworkManager::handleWiFi() {
     }
 }
 
-static const char* known_candidate_ips[] = {
-    "192.168.50.27",  // WiiM Office
-    "192.168.50.80",  // WiiM Garage
-    "192.168.50.183", // WiiM L1090
-    "192.168.50.20"   // WiiM L1230
-};
-
 void NetworkManager::triggerRescan() {
     if (!_wifiConnected) return;
-    log_i("Triggering device rescan (Priority IPs + SSDP + Subnet)...");
+    log_i("Triggering device rescan (NVS IPs + SSDP)...");
 
     UiEvent evt;
     evt.type = UI_EVT_SCAN_STATUS;
     evt.data.scan.is_scanning = true;
     xQueueSend(xQueueUiState, &evt, 0);
 
-    // 1. Immediately probe known candidate IPs first (fast discovery in <100ms)
-    for (size_t i = 0; i < sizeof(known_candidate_ips) / sizeof(known_candidate_ips[0]); ++i) {
+    // 1. Probe previously-discovered IPs from NVS (fast path)
+    portENTER_CRITICAL(&_deviceMux);
+    DeviceList savedSnapshot = _deviceList;
+    portEXIT_CRITICAL(&_deviceMux);
+    for (uint8_t i = 0; i < savedSnapshot.count; ++i) {
         WiiMDevice dev;
-        if (queryDeviceStatus(known_candidate_ips[i], &dev)) {
+        if (queryDeviceStatus(savedSnapshot.devices[i].ip, &dev)) {
             addOrUpdateDevice(dev);
         }
         vTaskDelay(pdMS_TO_TICKS(20)); // Yield to prevent WDT timeout
     }
-
-    _isScanning = true;
-    _scanCurrentHost = 1;
 
     // 2. Broadcast SSDP discovery
     sendSSDPQuery();
@@ -521,14 +580,6 @@ void NetworkManager::sendSSDPQuery() {
         "MX: 2\r\n"
         "ST: urn:schemas-wiimu-com:device:WiFiAudio:1\r\n\r\n";
 
-    // SSDP M-SEARCH for all devices
-    const char* ssdp_msearch_all =
-        "M-SEARCH * HTTP/1.1\r\n"
-        "HOST: 239.255.255.250:1900\r\n"
-        "MAN: \"ssdp:discover\"\r\n"
-        "MX: 2\r\n"
-        "ST: ssdp:all\r\n\r\n";
-
     IPAddress mcastIP(239, 255, 255, 250);
     udpSSDP.beginPacket(mcastIP, SSDP_PORT);
     udpSSDP.write((const uint8_t*)ssdp_msearch_renderer, strlen(ssdp_msearch_renderer));
@@ -536,10 +587,6 @@ void NetworkManager::sendSSDPQuery() {
 
     udpSSDP.beginPacket(mcastIP, SSDP_PORT);
     udpSSDP.write((const uint8_t*)ssdp_msearch_wiimu, strlen(ssdp_msearch_wiimu));
-    udpSSDP.endPacket();
-
-    udpSSDP.beginPacket(mcastIP, SSDP_PORT);
-    udpSSDP.write((const uint8_t*)ssdp_msearch_all, strlen(ssdp_msearch_all));
     udpSSDP.endPacket();
 
     _lastSSDPBroadcast = millis();
@@ -599,11 +646,6 @@ void NetworkManager::processSSDPPackets() {
     }
 }
 
-void NetworkManager::runSubnetScanStep() {
-    // Subnet scan disabled to preserve lwIP socket descriptors (fd 0..3) for HTTPS polling and control.
-    // Discovery is handled reliably by candidate IP probing and SSDP M-SEARCH broadcasts.
-    _isScanning = false;
-}
 
 bool NetworkManager::queryDeviceStatus(const char* ip, WiiMDevice* outDevice) {
     if (!ip || strlen(ip) == 0) return false;
@@ -738,6 +780,7 @@ void NetworkManager::addOrUpdateDevice(const WiiMDevice& dev) {
 
     // Broadcast updated device list to UI only if list actually changed
     if (changed) {
+        saveSavedDeviceList();
         DeviceList* pList = (DeviceList*)malloc(sizeof(DeviceList));
         if (pList) {
             *pList = listCopy;
@@ -1310,15 +1353,18 @@ void NetworkManager::processIncomingCommands() {
 
             case CMD_SET_MUTE:
                 log_i("Dispatching Mute: %d", cmd.data.mute ? 1 : 0);
-                sendHttpCommand(String("setPlayerCmd:mute:") + (cmd.data.mute ? "1" : "0"));
+                sendHttpCommand(cmd.data.mute ? "setPlayerCmd:mute:1" : "setPlayerCmd:mute:0");
                 _lastStatusPoll = millis() - (STATUS_POLL_INTERVAL_MS - 150);
                 break;
 
-            case CMD_TRIGGER_PRESET:
+            case CMD_TRIGGER_PRESET: {
                 log_i("Dispatching Preset: %d", cmd.data.preset_index);
-                sendHttpCommand(String("MCUKeyShortClick:") + String(cmd.data.preset_index));
+                char presetCmd[32];
+                snprintf(presetCmd, sizeof(presetCmd), "MCUKeyShortClick:%u", cmd.data.preset_index);
+                sendHttpCommand(String(presetCmd));
                 _lastStatusPoll = millis() - (STATUS_POLL_INTERVAL_MS - 250);
                 break;
+            }
 
             case CMD_SELECT_DEVICE:
                 selectDevice(cmd.data.device_ip);
@@ -1367,7 +1413,9 @@ void NetworkManager::processIncomingCommands() {
             if (now - _lastVolumeSent >= VOLUME_THROTTLE_MS) {
                 _lastVolumeSent = now;
                 _volumePending = false;
-                sendHttpCommand(String("setPlayerCmd:vol:") + String(_pendingVolume));
+                char volCmd[32];
+                snprintf(volCmd, sizeof(volCmd), "setPlayerCmd:vol:%u", _pendingVolume);
+                sendHttpCommand(String(volCmd));
             }
         }
     }
@@ -1382,7 +1430,6 @@ void NetworkManager::runTaskLoop() {
     if (_wifiConnected) {
         // 2. Background network discovery
         processSSDPPackets();
-        runSubnetScanStep();
 
         // 3. Auto-fetch presets, metadata, and device config once connected
         if (_hasActiveDevice && !_initialPresetsFetched) {
@@ -1400,8 +1447,8 @@ void NetworkManager::runTaskLoop() {
             pollActiveDevice();
         }
 
-        // 5. Poll device configuration (volume_control / fixed mode) every 3000ms
-        if (now - _lastConfigPoll >= 3000) {
+        // 5. Poll device configuration (volume_control / fixed mode) every 30000ms
+        if (now - _lastConfigPoll >= 30000) {
             _lastConfigPoll = now;
             fetchDeviceConfig();
         }
@@ -1410,8 +1457,17 @@ void NetworkManager::runTaskLoop() {
         if (_deviceList.count == 0 && (now - _lastSSDPBroadcast >= SSDP_DISCOVERY_INTERVAL_MS)) {
             sendSSDPQuery();
         }
+
+        vTaskDelay(pdMS_TO_TICKS(1)); // Yield to Wi-Fi/lwIP stack on Core 0
     } else {
         vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    // Temporary: Log stack usage every 60s for tuning NET_TASK_STACK_SIZE
+    static unsigned long lastStackLog = 0;
+    if (millis() - lastStackLog > 60000) {
+        lastStackLog = millis();
+        log_i("NetTask stack HWM: %u words free", uxTaskGetStackHighWaterMark(NULL));
     }
 }
 
