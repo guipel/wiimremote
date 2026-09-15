@@ -17,9 +17,14 @@ static lv_obj_t* header_cont = nullptr;
 static lv_obj_t* lbl_wifi = nullptr;
 static lv_obj_t* btn_device_select = nullptr;
 static lv_obj_t* lbl_active_device = nullptr;
-static lv_obj_t* cont_battery = nullptr;
+static lv_obj_t* btn_battery = nullptr;
 static lv_obj_t* lbl_bat_icon = nullptr;
-static lv_obj_t* lbl_bat_volt = nullptr;
+
+// UI Widgets - Power Management Modal
+static lv_obj_t* modal_power_manager = nullptr;
+static lv_obj_t* lbl_power_voltage = nullptr;
+static lv_obj_t* lbl_power_state = nullptr;
+static lv_obj_t* dd_power_dim = nullptr;
 
 // UI Widgets - Tabview
 static lv_obj_t* tabview = nullptr;
@@ -404,32 +409,53 @@ static void event_btn_open_wifi_modal(lv_event_t* e) {
 static float s_battery_filtered_mv = 0.0f;
 
 static void update_battery_meter(uint32_t bat_mv) {
-    if (!lbl_bat_icon || !lbl_bat_volt) return;
+    const char* symbol = LV_SYMBOL_BATTERY_FULL;
+    lv_color_t color = COLOR_TEXT_PRIMARY;
+    const char* state_str = "On Battery (Discharging)";
 
-    // 1. Format voltage string (e.g. "4.12V")
-    char volt_str[12];
-    snprintf(volt_str, sizeof(volt_str), "%.2fV", bat_mv / 1000.0f);
-    lv_label_set_text(lbl_bat_volt, volt_str);
-
-    // 2. Select icon and color based on voltage thresholds
     if (bat_mv >= BAT_VOLT_CHARGE_MV) {
-        lv_label_set_text(lbl_bat_icon, LV_SYMBOL_CHARGE);
-        lv_obj_set_style_text_color(lbl_bat_icon, COLOR_ACCENT, 0);
+        symbol = LV_SYMBOL_CHARGE;
+        color = COLOR_ACCENT;
+        state_str = "Connected to USB (Float)";
     } else if (bat_mv >= BAT_VOLT_FULL_MV) {
-        lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_FULL);
-        lv_obj_set_style_text_color(lbl_bat_icon, COLOR_TEXT_PRIMARY, 0);
+        symbol = LV_SYMBOL_BATTERY_FULL;
+        color = COLOR_TEXT_PRIMARY;
+        state_str = "On Battery (~75% - 100%)";
     } else if (bat_mv >= BAT_VOLT_HIGH_MV) {
-        lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_3);
-        lv_obj_set_style_text_color(lbl_bat_icon, COLOR_TEXT_PRIMARY, 0);
+        symbol = LV_SYMBOL_BATTERY_3;
+        color = COLOR_TEXT_PRIMARY;
+        state_str = "On Battery (~50% - 75%)";
     } else if (bat_mv >= BAT_VOLT_MED_MV) {
-        lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_2);
-        lv_obj_set_style_text_color(lbl_bat_icon, COLOR_TEXT_PRIMARY, 0);
+        symbol = LV_SYMBOL_BATTERY_2;
+        color = COLOR_TEXT_PRIMARY;
+        state_str = "On Battery (~25% - 50%)";
     } else if (bat_mv >= BAT_VOLT_LOW_MV) {
-        lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_1);
-        lv_obj_set_style_text_color(lbl_bat_icon, COLOR_WARNING, 0);
+        symbol = LV_SYMBOL_BATTERY_1;
+        color = COLOR_WARNING;
+        state_str = "Battery Low (~10% - 25%)";
     } else {
-        lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_EMPTY);
-        lv_obj_set_style_text_color(lbl_bat_icon, lv_color_hex(0xEF4444), 0);
+        symbol = LV_SYMBOL_BATTERY_EMPTY;
+        color = lv_color_hex(0xEF4444);
+        state_str = "Battery Critical (< 10%)";
+    }
+
+    // 1. Update top header battery button: "[Icon] ▾"
+    if (lbl_bat_icon) {
+        char icon_text[20];
+        snprintf(icon_text, sizeof(icon_text), "%s " LV_SYMBOL_DOWN, symbol);
+        lv_label_set_text(lbl_bat_icon, icon_text);
+        lv_obj_set_style_text_color(lbl_bat_icon, color, 0);
+    }
+
+    // 2. Update Power Management modal if created
+    if (lbl_power_voltage) {
+        char volt_str[24];
+        snprintf(volt_str, sizeof(volt_str), "%.2f V", bat_mv / 1000.0f);
+        lv_label_set_text(lbl_power_voltage, volt_str);
+    }
+    if (lbl_power_state) {
+        lv_label_set_text(lbl_power_state, state_str);
+        lv_obj_set_style_text_color(lbl_power_state, color, 0);
     }
 }
 
@@ -450,6 +476,44 @@ static void timer_battery_cb(lv_timer_t* timer) {
     }
 
     update_battery_meter((uint32_t)s_battery_filtered_mv);
+}
+
+// Timeout LUT for Dropdown: 15s, 30s, 60s, 120s, 300s, 0 (Never)
+static const uint16_t dim_seconds_lut[] = { 15, 30, 60, 120, 300, 0 };
+
+static void event_btn_open_power_modal(lv_event_t* e) {
+    if (s_battery_filtered_mv > 100.0f) {
+        update_battery_meter((uint32_t)s_battery_filtered_mv);
+    }
+    if (dd_power_dim) {
+        uint16_t cur_sec = display_get_dim_timeout_sec();
+        uint16_t sel_idx = 1; // Default 30s
+        for (uint16_t i = 0; i < sizeof(dim_seconds_lut) / sizeof(dim_seconds_lut[0]); ++i) {
+            if (dim_seconds_lut[i] == cur_sec) {
+                sel_idx = i;
+                break;
+            }
+        }
+        lv_dropdown_set_selected(dd_power_dim, sel_idx);
+    }
+    if (modal_power_manager) {
+        lv_obj_move_to_index(modal_power_manager, -1);
+        lv_obj_clear_flag(modal_power_manager, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void event_btn_close_power_modal(lv_event_t* e) {
+    if (modal_power_manager) {
+        lv_obj_add_flag(modal_power_manager, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void event_dd_power_dim(lv_event_t* e) {
+    if (!dd_power_dim) return;
+    uint16_t idx = lv_dropdown_get_selected(dd_power_dim);
+    if (idx < sizeof(dim_seconds_lut) / sizeof(dim_seconds_lut[0])) {
+        display_set_dim_timeout_sec(dim_seconds_lut[idx]);
+    }
 }
 
 // Build Header Bar
@@ -481,33 +545,26 @@ static void build_header(lv_obj_t* parent) {
     lv_obj_set_style_text_font(lbl_wifi, &lv_font_montserrat_12, 0);
     lv_obj_align(lbl_wifi, LV_ALIGN_LEFT_MID, 2, 0);
 
-    // 2. Battery Meter Container (Right, ~46px, tight flex row with 2px gap)
-    cont_battery = lv_obj_create(header_cont);
-    lv_obj_set_size(cont_battery, 46, 22);
-    lv_obj_align(cont_battery, LV_ALIGN_RIGHT_MID, -2, 0);
-    lv_obj_set_style_bg_opa(cont_battery, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_shadow_width(cont_battery, 0, 0);
-    lv_obj_set_style_border_width(cont_battery, 0, 0);
-    lv_obj_set_style_pad_all(cont_battery, 0, 0);
-    lv_obj_set_flex_flow(cont_battery, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(cont_battery, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_column(cont_battery, 2, 0);
-    lv_obj_clear_flag(cont_battery, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    // 2. Battery Button & Action Chevron (Right, ~38px)
+    btn_battery = lv_btn_create(header_cont);
+    lv_obj_set_size(btn_battery, 38, 22);
+    lv_obj_align(btn_battery, LV_ALIGN_RIGHT_MID, -2, 0);
+    lv_obj_set_style_bg_opa(btn_battery, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_shadow_width(btn_battery, 0, 0);
+    lv_obj_set_style_border_width(btn_battery, 0, 0);
+    lv_obj_set_style_pad_all(btn_battery, 0, 0);
+    lv_obj_add_event_cb(btn_battery, event_btn_open_power_modal, LV_EVENT_CLICKED, nullptr);
 
-    lbl_bat_icon = lv_label_create(cont_battery);
-    lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_FULL);
+    lbl_bat_icon = lv_label_create(btn_battery);
+    lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_FULL " " LV_SYMBOL_DOWN);
     lv_obj_set_style_text_font(lbl_bat_icon, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lbl_bat_icon, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_align(lbl_bat_icon, LV_ALIGN_RIGHT_MID, 0, 0);
 
-    lbl_bat_volt = lv_label_create(cont_battery);
-    lv_label_set_text(lbl_bat_volt, "--V");
-    lv_obj_set_style_text_font(lbl_bat_volt, &lv_font_montserrat_10, 0);
-    lv_obj_set_style_text_color(lbl_bat_volt, COLOR_TEXT_MUTED, 0);
-
-    // 3. Active Device Button (Center, ~146px)
+    // 3. Active Device Button (Center, ~156px)
     btn_device_select = lv_btn_create(header_cont);
-    lv_obj_set_size(btn_device_select, 146, 22);
-    lv_obj_align(btn_device_select, LV_ALIGN_LEFT_MID, 41, 0);
+    lv_obj_set_size(btn_device_select, 156, 22);
+    lv_obj_align(btn_device_select, LV_ALIGN_LEFT_MID, 42, 0);
     lv_obj_set_style_bg_opa(btn_device_select, LV_OPA_TRANSP, 0);
     lv_obj_set_style_shadow_width(btn_device_select, 0, 0);
     lv_obj_set_style_border_width(btn_device_select, 0, 0);
@@ -517,7 +574,7 @@ static void build_header(lv_obj_t* parent) {
     lbl_active_device = lv_label_create(btn_device_select);
     lv_label_set_text(lbl_active_device, "Searching... " LV_SYMBOL_DOWN);
     lv_label_set_long_mode(lbl_active_device, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(lbl_active_device, 142);
+    lv_obj_set_width(lbl_active_device, 150);
     lv_obj_set_style_text_color(lbl_active_device, COLOR_ACCENT, 0);
     lv_obj_set_style_text_font(lbl_active_device, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_align(lbl_active_device, LV_TEXT_ALIGN_CENTER, 0);
@@ -1007,6 +1064,124 @@ static void build_device_modal() {
     lv_obj_center(lbl_close_btn);
 }
 
+// Build Power Management Modal Overlay
+static void build_power_modal() {
+    modal_power_manager = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(modal_power_manager, 240, 320);
+    lv_obj_align(modal_power_manager, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_set_style_bg_color(modal_power_manager, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_bg_opa(modal_power_manager, LV_OPA_80, 0);
+    lv_obj_set_style_radius(modal_power_manager, 0, 0);
+    lv_obj_set_style_border_side(modal_power_manager, LV_BORDER_SIDE_NONE, 0);
+    lv_obj_set_style_pad_all(modal_power_manager, 10, 0);
+    lv_obj_add_flag(modal_power_manager, LV_OBJ_FLAG_HIDDEN); // Hidden by default
+
+    // Modal Card
+    lv_obj_t* card = lv_obj_create(modal_power_manager);
+    lv_obj_set_size(card, 220, 280);
+    lv_obj_center(card);
+    lv_obj_set_style_bg_color(card, COLOR_SURFACE, 0);
+    lv_obj_set_style_radius(card, 12, 0);
+    lv_obj_set_style_border_color(card, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_pad_all(card, 8, 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+    // Header: Title & Subtitle
+    lv_obj_t* lbl_title = lv_label_create(card);
+    lv_label_set_text(lbl_title, "Power Management");
+    lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl_title, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, 4);
+
+    lv_obj_t* lbl_sub = lv_label_create(card);
+    lv_label_set_text(lbl_sub, "Battery & Display Settings");
+    lv_obj_set_style_text_font(lbl_sub, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(lbl_sub, COLOR_TEXT_MUTED, 0);
+    lv_obj_align(lbl_sub, LV_ALIGN_TOP_MID, 0, 22);
+
+    // Section 1: Battery Telemetry Box
+    lv_obj_t* box_bat = lv_obj_create(card);
+    lv_obj_set_size(box_bat, 204, 76);
+    lv_obj_align(box_bat, LV_ALIGN_TOP_MID, 0, 42);
+    lv_obj_set_style_bg_color(box_bat, COLOR_BG, 0);
+    lv_obj_set_style_border_color(box_bat, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_border_width(box_bat, 1, 0);
+    lv_obj_set_style_radius(box_bat, 8, 0);
+    lv_obj_set_style_pad_all(box_bat, 6, 0);
+    lv_obj_clear_flag(box_bat, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t* lbl_sec1 = lv_label_create(box_bat);
+    lv_label_set_text(lbl_sec1, "BATTERY STATUS");
+    lv_obj_set_style_text_font(lbl_sec1, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(lbl_sec1, COLOR_TEXT_MUTED, 0);
+    lv_obj_align(lbl_sec1, LV_ALIGN_TOP_LEFT, 4, 2);
+
+    lbl_power_voltage = lv_label_create(box_bat);
+    lv_label_set_text(lbl_power_voltage, "-- V");
+    lv_obj_set_style_text_font(lbl_power_voltage, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(lbl_power_voltage, COLOR_ACCENT, 0);
+    lv_obj_align(lbl_power_voltage, LV_ALIGN_TOP_LEFT, 4, 18);
+
+    lbl_power_state = lv_label_create(box_bat);
+    lv_label_set_text(lbl_power_state, "Checking telemetry...");
+    lv_obj_set_style_text_font(lbl_power_state, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(lbl_power_state, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_align(lbl_power_state, LV_ALIGN_TOP_LEFT, 4, 48);
+
+    // Section 2: Screen Auto-Dim Box
+    lv_obj_t* box_dim = lv_obj_create(card);
+    lv_obj_set_size(box_dim, 204, 76);
+    lv_obj_align(box_dim, LV_ALIGN_TOP_MID, 0, 126);
+    lv_obj_set_style_bg_color(box_dim, COLOR_BG, 0);
+    lv_obj_set_style_border_color(box_dim, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_border_width(box_dim, 1, 0);
+    lv_obj_set_style_radius(box_dim, 8, 0);
+    lv_obj_set_style_pad_all(box_dim, 6, 0);
+    lv_obj_clear_flag(box_dim, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t* lbl_sec2 = lv_label_create(box_dim);
+    lv_label_set_text(lbl_sec2, "SCREEN AUTO-DIM");
+    lv_obj_set_style_text_font(lbl_sec2, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(lbl_sec2, COLOR_TEXT_MUTED, 0);
+    lv_obj_align(lbl_sec2, LV_ALIGN_TOP_LEFT, 4, 2);
+
+    dd_power_dim = lv_dropdown_create(box_dim);
+    lv_obj_set_size(dd_power_dim, 192, 36);
+    lv_obj_align(dd_power_dim, LV_ALIGN_BOTTOM_MID, 0, -2);
+    lv_dropdown_set_options(dd_power_dim, "15 seconds\n30 seconds\n1 minute\n2 minutes\n5 minutes\nNever");
+    lv_obj_set_style_text_font(dd_power_dim, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_bg_color(dd_power_dim, COLOR_SURFACE, 0);
+    lv_obj_set_style_border_color(dd_power_dim, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_text_color(dd_power_dim, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_radius(dd_power_dim, 6, 0);
+
+    lv_obj_t* list = lv_dropdown_get_list(dd_power_dim);
+    if (list) {
+        lv_obj_set_style_text_font(list, &lv_font_montserrat_12, 0);
+        lv_obj_set_style_bg_color(list, COLOR_SURFACE, 0);
+        lv_obj_set_style_border_color(list, COLOR_SURFACE_LIGHT, 0);
+        lv_obj_set_style_border_width(list, 1, 0);
+        lv_obj_set_style_text_color(list, COLOR_TEXT_PRIMARY, 0);
+        lv_obj_set_style_radius(list, 8, 0);
+    }
+    lv_obj_add_event_cb(dd_power_dim, event_dd_power_dim, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    // Close Button
+    lv_obj_t* btn_close = lv_btn_create(card);
+    lv_obj_set_size(btn_close, 120, 32);
+    lv_obj_align(btn_close, LV_ALIGN_BOTTOM_MID, 0, -4);
+    lv_obj_set_style_bg_color(btn_close, COLOR_ACCENT, 0);
+    lv_obj_set_style_radius(btn_close, 8, 0);
+    lv_obj_add_event_cb(btn_close, event_btn_close_power_modal, LV_EVENT_CLICKED, nullptr);
+    lv_obj_t* lbl_close_btn = lv_label_create(btn_close);
+    lv_label_set_text(lbl_close_btn, "Close");
+    lv_obj_set_style_text_color(lbl_close_btn, lv_color_hex(0x000000), 0);
+    lv_obj_set_style_text_font(lbl_close_btn, &lv_font_montserrat_10, 0);
+    lv_obj_center(lbl_close_btn);
+}
+
+
 // Wi-Fi Configuration Modal Callbacks
 static void event_btn_close_wifi_modal(lv_event_t* e) {
     if (timer_wifi_close) {
@@ -1410,6 +1585,7 @@ void ui_init() {
     // 3. Build modal pickers
     build_device_modal();
     build_wifi_modal();
+    build_power_modal();
 
     // 4. Progress Interpolation Timer (50ms = 20 FPS updates)
     lv_timer_create(timer_progress_cb, 50, nullptr);

@@ -23,3 +23,5 @@ void display_driver_init();
 void display_set_backlight(uint8_t brightness);
 void display_notify_touch();
 void display_check_inactivity();
+void display_set_dim_timeout_sec(uint16_t seconds);
+uint16_t display_get_dim_timeout_sec();
