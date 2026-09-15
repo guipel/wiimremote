@@ -321,6 +321,23 @@ void NetworkManager::saveSavedDeviceList() {
     }
 }
 
+void NetworkManager::broadcastDeviceList() {
+    portENTER_CRITICAL(&_deviceMux);
+    DeviceList listCopy = _deviceList;
+    portEXIT_CRITICAL(&_deviceMux);
+
+    DeviceList* pList = (DeviceList*)malloc(sizeof(DeviceList));
+    if (pList) {
+        *pList = listCopy;
+        UiEvent evt;
+        evt.type = UI_EVT_DEVICES_UPDATED;
+        evt.data.devices = pList;
+        if (xQueueSend(xQueueUiState, &evt, 0) != pdTRUE) {
+            free(pList);
+        }
+    }
+}
+
 void NetworkManager::startWiFiScan() {
     if (_wifiScanning) return;
     _wifiScanning = true;
@@ -478,6 +495,9 @@ void NetworkManager::handleWiFi() {
             evt.data.wifi.ssid[sizeof(evt.data.wifi.ssid) - 1] = '\0';
             xQueueSend(xQueueUiState, &evt, 0);
 
+            // Broadcast initial cached devices to UI immediately
+            broadcastDeviceList();
+
             // Start discovery immediately
             triggerRescan();
         } else if (now - _lastWiFiCheck >= 5000) {
@@ -554,6 +574,9 @@ void NetworkManager::triggerRescan() {
 
     // 2. Broadcast SSDP discovery
     sendSSDPQuery();
+
+    // Broadcast current device list to UI (ensures UI is populated even if cached IPs didn't change)
+    broadcastDeviceList();
 
     UiEvent doneEvt;
     doneEvt.type = UI_EVT_SCAN_STATUS;
@@ -781,16 +804,7 @@ void NetworkManager::addOrUpdateDevice(const WiiMDevice& dev) {
     // Broadcast updated device list to UI only if list actually changed
     if (changed) {
         saveSavedDeviceList();
-        DeviceList* pList = (DeviceList*)malloc(sizeof(DeviceList));
-        if (pList) {
-            *pList = listCopy;
-            UiEvent evt;
-            evt.type = UI_EVT_DEVICES_UPDATED;
-            evt.data.devices = pList;
-            if (xQueueSend(xQueueUiState, &evt, 0) != pdTRUE) {
-                free(pList);
-            }
-        }
+        broadcastDeviceList();
     }
 }
 
@@ -810,7 +824,6 @@ void NetworkManager::selectDevice(const char* ip) {
     for (uint8_t i = 0; i < _deviceList.count; ++i) {
         _deviceList.devices[i].is_active = (strcmp(_deviceList.devices[i].ip, _activeDevice.ip) == 0);
     }
-    DeviceList listCopy = _deviceList;
     portEXIT_CRITICAL(&_deviceMux);
 
     if (_hasActiveDevice) {
@@ -819,16 +832,7 @@ void NetworkManager::selectDevice(const char* ip) {
         log_i("Active device switched to: %s (%s)", _activeDevice.name, _activeDevice.ip);
 
         // Notify UI of updated device selection
-        DeviceList* pList = (DeviceList*)malloc(sizeof(DeviceList));
-        if (pList) {
-            *pList = listCopy;
-            UiEvent evt;
-            evt.type = UI_EVT_DEVICES_UPDATED;
-            evt.data.devices = pList;
-            if (xQueueSend(xQueueUiState, &evt, 0) != pdTRUE) {
-                free(pList);
-            }
-        }
+        broadcastDeviceList();
 
         // Reset metadata and query new active device
         _lastKnownTrackTitle = "";

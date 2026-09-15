@@ -61,6 +61,7 @@ private:
     void saveActiveDevice(const WiiMDevice& dev);
     void loadSavedDeviceList();
     void saveSavedDeviceList();
+    void broadcastDeviceList();
 
     // State variables
     bool _wifiConnected;

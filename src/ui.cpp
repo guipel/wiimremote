@@ -17,6 +17,9 @@ static lv_obj_t* header_cont = nullptr;
 static lv_obj_t* lbl_wifi = nullptr;
 static lv_obj_t* btn_device_select = nullptr;
 static lv_obj_t* lbl_active_device = nullptr;
+static lv_obj_t* cont_battery = nullptr;
+static lv_obj_t* lbl_bat_icon = nullptr;
+static lv_obj_t* lbl_bat_volt = nullptr;
 
 // UI Widgets - Tabview
 static lv_obj_t* tabview = nullptr;
@@ -397,6 +400,58 @@ static void event_btn_open_wifi_modal(lv_event_t* e) {
     ui_open_wifi_modal();
 }
 
+// Filtered battery voltage tracking (EMA)
+static float s_battery_filtered_mv = 0.0f;
+
+static void update_battery_meter(uint32_t bat_mv) {
+    if (!lbl_bat_icon || !lbl_bat_volt) return;
+
+    // 1. Format voltage string (e.g. "4.12V")
+    char volt_str[12];
+    snprintf(volt_str, sizeof(volt_str), "%.2fV", bat_mv / 1000.0f);
+    lv_label_set_text(lbl_bat_volt, volt_str);
+
+    // 2. Select icon and color based on voltage thresholds
+    if (bat_mv >= BAT_VOLT_CHARGE_MV) {
+        lv_label_set_text(lbl_bat_icon, LV_SYMBOL_CHARGE);
+        lv_obj_set_style_text_color(lbl_bat_icon, COLOR_ACCENT, 0);
+    } else if (bat_mv >= BAT_VOLT_FULL_MV) {
+        lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_FULL);
+        lv_obj_set_style_text_color(lbl_bat_icon, COLOR_TEXT_PRIMARY, 0);
+    } else if (bat_mv >= BAT_VOLT_HIGH_MV) {
+        lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_3);
+        lv_obj_set_style_text_color(lbl_bat_icon, COLOR_TEXT_PRIMARY, 0);
+    } else if (bat_mv >= BAT_VOLT_MED_MV) {
+        lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_2);
+        lv_obj_set_style_text_color(lbl_bat_icon, COLOR_TEXT_PRIMARY, 0);
+    } else if (bat_mv >= BAT_VOLT_LOW_MV) {
+        lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_1);
+        lv_obj_set_style_text_color(lbl_bat_icon, COLOR_WARNING, 0);
+    } else {
+        lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_EMPTY);
+        lv_obj_set_style_text_color(lbl_bat_icon, lv_color_hex(0xEF4444), 0);
+    }
+}
+
+static void timer_battery_cb(lv_timer_t* timer) {
+    // 16-sample burst average to eliminate SAR ADC quantization noise
+    uint32_t sum = 0;
+    for (int i = 0; i < 16; i++) {
+        sum += analogReadMilliVolts(PIN_BAT_ADC);
+    }
+    uint32_t pin_mv = sum / 16;
+    uint32_t raw_bat_mv = (uint32_t)(pin_mv * BAT_DIVIDER_RATIO);
+
+    // Exponential Moving Average filter (alpha = 0.2)
+    if (s_battery_filtered_mv < 100.0f) {
+        s_battery_filtered_mv = (float)raw_bat_mv; // Seed first reading immediately
+    } else {
+        s_battery_filtered_mv = 0.2f * (float)raw_bat_mv + 0.8f * s_battery_filtered_mv;
+    }
+
+    update_battery_meter((uint32_t)s_battery_filtered_mv);
+}
+
 // Build Header Bar
 static void build_header(lv_obj_t* parent) {
     header_cont = lv_obj_create(parent);
@@ -410,9 +465,9 @@ static void build_header(lv_obj_t* parent) {
     lv_obj_set_style_pad_all(header_cont, 2, 0);
     lv_obj_clear_flag(header_cont, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Wi-Fi Button & Action Chevron (Top Left)
+    // 1. Wi-Fi Button & Action Chevron (Left, ~38px)
     btn_wifi_select = lv_btn_create(header_cont);
-    lv_obj_set_size(btn_wifi_select, 48, 22);
+    lv_obj_set_size(btn_wifi_select, 38, 22);
     lv_obj_align(btn_wifi_select, LV_ALIGN_LEFT_MID, 2, 0);
     lv_obj_set_style_bg_opa(btn_wifi_select, LV_OPA_TRANSP, 0);
     lv_obj_set_style_shadow_width(btn_wifi_select, 0, 0);
@@ -426,10 +481,33 @@ static void build_header(lv_obj_t* parent) {
     lv_obj_set_style_text_font(lbl_wifi, &lv_font_montserrat_12, 0);
     lv_obj_align(lbl_wifi, LV_ALIGN_LEFT_MID, 2, 0);
 
-    // Active Device Button (Flat & right-aligned)
+    // 2. Battery Meter Container (Right, ~46px, tight flex row with 2px gap)
+    cont_battery = lv_obj_create(header_cont);
+    lv_obj_set_size(cont_battery, 46, 22);
+    lv_obj_align(cont_battery, LV_ALIGN_RIGHT_MID, -2, 0);
+    lv_obj_set_style_bg_opa(cont_battery, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_shadow_width(cont_battery, 0, 0);
+    lv_obj_set_style_border_width(cont_battery, 0, 0);
+    lv_obj_set_style_pad_all(cont_battery, 0, 0);
+    lv_obj_set_flex_flow(cont_battery, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(cont_battery, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(cont_battery, 2, 0);
+    lv_obj_clear_flag(cont_battery, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+
+    lbl_bat_icon = lv_label_create(cont_battery);
+    lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_FULL);
+    lv_obj_set_style_text_font(lbl_bat_icon, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl_bat_icon, COLOR_TEXT_PRIMARY, 0);
+
+    lbl_bat_volt = lv_label_create(cont_battery);
+    lv_label_set_text(lbl_bat_volt, "--V");
+    lv_obj_set_style_text_font(lbl_bat_volt, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(lbl_bat_volt, COLOR_TEXT_MUTED, 0);
+
+    // 3. Active Device Button (Center, ~146px)
     btn_device_select = lv_btn_create(header_cont);
-    lv_obj_set_size(btn_device_select, 180, 22);
-    lv_obj_align(btn_device_select, LV_ALIGN_RIGHT_MID, -4, 0);
+    lv_obj_set_size(btn_device_select, 146, 22);
+    lv_obj_align(btn_device_select, LV_ALIGN_LEFT_MID, 41, 0);
     lv_obj_set_style_bg_opa(btn_device_select, LV_OPA_TRANSP, 0);
     lv_obj_set_style_shadow_width(btn_device_select, 0, 0);
     lv_obj_set_style_border_width(btn_device_select, 0, 0);
@@ -439,11 +517,11 @@ static void build_header(lv_obj_t* parent) {
     lbl_active_device = lv_label_create(btn_device_select);
     lv_label_set_text(lbl_active_device, "Searching... " LV_SYMBOL_DOWN);
     lv_label_set_long_mode(lbl_active_device, LV_LABEL_LONG_DOT);
-    lv_obj_set_width(lbl_active_device, 174);
+    lv_obj_set_width(lbl_active_device, 142);
     lv_obj_set_style_text_color(lbl_active_device, COLOR_ACCENT, 0);
     lv_obj_set_style_text_font(lbl_active_device, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_align(lbl_active_device, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_obj_align(lbl_active_device, LV_ALIGN_RIGHT_MID, 0, 0);
+    lv_obj_set_style_text_align(lbl_active_device, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(lbl_active_device, LV_ALIGN_CENTER, 0, 0);
 }
 
 // Build Now Playing Tab
@@ -1335,6 +1413,10 @@ void ui_init() {
 
     // 4. Progress Interpolation Timer (50ms = 20 FPS updates)
     lv_timer_create(timer_progress_cb, 50, nullptr);
+
+    // 5. Battery Monitoring Timer (5000ms period, immediate initial sample)
+    lv_timer_t* timer_bat = lv_timer_create(timer_battery_cb, BAT_SAMPLE_INTERVAL_MS, nullptr);
+    timer_battery_cb(timer_bat);
 }
 
 void ui_set_wifi_status(bool connected, int8_t rssi, const char* ip, const char* ssid) {

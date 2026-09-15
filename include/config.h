@@ -42,6 +42,18 @@
 #define PIN_I2S_DIN         8
 #define PIN_RGB_STATUS      42   // Onboard RGB Status LED
 
+// Battery Level Detection (ADC1_CH8, R14=200k / R15=200k -> 2.0x multiplier)
+#define PIN_BAT_ADC         9
+#define BAT_DIVIDER_RATIO   2.0f
+#define BAT_SAMPLE_INTERVAL_MS 5000 // Sample every 5 seconds
+
+// Battery Voltage Thresholds (in millivolts)
+#define BAT_VOLT_CHARGE_MV  4100 // Float voltage when powered by USB (tested ~4.12V)
+#define BAT_VOLT_FULL_MV    3950 // ~75% - 100%
+#define BAT_VOLT_HIGH_MV    3800 // ~50% - 75%
+#define BAT_VOLT_MED_MV     3650 // ~25% - 50%
+#define BAT_VOLT_LOW_MV     3500 // ~10% - 25%
+
 // Backlight PWM Channel
 #define BL_LEDC_CHANNEL     0
 #define BL_LEDC_FREQ        5000
