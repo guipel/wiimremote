@@ -2,6 +2,7 @@
 #include "display_driver.h"
 #include "config.h"
 #include <Preferences.h>
+#include <WiFi.h>
 #include <esp_sleep.h>
 
 static unsigned long s_last_activity_ms = 0;
@@ -131,6 +132,8 @@ uint16_t power_manager_get_sleep_timeout_sec() {
 void power_manager_enter_deep_sleep() {
     log_i("Entering Deep Sleep (Touch-to-Wake on GPIO %d)...", TOUCH_INT);
     display_set_backlight(0);
+    WiFi.disconnect(true);
+    delay(100);
     esp_sleep_enable_ext0_wakeup((gpio_num_t)TOUCH_INT, 0);
     esp_deep_sleep_start();
 }
