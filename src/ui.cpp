@@ -189,6 +189,31 @@ static void update_stream_info_labels() {
     }
 }
 
+// Helper: Immediately clear playback display widgets
+static void ui_clear_playback_view() {
+    if (lbl_title) lv_label_set_text(lbl_title, "");
+    if (lbl_artist) lv_label_set_text(lbl_artist, "");
+    if (bar_progress) lv_bar_set_value(bar_progress, 0, LV_ANIM_OFF);
+    if (lbl_time_cur) lv_label_set_text(lbl_time_cur, "00:00");
+    if (lbl_time_total) lv_label_set_text(lbl_time_total, "--:--");
+    current_totlen_ms = 0;
+    current_actual_curpos_ms = 0;
+    has_pending_seek = false;
+    if (obj_seek_target) lv_obj_add_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
+
+    current_sample_rate = 0;
+    current_bit_depth = 0;
+    current_track_num = 0;
+    current_track_total = 0;
+    current_vendor[0] = '\0';
+    update_stream_info_labels();
+
+    if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, "");
+    if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, "");
+    if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "No lyrics available");
+    if (cont_lyrics_scroll) lv_obj_scroll_to_y(cont_lyrics_scroll, 0, LV_ANIM_OFF);
+}
+
 // Helper: Format scan status string
 static void format_scan_status(char* buf, size_t len, uint8_t count) {
     if (count == 1) snprintf(buf, len, "1 streamer found");
@@ -401,6 +426,13 @@ static void event_device_item_clicked(lv_event_t* e) {
         strncpy(cmd.data.device_ip, current_device_list.devices[idx].ip, sizeof(cmd.data.device_ip) - 1);
         cmd.data.device_ip[sizeof(cmd.data.device_ip) - 1] = '\0';
         xQueueSend(xQueueUiCmd, &cmd, 0);
+
+        if (lbl_active_device) {
+            char title[64];
+            snprintf(title, sizeof(title), "%s " LV_SYMBOL_DOWN, current_device_list.devices[idx].name);
+            lv_label_set_text(lbl_active_device, title);
+        }
+        ui_clear_playback_view();
     }
     lv_obj_add_flag(modal_device_selector, LV_OBJ_FLAG_HIDDEN);
 }
@@ -1938,6 +1970,14 @@ void ui_set_player_state(const PlayerState& state) {
                 if (lbl_time_cur) lv_label_set_text(lbl_time_cur, time_cur_buf);
             }
         }
+    } else if (state.state == PLAY_STATE_STOPPED) {
+        current_totlen_ms = 0;
+        current_actual_curpos_ms = 0;
+        has_pending_seek = false;
+        if (obj_seek_target) lv_obj_add_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
+        if (bar_progress) lv_bar_set_value(bar_progress, 0, LV_ANIM_OFF);
+        if (lbl_time_cur) lv_label_set_text(lbl_time_cur, "00:00");
+        if (lbl_time_total) lv_label_set_text(lbl_time_total, "--:--");
     }
 
     // 4. Stream Info Details Line
@@ -1968,7 +2008,7 @@ void ui_set_track_meta(const TrackMeta& meta) {
                 lv_label_set_text(lbl_title, meta.title);
             }
         } else {
-            lv_label_set_text(lbl_title, "No Title");
+            lv_label_set_text(lbl_title, "");
         }
     }
 
@@ -1981,7 +2021,7 @@ void ui_set_track_meta(const TrackMeta& meta) {
         } else if (strlen(meta.album) > 0) {
             snprintf(artist_album, sizeof(artist_album), "%s", meta.album);
         } else {
-            snprintf(artist_album, sizeof(artist_album), "Ready");
+            artist_album[0] = '\0';
         }
 
         lv_point_t size;

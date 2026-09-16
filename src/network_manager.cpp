@@ -836,6 +836,9 @@ void NetworkManager::selectDevice(const char* ip) {
 
         // Reset metadata and query new active device
         _lastKnownTrackTitle = "";
+        _lastLyricsTitle = "";
+        _lastLyricsArtist = "";
+        _cachedTrackDuration_ms = 0;
         _metaResolved = false;
         fetchTrackMeta();
         fetchPresetInfo();
@@ -987,8 +990,36 @@ void NetworkManager::pollActiveDevice() {
             }
         }
     } else {
-        _lastKnownTrackTitle = "";
-        _metaResolved = false;
+        if (_lastKnownTrackTitle.length() > 0) {
+            _lastKnownTrackTitle = "";
+            _metaResolved = false;
+
+            TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
+            if (pMeta) {
+                memset(pMeta, 0, sizeof(TrackMeta));
+                UiEvent evtMeta;
+                evtMeta.type = UI_EVT_META_UPDATED;
+                evtMeta.data.meta = pMeta;
+                if (xQueueSend(xQueueUiState, &evtMeta, 0) != pdTRUE) {
+                    free(pMeta);
+                }
+            }
+
+            _lastLyricsTitle = "";
+            _lastLyricsArtist = "";
+            LyricsInfo* pLyrics = (LyricsInfo*)malloc(sizeof(LyricsInfo));
+            if (pLyrics) {
+                memset(pLyrics, 0, sizeof(LyricsInfo));
+                pLyrics->text = strdup("");
+                UiEvent evtLyrics;
+                evtLyrics.type = UI_EVT_LYRICS_UPDATED;
+                evtLyrics.data.lyrics = pLyrics;
+                if (xQueueSend(xQueueUiState, &evtLyrics, 0) != pdTRUE) {
+                    if (pLyrics->text) free(pLyrics->text);
+                    free(pLyrics);
+                }
+            }
+        }
     }
 }
 
@@ -1009,9 +1040,9 @@ bool NetworkManager::fetchTrackMeta() {
     if (!pMeta) return false;
     memset(pMeta, 0, sizeof(TrackMeta));
 
-    const char* rawTitle = doc["metaData"]["title"] | doc["Title"] | doc["title"] | "Unknown Title";
-    const char* rawArtist = doc["metaData"]["artist"] | doc["Artist"] | doc["artist"] | "Unknown Artist";
-    const char* rawAlbum = doc["metaData"]["album"] | doc["Album"] | doc["album"] | "Unknown Album";
+    const char* rawTitle = doc["metaData"]["title"] | doc["Title"] | doc["title"] | "";
+    const char* rawArtist = doc["metaData"]["artist"] | doc["Artist"] | doc["artist"] | "";
+    const char* rawAlbum = doc["metaData"]["album"] | doc["Album"] | doc["album"] | "";
     String decTitle = decodeHexString(rawTitle);
     String decArtist = decodeHexString(rawArtist);
     String decAlbum = decodeHexString(rawAlbum);
