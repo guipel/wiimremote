@@ -1184,13 +1184,32 @@ static void build_power_modal() {
     lv_obj_align(lbl_brightness_val, LV_ALIGN_TOP_RIGHT, -4, 1);
 
     slider_brightness = lv_slider_create(box_bright);
-    lv_obj_set_size(slider_brightness, 194, 16);
-    lv_obj_align(slider_brightness, LV_ALIGN_BOTTOM_MID, 0, -3);
+    lv_obj_set_size(slider_brightness, 194, 6);
+    lv_obj_align(slider_brightness, LV_ALIGN_BOTTOM_MID, 0, -9);
     lv_slider_set_range(slider_brightness, 20, 100);
     lv_slider_set_value(slider_brightness, 80, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(slider_brightness, COLOR_SURFACE_LIGHT, LV_PART_MAIN);
+
+    // Track style identical to volume and progress bars
+    lv_obj_set_style_bg_color(slider_brightness, lv_color_hex(0x242A35), 0);
+    lv_obj_set_style_bg_opa(slider_brightness, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(slider_brightness, lv_color_hex(0x3A4252), 0);
+    lv_obj_set_style_border_width(slider_brightness, 1, 0);
+    lv_obj_set_style_radius(slider_brightness, 3, 0);
+
+    // Indicator style identical to volume and progress bars
     lv_obj_set_style_bg_color(slider_brightness, COLOR_ACCENT, LV_PART_INDICATOR);
-    lv_obj_set_style_bg_color(slider_brightness, COLOR_ACCENT, LV_PART_KNOB);
+    lv_obj_set_style_bg_opa(slider_brightness, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_radius(slider_brightness, 3, LV_PART_INDICATOR);
+
+    // Hide knob for clean cursor-less look (identical to volume bar)
+    lv_obj_set_style_bg_opa(slider_brightness, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_obj_set_style_border_opa(slider_brightness, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_obj_set_style_pad_all(slider_brightness, 0, LV_PART_KNOB);
+
+    // Extended touch area for smooth interaction on slim bar
+    lv_obj_add_flag(slider_brightness, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_set_ext_click_area(slider_brightness, 16);
+    lv_obj_clear_flag(slider_brightness, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(slider_brightness, event_slider_brightness, LV_EVENT_VALUE_CHANGED, nullptr);
 
     // Section 3: Screen Auto-Dim Box (Height 50px)
