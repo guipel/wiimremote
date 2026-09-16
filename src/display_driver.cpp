@@ -1,6 +1,6 @@
 #include "display_driver.h"
+#include "power_manager.h"
 #include <esp_heap_caps.h>
-#include <Preferences.h>
 
 LGFX_ESP32S3_Custom gfx;
 
@@ -97,7 +97,7 @@ static void touchpad_read_cb(lv_indev_drv_t *indev_driver, lv_indev_data_t *data
     bool touched = gfx.getTouch(&touchX, &touchY);
 
     if (touched) {
-        display_notify_touch();
+        power_manager_notify_activity();
         data->state = LV_INDEV_STATE_PR;
 
         int32_t x = touchX;
@@ -172,64 +172,3 @@ void display_set_backlight(uint8_t brightness) {
     gfx.setBrightness(brightness);
 }
 
-static unsigned long s_last_touch_ms = 0;
-static bool s_is_dimmed = false;
-static uint32_t s_dim_timeout_ms = 30000;
-static uint16_t s_dim_timeout_sec = 30;
-static bool s_dim_pref_loaded = false;
-
-static void load_dim_preferences() {
-    if (s_dim_pref_loaded) return;
-    s_dim_pref_loaded = true;
-    Preferences prefs;
-    if (prefs.begin("wiimremote", true)) {
-        s_dim_timeout_sec = prefs.getUShort("dim_sec", 30);
-        s_dim_timeout_ms = (uint32_t)s_dim_timeout_sec * 1000;
-        prefs.end();
-        log_i("Loaded screen dim timeout: %u sec", s_dim_timeout_sec);
-    }
-}
-
-void display_set_dim_timeout_sec(uint16_t seconds) {
-    s_dim_timeout_sec = seconds;
-    s_dim_timeout_ms = (uint32_t)seconds * 1000;
-    Preferences prefs;
-    if (prefs.begin("wiimremote", false)) {
-        prefs.putUShort("dim_sec", seconds);
-        prefs.end();
-        log_i("Saved screen dim timeout: %u sec", seconds);
-    }
-    // If set to Never (0), restore brightness immediately if dimmed
-    if (seconds == 0 && s_is_dimmed) {
-        s_is_dimmed = false;
-        display_set_backlight(BL_DEFAULT_BRIGHT);
-    }
-}
-
-uint16_t display_get_dim_timeout_sec() {
-    load_dim_preferences();
-    return s_dim_timeout_sec;
-}
-
-void display_notify_touch() {
-    s_last_touch_ms = millis();
-    if (s_is_dimmed) {
-        s_is_dimmed = false;
-        display_set_backlight(BL_DEFAULT_BRIGHT);
-    }
-}
-
-void display_check_inactivity() {
-    load_dim_preferences();
-    if (s_dim_timeout_ms == 0) return; // 0 = Never / Disabled
-
-    if (s_last_touch_ms == 0) {
-        s_last_touch_ms = millis();
-        return;
-    }
-    // Dim backlight to ~15% after configured timeout of inactivity
-    if (!s_is_dimmed && (millis() - s_last_touch_ms > s_dim_timeout_ms)) {
-        s_is_dimmed = true;
-        display_set_backlight(38); // 15% of 255
-    }
-}

@@ -3,6 +3,7 @@
 #include "config.h"
 #include "model.h"
 #include "display_driver.h"
+#include "power_manager.h"
 #include "network_manager.h"
 #include "ui.h"
 
@@ -21,8 +22,8 @@ void ui_task_entry(void* param) {
         // 1. Process pending state events from Network Task (Core 0)
         ui_process_events();
 
-        // 2. Check touch inactivity for backlight power management (auto-dim)
-        display_check_inactivity();
+        // 2. Check touch inactivity for backlight power management (auto-dim and deep sleep)
+        power_manager_check_inactivity();
 
         // 3. Handle LVGL animations, timers, and rendering
         uint32_t delay_ms = lv_timer_handler();
@@ -59,8 +60,9 @@ void setup() {
     log_i("  WiiM ESP32-S3 Touchscreen Remote Control       ");
     log_i("=================================================");
 
-    // 1. Initialize Hardware Pins
+    // 1. Initialize Hardware Pins & Power Management
     hardware_pins_init();
+    power_manager_init();
 
     // 2. PSRAM & Memory Diagnostics
     log_i("Total Heap:  %u bytes", ESP.getHeapSize());
