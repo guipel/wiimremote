@@ -24,6 +24,8 @@ static lv_obj_t* lbl_bat_icon = nullptr;
 // UI Widgets - Power Management Modal
 static lv_obj_t* modal_power_manager = nullptr;
 static lv_obj_t* lbl_power_voltage = nullptr;
+static lv_obj_t* slider_brightness = nullptr;
+static lv_obj_t* lbl_brightness_val = nullptr;
 static lv_obj_t* dd_power_dim = nullptr;
 static lv_obj_t* dd_power_sleep = nullptr;
 static lv_obj_t* btn_sleep_now = nullptr;
@@ -473,9 +475,35 @@ static void timer_battery_cb(lv_timer_t* timer) {
 static const uint16_t dim_seconds_lut[] = { 15, 30, 60, 120, 300, 0 };
 static const uint16_t sleep_seconds_lut[] = { 30, 60, 120, 300, 600, 0 };
 
+static void event_slider_brightness(lv_event_t* e) {
+    if (!slider_brightness) return;
+    int32_t raw = lv_slider_get_value(slider_brightness);
+    // Snap to 10% steps: 20, 30, ..., 100
+    int32_t snapped = ((raw + 5) / 10) * 10;
+    if (snapped < 20) snapped = 20;
+    if (snapped > 100) snapped = 100;
+    lv_slider_set_value(slider_brightness, snapped, LV_ANIM_OFF);
+
+    if (lbl_brightness_val) {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%d%%", (int)snapped);
+        lv_label_set_text(lbl_brightness_val, buf);
+    }
+    power_manager_set_brightness_pct((uint8_t)snapped);
+}
+
 static void event_btn_open_power_modal(lv_event_t* e) {
     if (s_battery_filtered_mv > 100.0f) {
         update_battery_meter((uint32_t)s_battery_filtered_mv);
+    }
+    if (slider_brightness) {
+        uint8_t cur_bright = power_manager_get_brightness_pct();
+        lv_slider_set_value(slider_brightness, cur_bright, LV_ANIM_OFF);
+        if (lbl_brightness_val) {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%d%%", cur_bright);
+            lv_label_set_text(lbl_brightness_val, buf);
+        }
     }
     if (dd_power_dim) {
         uint16_t cur_sec = power_manager_get_dim_timeout_sec();
@@ -1109,10 +1137,10 @@ static void build_power_modal() {
     lv_obj_set_style_text_color(lbl_title, COLOR_TEXT_PRIMARY, 0);
     lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, 4);
 
-    // Section 1: Battery Voltage Box (Height 48px, Voltage only)
+    // Section 1: Battery Voltage Box (Height 42px, Voltage only)
     lv_obj_t* box_bat = lv_obj_create(card);
-    lv_obj_set_size(box_bat, 204, 48);
-    lv_obj_align(box_bat, LV_ALIGN_TOP_MID, 0, 28);
+    lv_obj_set_size(box_bat, 204, 42);
+    lv_obj_align(box_bat, LV_ALIGN_TOP_MID, 0, 26);
     lv_obj_set_style_bg_color(box_bat, COLOR_BG, 0);
     lv_obj_set_style_border_color(box_bat, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_width(box_bat, 1, 0);
@@ -1124,18 +1152,51 @@ static void build_power_modal() {
     lv_label_set_text(lbl_sec1, "BATTERY VOLTAGE");
     lv_obj_set_style_text_font(lbl_sec1, &lv_font_montserrat_10, 0);
     lv_obj_set_style_text_color(lbl_sec1, COLOR_TEXT_MUTED, 0);
-    lv_obj_align(lbl_sec1, LV_ALIGN_TOP_LEFT, 4, 2);
+    lv_obj_align(lbl_sec1, LV_ALIGN_TOP_LEFT, 4, 1);
 
     lbl_power_voltage = lv_label_create(box_bat);
     lv_label_set_text(lbl_power_voltage, "-- V");
     lv_obj_set_style_text_font(lbl_power_voltage, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(lbl_power_voltage, COLOR_ACCENT, 0);
-    lv_obj_align(lbl_power_voltage, LV_ALIGN_TOP_LEFT, 4, 16);
+    lv_obj_align(lbl_power_voltage, LV_ALIGN_TOP_LEFT, 4, 15);
 
-    // Section 2: Screen Auto-Dim Box (Height 64px)
+    // Section 2: Screen Brightness Box (Height 46px, 20% to 100%)
+    lv_obj_t* box_bright = lv_obj_create(card);
+    lv_obj_set_size(box_bright, 204, 46);
+    lv_obj_align(box_bright, LV_ALIGN_TOP_MID, 0, 72);
+    lv_obj_set_style_bg_color(box_bright, COLOR_BG, 0);
+    lv_obj_set_style_border_color(box_bright, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_border_width(box_bright, 1, 0);
+    lv_obj_set_style_radius(box_bright, 8, 0);
+    lv_obj_set_style_pad_all(box_bright, 4, 0);
+    lv_obj_clear_flag(box_bright, LV_OBJ_FLAG_SCROLLABLE);
+
+    lv_obj_t* lbl_sec2 = lv_label_create(box_bright);
+    lv_label_set_text(lbl_sec2, "SCREEN BRIGHTNESS");
+    lv_obj_set_style_text_font(lbl_sec2, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(lbl_sec2, COLOR_TEXT_MUTED, 0);
+    lv_obj_align(lbl_sec2, LV_ALIGN_TOP_LEFT, 4, 1);
+
+    lbl_brightness_val = lv_label_create(box_bright);
+    lv_label_set_text(lbl_brightness_val, "80%");
+    lv_obj_set_style_text_font(lbl_brightness_val, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(lbl_brightness_val, COLOR_ACCENT, 0);
+    lv_obj_align(lbl_brightness_val, LV_ALIGN_TOP_RIGHT, -4, 1);
+
+    slider_brightness = lv_slider_create(box_bright);
+    lv_obj_set_size(slider_brightness, 194, 16);
+    lv_obj_align(slider_brightness, LV_ALIGN_BOTTOM_MID, 0, -3);
+    lv_slider_set_range(slider_brightness, 20, 100);
+    lv_slider_set_value(slider_brightness, 80, LV_ANIM_OFF);
+    lv_obj_set_style_bg_color(slider_brightness, COLOR_SURFACE_LIGHT, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(slider_brightness, COLOR_ACCENT, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(slider_brightness, COLOR_ACCENT, LV_PART_KNOB);
+    lv_obj_add_event_cb(slider_brightness, event_slider_brightness, LV_EVENT_VALUE_CHANGED, nullptr);
+
+    // Section 3: Screen Auto-Dim Box (Height 50px)
     lv_obj_t* box_dim = lv_obj_create(card);
-    lv_obj_set_size(box_dim, 204, 64);
-    lv_obj_align(box_dim, LV_ALIGN_TOP_MID, 0, 88);
+    lv_obj_set_size(box_dim, 204, 50);
+    lv_obj_align(box_dim, LV_ALIGN_TOP_MID, 0, 122);
     lv_obj_set_style_bg_color(box_dim, COLOR_BG, 0);
     lv_obj_set_style_border_color(box_dim, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_width(box_dim, 1, 0);
@@ -1143,14 +1204,14 @@ static void build_power_modal() {
     lv_obj_set_style_pad_all(box_dim, 4, 0);
     lv_obj_clear_flag(box_dim, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t* lbl_sec2 = lv_label_create(box_dim);
-    lv_label_set_text(lbl_sec2, "SCREEN AUTO-DIM");
-    lv_obj_set_style_text_font(lbl_sec2, &lv_font_montserrat_10, 0);
-    lv_obj_set_style_text_color(lbl_sec2, COLOR_TEXT_MUTED, 0);
-    lv_obj_align(lbl_sec2, LV_ALIGN_TOP_LEFT, 4, 2);
+    lv_obj_t* lbl_sec3 = lv_label_create(box_dim);
+    lv_label_set_text(lbl_sec3, "SCREEN AUTO-DIM");
+    lv_obj_set_style_text_font(lbl_sec3, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(lbl_sec3, COLOR_TEXT_MUTED, 0);
+    lv_obj_align(lbl_sec3, LV_ALIGN_TOP_LEFT, 4, 1);
 
     dd_power_dim = lv_dropdown_create(box_dim);
-    lv_obj_set_size(dd_power_dim, 194, 32);
+    lv_obj_set_size(dd_power_dim, 194, 28);
     lv_obj_align(dd_power_dim, LV_ALIGN_BOTTOM_MID, 0, -2);
     lv_dropdown_set_options(dd_power_dim, "15 seconds\n30 seconds\n1 minute\n2 minutes\n5 minutes\nNever");
     lv_obj_set_style_text_font(dd_power_dim, &lv_font_montserrat_12, 0);
@@ -1170,10 +1231,10 @@ static void build_power_modal() {
     }
     lv_obj_add_event_cb(dd_power_dim, event_dd_power_dim, LV_EVENT_VALUE_CHANGED, nullptr);
 
-    // Section 3: Auto Deep Sleep Box (Height 64px)
+    // Section 4: Auto Deep Sleep Box (Height 50px)
     lv_obj_t* box_sleep = lv_obj_create(card);
-    lv_obj_set_size(box_sleep, 204, 64);
-    lv_obj_align(box_sleep, LV_ALIGN_TOP_MID, 0, 158);
+    lv_obj_set_size(box_sleep, 204, 50);
+    lv_obj_align(box_sleep, LV_ALIGN_TOP_MID, 0, 176);
     lv_obj_set_style_bg_color(box_sleep, COLOR_BG, 0);
     lv_obj_set_style_border_color(box_sleep, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_width(box_sleep, 1, 0);
@@ -1181,14 +1242,14 @@ static void build_power_modal() {
     lv_obj_set_style_pad_all(box_sleep, 4, 0);
     lv_obj_clear_flag(box_sleep, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_t* lbl_sec3 = lv_label_create(box_sleep);
-    lv_label_set_text(lbl_sec3, "AUTO DEEP SLEEP");
-    lv_obj_set_style_text_font(lbl_sec3, &lv_font_montserrat_10, 0);
-    lv_obj_set_style_text_color(lbl_sec3, COLOR_TEXT_MUTED, 0);
-    lv_obj_align(lbl_sec3, LV_ALIGN_TOP_LEFT, 4, 2);
+    lv_obj_t* lbl_sec4 = lv_label_create(box_sleep);
+    lv_label_set_text(lbl_sec4, "AUTO DEEP SLEEP");
+    lv_obj_set_style_text_font(lbl_sec4, &lv_font_montserrat_10, 0);
+    lv_obj_set_style_text_color(lbl_sec4, COLOR_TEXT_MUTED, 0);
+    lv_obj_align(lbl_sec4, LV_ALIGN_TOP_LEFT, 4, 1);
 
     dd_power_sleep = lv_dropdown_create(box_sleep);
-    lv_obj_set_size(dd_power_sleep, 194, 32);
+    lv_obj_set_size(dd_power_sleep, 194, 28);
     lv_obj_align(dd_power_sleep, LV_ALIGN_BOTTOM_MID, 0, -2);
     lv_dropdown_set_options(dd_power_sleep, "30 seconds\n1 minute\n2 minutes\n5 minutes\n10 minutes\nNever");
     lv_obj_set_style_text_font(dd_power_sleep, &lv_font_montserrat_12, 0);
@@ -1210,7 +1271,7 @@ static void build_power_modal() {
 
     // Bottom Action Buttons: Sleep Now & Close
     btn_sleep_now = lv_btn_create(card);
-    lv_obj_set_size(btn_sleep_now, 96, 32);
+    lv_obj_set_size(btn_sleep_now, 96, 30);
     lv_obj_align(btn_sleep_now, LV_ALIGN_BOTTOM_LEFT, 4, -4);
     lv_obj_set_style_bg_color(btn_sleep_now, lv_color_hex(0x3A2222), 0);
     lv_obj_set_style_border_color(btn_sleep_now, lv_color_hex(0xEF4444), 0);
@@ -1224,7 +1285,7 @@ static void build_power_modal() {
     lv_obj_center(lbl_sleep_btn);
 
     lv_obj_t* btn_close = lv_btn_create(card);
-    lv_obj_set_size(btn_close, 96, 32);
+    lv_obj_set_size(btn_close, 96, 30);
     lv_obj_align(btn_close, LV_ALIGN_BOTTOM_RIGHT, -4, -4);
     lv_obj_set_style_bg_color(btn_close, COLOR_ACCENT, 0);
     lv_obj_set_style_radius(btn_close, 8, 0);
