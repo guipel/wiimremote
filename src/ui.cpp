@@ -1102,23 +1102,17 @@ static void build_power_modal() {
     lv_obj_set_style_pad_all(card, 8, 0);
     lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
 
-    // Header: Title & Subtitle
+    // Header: Title
     lv_obj_t* lbl_title = lv_label_create(card);
     lv_label_set_text(lbl_title, "Power Management");
     lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(lbl_title, COLOR_TEXT_PRIMARY, 0);
     lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, 4);
 
-    lv_obj_t* lbl_sub = lv_label_create(card);
-    lv_label_set_text(lbl_sub, "Battery & Display Settings");
-    lv_obj_set_style_text_font(lbl_sub, &lv_font_montserrat_10, 0);
-    lv_obj_set_style_text_color(lbl_sub, COLOR_TEXT_MUTED, 0);
-    lv_obj_align(lbl_sub, LV_ALIGN_TOP_MID, 0, 20);
-
     // Section 1: Battery Voltage Box (Height 48px, Voltage only)
     lv_obj_t* box_bat = lv_obj_create(card);
     lv_obj_set_size(box_bat, 204, 48);
-    lv_obj_align(box_bat, LV_ALIGN_TOP_MID, 0, 34);
+    lv_obj_align(box_bat, LV_ALIGN_TOP_MID, 0, 28);
     lv_obj_set_style_bg_color(box_bat, COLOR_BG, 0);
     lv_obj_set_style_border_color(box_bat, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_width(box_bat, 1, 0);
@@ -1222,7 +1216,7 @@ static void build_power_modal() {
     lv_obj_set_style_border_color(btn_sleep_now, lv_color_hex(0xEF4444), 0);
     lv_obj_set_style_border_width(btn_sleep_now, 1, 0);
     lv_obj_set_style_radius(btn_sleep_now, 8, 0);
-    lv_obj_add_event_cb(btn_sleep_now, event_btn_sleep_now, LV_EVENT_CLICKED, nullptr);
+    lv_obj_add_event_cb(btn_sleep_now, event_btn_sleep_now, LV_EVENT_RELEASED, nullptr);
     lv_obj_t* lbl_sleep_btn = lv_label_create(btn_sleep_now);
     lv_label_set_text(lbl_sleep_btn, LV_SYMBOL_POWER " Sleep");
     lv_obj_set_style_text_color(lbl_sleep_btn, lv_color_hex(0xFF6B6B), 0);
