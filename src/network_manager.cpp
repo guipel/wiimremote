@@ -840,7 +840,6 @@ void NetworkManager::selectDevice(const char* ip) {
         _lastLyricsArtist = "";
         _cachedTrackDuration_ms = 0;
         _metaResolved = false;
-        fetchTrackMeta();
         fetchPresetInfo();
         pollActiveDevice();
         fetchDeviceConfig();
@@ -877,13 +876,19 @@ void NetworkManager::pollActiveDevice() {
     evt.type = UI_EVT_PLAYER_STATE;
 
     // Parse status
-    const char* statusStr = doc["status"] | "stop";
+    const char* statusStr = doc["status"] | "";
     if (strcmp(statusStr, "play") == 0) {
         evt.data.player.state = PLAY_STATE_PLAYING;
     } else if (strcmp(statusStr, "pause") == 0) {
         evt.data.player.state = PLAY_STATE_PAUSED;
-    } else {
+    } else if (strcmp(statusStr, "stop") == 0) {
         evt.data.player.state = PLAY_STATE_STOPPED;
+    } else if (strcmp(statusStr, "none") == 0) {
+        evt.data.player.state = PLAY_STATE_NONE;
+    } else if (strcmp(statusStr, "load") == 0 || strcmp(statusStr, "loading") == 0) {
+        evt.data.player.state = PLAY_STATE_LOADING;
+    } else {
+        evt.data.player.state = PLAY_STATE_UNKNOWN;
     }
 
     // Volume & Mute
@@ -923,27 +928,35 @@ void NetworkManager::pollActiveDevice() {
     evt.data.player.totlen_ms = totlen;
     evt.data.player.curpos_ms = curpos;
 
-    // Vendor / Service Provider
-    const char* rawVendor = doc["vendor"] | "";
-    static const struct { const char* raw; const char* clean; } vendor_map[] = {
-        {"Prime", "Amazon Music"},
-        {"Spotify", "Spotify"},
-        {"Tidal", "Tidal"},
-        {"Qobuz", "Qobuz"},
-        {"TuneIn", "TuneIn"},
-        {"Deezer", "Deezer"}
-    };
-    const char* cleanVendor = nullptr;
-    for (size_t i = 0; i < sizeof(vendor_map) / sizeof(vendor_map[0]); ++i) {
-        if (strcasecmp(rawVendor, vendor_map[i].raw) == 0) {
-            cleanVendor = vendor_map[i].clean;
-            break;
+    // Vendor / Service Provider & Stream Format
+    if (evt.data.player.state == PLAY_STATE_NONE) {
+        evt.data.player.vendor[0] = '\0';
+        evt.data.player.stream.format[0] = '\0';
+    } else {
+        const char* rawVendor = doc["vendor"] | "";
+        static const struct { const char* raw; const char* clean; } vendor_map[] = {
+            {"Prime", "Amazon Music"},
+            {"Spotify", "Spotify"},
+            {"Tidal", "Tidal"},
+            {"Qobuz", "Qobuz"},
+            {"TuneIn", "TuneIn"},
+            {"Deezer", "Deezer"}
+        };
+        const char* cleanVendor = nullptr;
+        for (size_t i = 0; i < sizeof(vendor_map) / sizeof(vendor_map[0]); ++i) {
+            if (strcasecmp(rawVendor, vendor_map[i].raw) == 0) {
+                cleanVendor = vendor_map[i].clean;
+                break;
+            }
         }
+        if (!cleanVendor) {
+            cleanVendor = (strlen(rawVendor) > 0) ? rawVendor : "WiiM";
+        }
+        strncpy(evt.data.player.vendor, cleanVendor, sizeof(evt.data.player.vendor) - 1);
+
+        const char* format = doc["format"] | doc["Type"] | doc["type"] | doc["vendor"] | "FLAC";
+        strncpy(evt.data.player.stream.format, format, sizeof(evt.data.player.stream.format) - 1);
     }
-    if (!cleanVendor) {
-        cleanVendor = (strlen(rawVendor) > 0) ? rawVendor : "WiiM";
-    }
-    strncpy(evt.data.player.vendor, cleanVendor, sizeof(evt.data.player.vendor) - 1);
 
     // Operating Mode
     const char* modeStr = doc["mode"] | "0";
@@ -960,63 +973,68 @@ void NetworkManager::pollActiveDevice() {
     // Stream / Audio Format
     const char* rate = doc["rate"] | doc["SampleRate"] | doc["samplerate"] | "";
     const char* bitDepth = doc["bitDepth"] | doc["bitdepth"] | "";
-    const char* format = doc["format"] | doc["Type"] | doc["type"] | doc["vendor"] | "FLAC";
-
-    strncpy(evt.data.player.stream.format, format, sizeof(evt.data.player.stream.format) - 1);
     evt.data.player.stream.sample_rate = atoi(rate);
     evt.data.player.stream.bit_depth = (uint8_t)atoi(bitDepth);
 
     _lastPlayerState = evt.data.player;
     xQueueSend(xQueueUiState, &evt, 0);
 
-    // Track metadata decoding (Title and Artist in getPlayerStatus are hex encoded)
-    const char* rawTitle = doc["Title"] | doc["title"] | "";
-    const char* rawArtist = doc["Artist"] | doc["artist"] | "";
-    if (strlen(rawTitle) > 0) {
-        String decTitle = decodeHexString(rawTitle);
-        if (_lastKnownTrackTitle != decTitle) {
-            _lastKnownTrackTitle = decTitle;
-            _cachedTrackDuration_ms = 0;
-            _metaResolved = false;
-            if (fetchTrackMeta()) {
-                _metaResolved = true;
-            }
-            fetchUpnpTrackDuration();
-        } else if (!_metaResolved && evt.data.player.state == PLAY_STATE_PLAYING) {
-            // Track is playing but resolution wasn't ready on the first instant (buffering).
-            // Naturally complete it on this normal status tick without extra timers.
-            if (fetchTrackMeta()) {
-                _metaResolved = true;
-            }
-        }
+    // Track metadata decoding
+    if (evt.data.player.state == PLAY_STATE_NONE) {
+        _lastKnownTrackTitle = "";
+        _lastLyricsTitle = "";
+        _lastLyricsArtist = "";
+        _cachedTrackDuration_ms = 0;
+        _metaResolved = false;
     } else {
-        if (_lastKnownTrackTitle.length() > 0) {
-            _lastKnownTrackTitle = "";
-            _metaResolved = false;
-
-            TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
-            if (pMeta) {
-                memset(pMeta, 0, sizeof(TrackMeta));
-                UiEvent evtMeta;
-                evtMeta.type = UI_EVT_META_UPDATED;
-                evtMeta.data.meta = pMeta;
-                if (xQueueSend(xQueueUiState, &evtMeta, 0) != pdTRUE) {
-                    free(pMeta);
+        const char* rawTitle = doc["Title"] | doc["title"] | "";
+        const char* rawArtist = doc["Artist"] | doc["artist"] | "";
+        if (strlen(rawTitle) > 0) {
+            String decTitle = decodeHexString(rawTitle);
+            if (_lastKnownTrackTitle != decTitle) {
+                _lastKnownTrackTitle = decTitle;
+                _cachedTrackDuration_ms = 0;
+                _metaResolved = false;
+                if (fetchTrackMeta()) {
+                    _metaResolved = true;
+                }
+                fetchUpnpTrackDuration();
+            } else if (!_metaResolved && evt.data.player.state == PLAY_STATE_PLAYING) {
+                // Track is playing but resolution wasn't ready on the first instant (buffering).
+                // Naturally complete it on this normal status tick without extra timers.
+                if (fetchTrackMeta()) {
+                    _metaResolved = true;
                 }
             }
+        } else {
+            if (_lastKnownTrackTitle.length() > 0) {
+                _lastKnownTrackTitle = "";
+                _metaResolved = false;
 
-            _lastLyricsTitle = "";
-            _lastLyricsArtist = "";
-            LyricsInfo* pLyrics = (LyricsInfo*)malloc(sizeof(LyricsInfo));
-            if (pLyrics) {
-                memset(pLyrics, 0, sizeof(LyricsInfo));
-                pLyrics->text = strdup("");
-                UiEvent evtLyrics;
-                evtLyrics.type = UI_EVT_LYRICS_UPDATED;
-                evtLyrics.data.lyrics = pLyrics;
-                if (xQueueSend(xQueueUiState, &evtLyrics, 0) != pdTRUE) {
-                    if (pLyrics->text) free(pLyrics->text);
-                    free(pLyrics);
+                TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
+                if (pMeta) {
+                    memset(pMeta, 0, sizeof(TrackMeta));
+                    UiEvent evtMeta;
+                    evtMeta.type = UI_EVT_META_UPDATED;
+                    evtMeta.data.meta = pMeta;
+                    if (xQueueSend(xQueueUiState, &evtMeta, 0) != pdTRUE) {
+                        free(pMeta);
+                    }
+                }
+
+                _lastLyricsTitle = "";
+                _lastLyricsArtist = "";
+                LyricsInfo* pLyrics = (LyricsInfo*)malloc(sizeof(LyricsInfo));
+                if (pLyrics) {
+                    memset(pLyrics, 0, sizeof(LyricsInfo));
+                    pLyrics->text = strdup("");
+                    UiEvent evtLyrics;
+                    evtLyrics.type = UI_EVT_LYRICS_UPDATED;
+                    evtLyrics.data.lyrics = pLyrics;
+                    if (xQueueSend(xQueueUiState, &evtLyrics, 0) != pdTRUE) {
+                        if (pLyrics->text) free(pLyrics->text);
+                        free(pLyrics);
+                    }
                 }
             }
         }

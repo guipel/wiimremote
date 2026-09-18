@@ -1970,6 +1970,9 @@ void ui_set_player_state(const PlayerState& state) {
                 if (lbl_time_cur) lv_label_set_text(lbl_time_cur, time_cur_buf);
             }
         }
+    } else if (state.state == PLAY_STATE_NONE) {
+        ui_clear_playback_view();
+        return;
     } else if (state.state == PLAY_STATE_STOPPED) {
         current_totlen_ms = 0;
         current_actual_curpos_ms = 0;
