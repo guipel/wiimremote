@@ -878,6 +878,10 @@ void NetworkManager::pollActiveDevice() {
 
     // Parse status
     const char* statusStr = doc["status"] | "";
+    const char* rawTitle = doc["Title"] | doc["title"] | "";
+    const char* rawArtist = doc["Artist"] | doc["artist"] | "";
+    bool hasTitle = (strlen(rawTitle) > 0 || _lastKnownTrackTitle.length() > 0);
+
     if (strcmp(statusStr, "play") == 0) {
         evt.data.player.state = PLAY_STATE_PLAYING;
     } else if (strcmp(statusStr, "pause") == 0) {
@@ -885,9 +889,9 @@ void NetworkManager::pollActiveDevice() {
     } else if (strcmp(statusStr, "stop") == 0) {
         evt.data.player.state = PLAY_STATE_STOPPED;
     } else if (strcmp(statusStr, "none") == 0) {
-        evt.data.player.state = PLAY_STATE_NONE;
+        evt.data.player.state = hasTitle ? PLAY_STATE_BUFFERING : PLAY_STATE_NONE;
     } else if (strcmp(statusStr, "load") == 0 || strcmp(statusStr, "loading") == 0) {
-        evt.data.player.state = PLAY_STATE_LOADING;
+        evt.data.player.state = PLAY_STATE_BUFFERING;
     } else {
         evt.data.player.state = PLAY_STATE_UNKNOWN;
     }
@@ -907,8 +911,6 @@ void NetworkManager::pollActiveDevice() {
         _cachedTrackDuration_ms = 0;
         _metaResolved = false;
     } else {
-        const char* rawTitle = doc["Title"] | doc["title"] | "";
-        const char* rawArtist = doc["Artist"] | doc["artist"] | "";
         if (strlen(rawTitle) > 0) {
             String decTitle = decodeHexString(rawTitle);
             String decArtist = decodeHexString(rawArtist);
@@ -954,11 +956,11 @@ void NetworkManager::pollActiveDevice() {
 
     // If streamer reports a negative pre-buffer countdown, audio has not started playing yet
     if (rawCurpos < 0 && evt.data.player.state == PLAY_STATE_PLAYING) {
-        evt.data.player.state = PLAY_STATE_UNKNOWN;
+        evt.data.player.state = PLAY_STATE_BUFFERING;
     }
 
     // Discard any residual transition position or stale buffering offsets
-    if (isNewTrack || evt.data.player.state == PLAY_STATE_LOADING || evt.data.player.state == PLAY_STATE_NONE || evt.data.player.state == PLAY_STATE_UNKNOWN) {
+    if (isNewTrack || evt.data.player.state == PLAY_STATE_BUFFERING || evt.data.player.state == PLAY_STATE_LOADING || evt.data.player.state == PLAY_STATE_NONE || evt.data.player.state == PLAY_STATE_UNKNOWN) {
         curpos = 0;
     }
 
