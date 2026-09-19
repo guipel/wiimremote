@@ -22,3 +22,9 @@ These directives are binding and must be strictly followed on all tasks in this 
   1. **Declare the objective**: State clearly what symptom or issue is being investigated.
   2. **State working hypotheses**: Explain what might be causing the issue.
   3. **Detail the investigation plan**: Explain *how* it is being investigated (which logs, metrics, code sections, or tests will be inspected) before executing diagnostic steps.
+
+## 5. Strict Changelog Discipline (Main Branch Only)
+- Every time code or configuration changes are committed to or merged into `main`, they **must** be documented in `CHANGELOG.md`.
+- **No changelog modifications on feature branches**: Feature/topic branches must only contain the relevant code, config, or assets.
+- **Consolidation upon merge**: When merging a branch into `main`, all changes introduced by that branch must be consolidated and recorded in `CHANGELOG.md` adhering to the Keep a Changelog format.
+
