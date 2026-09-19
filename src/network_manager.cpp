@@ -119,6 +119,7 @@ NetworkManager::NetworkManager()
       _hasActiveDevice(false),
       _initialPresetsFetched(false),
       _lastKnownTrackTitle(""),
+      _lastKnownArtist(""),
       _lastLyricsTitle(""),
       _lastLyricsArtist(""),
       _metaResolved(false),
@@ -836,6 +837,7 @@ void NetworkManager::selectDevice(const char* ip) {
 
         // Reset metadata and query new active device
         _lastKnownTrackTitle = "";
+        _lastKnownArtist = "";
         _lastLyricsTitle = "";
         _lastLyricsArtist = "";
         _cachedTrackDuration_ms = 0;
@@ -911,8 +913,13 @@ void NetworkManager::pollActiveDevice() {
 
     // Fallback: If LinkPlay reports totlen == 0 (e.g. Amazon Music / Prime streams),
     // use the cached duration obtained from UPnP AVTransport for any active or stopped media
-    if (totlen == 0 && _cachedTrackDuration_ms > 0 && evt.data.player.state != PLAY_STATE_NONE) {
-        totlen = _cachedTrackDuration_ms;
+    if (totlen == 0 && evt.data.player.state != PLAY_STATE_NONE) {
+        if (_cachedTrackDuration_ms == 0) {
+            fetchUpnpTrackDuration();
+        }
+        if (_cachedTrackDuration_ms > 0) {
+            totlen = _cachedTrackDuration_ms;
+        }
     }
 
     // Atomic validation: Curpos cannot legitimately exceed totlen in normal playback.
@@ -978,6 +985,7 @@ void NetworkManager::pollActiveDevice() {
     // Track metadata decoding
     if (evt.data.player.state == PLAY_STATE_NONE) {
         _lastKnownTrackTitle = "";
+        _lastKnownArtist = "";
         _lastLyricsTitle = "";
         _lastLyricsArtist = "";
         _cachedTrackDuration_ms = 0;
@@ -987,14 +995,18 @@ void NetworkManager::pollActiveDevice() {
         const char* rawArtist = doc["Artist"] | doc["artist"] | "";
         if (strlen(rawTitle) > 0) {
             String decTitle = decodeHexString(rawTitle);
-            if (_lastKnownTrackTitle != decTitle) {
+            String decArtist = decodeHexString(rawArtist);
+            if (_lastKnownTrackTitle != decTitle || _lastKnownArtist != decArtist) {
                 _lastKnownTrackTitle = decTitle;
+                _lastKnownArtist = decArtist;
                 _cachedTrackDuration_ms = 0;
                 _metaResolved = false;
                 if (fetchTrackMeta()) {
                     _metaResolved = true;
                 }
-                fetchUpnpTrackDuration();
+                if (_cachedTrackDuration_ms == 0) {
+                    fetchUpnpTrackDuration();
+                }
             } else if (!_metaResolved && evt.data.player.state == PLAY_STATE_PLAYING) {
                 // Track is playing but resolution wasn't ready on the first instant (buffering).
                 // Naturally complete it on this normal status tick without extra timers.
@@ -1005,6 +1017,7 @@ void NetworkManager::pollActiveDevice() {
         } else {
             if (_lastKnownTrackTitle.length() > 0) {
                 _lastKnownTrackTitle = "";
+                _lastKnownArtist = "";
                 _metaResolved = false;
 
                 TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
@@ -1093,13 +1106,6 @@ bool NetworkManager::fetchTrackMeta() {
 
     if (xQueueSend(xQueueUiState, &evt, 0) != pdTRUE) {
         free(pMeta);
-    }
-
-    // Trigger lyrics fetch if track title or artist changed
-    if (_lastLyricsTitle != decTitle || _lastLyricsArtist != decArtist) {
-        _lastLyricsTitle = decTitle;
-        _lastLyricsArtist = decArtist;
-        fetchLyrics(decTitle.c_str(), decArtist.c_str());
     }
 
     return (sampleRate > 0);
@@ -1466,6 +1472,13 @@ void NetworkManager::processIncomingCommands() {
                 }
                 break;
             }
+
+            case CMD_FETCH_LYRICS:
+                if (_lastKnownTrackTitle.length() > 0) {
+                    log_i("Dispatching on-demand lyrics fetch for: %s - %s", _lastKnownTrackTitle.c_str(), _lastKnownArtist.c_str());
+                    fetchLyrics(_lastKnownTrackTitle.c_str(), _lastKnownArtist.c_str());
+                }
+                break;
         }
     }
 

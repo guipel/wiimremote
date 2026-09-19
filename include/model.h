@@ -169,7 +169,8 @@ enum CmdType {
     CMD_WIFI_START_SCAN,
     CMD_WIFI_CONNECT,
     CMD_WIFI_FORGET,
-    CMD_WIFI_RECONNECT
+    CMD_WIFI_RECONNECT,
+    CMD_FETCH_LYRICS
 };
 
 struct UiCommand {

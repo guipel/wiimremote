@@ -80,6 +80,7 @@ private:
     bool _hasActiveDevice;
     bool _initialPresetsFetched;
     String _lastKnownTrackTitle;
+    String _lastKnownArtist;
     String _lastLyricsTitle;
     String _lastLyricsArtist;
     bool _metaResolved;
