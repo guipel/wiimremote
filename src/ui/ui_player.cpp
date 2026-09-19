@@ -463,7 +463,7 @@ void ui_player_init(lv_obj_t* parent) {
 
     // Volume Slider
     slider_vol = lv_slider_create(obj_vol_var_cont);
-    lv_obj_set_size(slider_vol, 126, 6);
+    lv_obj_set_size(slider_vol, 120, 6);
     lv_obj_align(slider_vol, LV_ALIGN_CENTER, 0, 0);
     lv_slider_set_range(slider_vol, 0, 100);
     lv_slider_set_value(slider_vol, 0, LV_ANIM_OFF);
@@ -482,7 +482,7 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_pad_all(slider_vol, 0, LV_PART_KNOB);
 
     lv_obj_add_flag(slider_vol, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_ext_click_area(slider_vol, 20);
+    lv_obj_set_ext_click_area(slider_vol, 6);
     lv_obj_clear_flag(slider_vol, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_CHAIN | LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(slider_vol, event_slider_vol, LV_EVENT_PRESSED, nullptr);
     lv_obj_add_event_cb(slider_vol, event_slider_vol, LV_EVENT_VALUE_CHANGED, nullptr);
@@ -496,6 +496,10 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_text_align(lbl_vol_percent, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(lbl_vol_percent, 50);
     lv_obj_align(lbl_vol_percent, LV_ALIGN_CENTER, 0, 14);
+
+    // Ensure buttons maintain top hit-test priority across their entire surface
+    lv_obj_move_foreground(btn_var_mute);
+    lv_obj_move_foreground(btn_var_input);
 }
 
 void ui_player_set_meta(const TrackMeta& meta) {
