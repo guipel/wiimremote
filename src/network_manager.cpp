@@ -1132,7 +1132,9 @@ void NetworkManager::fetchLyrics(const char* title, const char* artist) {
         return out;
     };
 
-    auto queryLrclib = [&stripLrcTimestamps](const String& t, const String& a, String& outLyrics) -> bool {
+    int lastHttpCode = 0;
+
+    auto queryLrclib = [&stripLrcTimestamps, &lastHttpCode](const String& t, const String& a, String& outLyrics) -> bool {
         WiFiClientSecure secureClient;
         secureClient.setInsecure();
         secureClient.setTimeout(4000);
@@ -1146,6 +1148,8 @@ void NetworkManager::fetchLyrics(const char* title, const char* artist) {
         http.begin(secureClient, url);
         http.setUserAgent("WiiMRemote/1.0 (ESP32-S3)");
         int code = http.GET();
+        lastHttpCode = code;
+
         if (code == 200) {
             String payload = http.getString();
             JsonDocument doc;
@@ -1194,6 +1198,8 @@ void NetworkManager::fetchLyrics(const char* title, const char* artist) {
         pResult->is_loading = false;
         if (found && lyricsText.length() > 0) {
             pResult->text = strdup(lyricsText.c_str());
+        } else if (lastHttpCode < 0 || lastHttpCode >= 500) {
+            pResult->text = strdup("Failed to retrieve lyrics.\nPlease check your connection.");
         } else {
             pResult->text = strdup("No lyrics found for this track.");
         }
