@@ -1938,13 +1938,15 @@ void ui_set_player_state(const PlayerState& state) {
     }
 
     // 3. Progress Slider & Times
-    // Atomic Update: Only update total duration, current position, and progress bar TOGETHER
-    // when both values are confirmed valid and belong to an active playing or paused state.
-    // During track transitions or buffering, leave the current display untouched until confirmed.
-    bool is_valid_playback = (state.state == PLAY_STATE_PLAYING || state.state == PLAY_STATE_PAUSED);
-    if (is_valid_playback && state.totlen_ms > 0 && state.curpos_ms <= state.totlen_ms) {
+    if (state.state == PLAY_STATE_NONE) {
+        ui_clear_playback_view();
+        return;
+    }
+
+    bool is_valid_playback = (state.state == PLAY_STATE_PLAYING || state.state == PLAY_STATE_PAUSED || state.state == PLAY_STATE_STOPPED);
+    if (is_valid_playback && state.totlen_ms > 0) {
         current_totlen_ms = state.totlen_ms;
-        current_actual_curpos_ms = state.curpos_ms;
+        current_actual_curpos_ms = (state.curpos_ms <= state.totlen_ms) ? state.curpos_ms : state.totlen_ms;
         last_progress_tick_ms = millis();
 
         // Check if streamer has buffered and caught up with the seek target
@@ -1958,21 +1960,18 @@ void ui_set_player_state(const PlayerState& state) {
 
         if (bar_progress && !is_user_seeking) {
             char time_tot_buf[16] = "--:--";
-            format_time(state.totlen_ms, time_tot_buf, sizeof(time_tot_buf));
+            format_time(current_totlen_ms, time_tot_buf, sizeof(time_tot_buf));
             if (lbl_time_total) lv_label_set_text(lbl_time_total, time_tot_buf);
 
             if (!has_pending_seek) {
                 char time_cur_buf[16] = "00:00";
-                format_time(state.curpos_ms, time_cur_buf, sizeof(time_cur_buf));
-                uint32_t val = (uint32_t)(((uint64_t)state.curpos_ms * PROGRESS_BAR_MAX) / state.totlen_ms);
+                format_time(current_actual_curpos_ms, time_cur_buf, sizeof(time_cur_buf));
+                uint32_t val = (uint32_t)(((uint64_t)current_actual_curpos_ms * PROGRESS_BAR_MAX) / current_totlen_ms);
                 if (val > PROGRESS_BAR_MAX) val = PROGRESS_BAR_MAX;
                 lv_bar_set_value(bar_progress, (int32_t)val, LV_ANIM_OFF);
                 if (lbl_time_cur) lv_label_set_text(lbl_time_cur, time_cur_buf);
             }
         }
-    } else if (state.state == PLAY_STATE_NONE) {
-        ui_clear_playback_view();
-        return;
     } else if (state.state == PLAY_STATE_STOPPED) {
         current_totlen_ms = 0;
         current_actual_curpos_ms = 0;

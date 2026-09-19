@@ -910,19 +910,15 @@ void NetworkManager::pollActiveDevice() {
     }
 
     // Fallback: If LinkPlay reports totlen == 0 (e.g. Amazon Music / Prime streams),
-    // use the cached duration obtained from UPnP AVTransport ONLY when actively playing
-    if (totlen == 0 && _cachedTrackDuration_ms > 0 && evt.data.player.state == PLAY_STATE_PLAYING) {
+    // use the cached duration obtained from UPnP AVTransport for any active or stopped media
+    if (totlen == 0 && _cachedTrackDuration_ms > 0 && evt.data.player.state != PLAY_STATE_NONE) {
         totlen = _cachedTrackDuration_ms;
     }
 
     // Atomic validation: Curpos cannot legitimately exceed totlen in normal playback.
-    // If curpos > totlen, this is a desynchronized transition state between old position and new length.
-    // Suppress both until the new track's playback is properly synchronized.
+    // Cap curpos at totlen to accurately reflect when a song has reached the end.
     if (totlen > 0 && curpos > totlen) {
-        totlen = 0;
-        curpos = 0;
-    } else if (evt.data.player.state != PLAY_STATE_PLAYING && totlen == 0) {
-        curpos = 0;
+        curpos = totlen;
     }
 
     evt.data.player.totlen_ms = totlen;
