@@ -38,6 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Vertically balanced layout: transport controls at `Y = 122`, track counter at `Y = 184`, and volume controls at `Y = 197` (`b479b36`, `a6c131f`).
   - Formatted volume percentage label with `COLOR_TEXT_MUTED`, harmonizing it with the track counter (`a6c131f`).
   - Moved active tab cyan accent line on the bottom navigation bar from the top of the tab to the bottom edge (`LV_BORDER_SIDE_BOTTOM`) (`a6c131f`).
+- **Documentation Overhaul**:
+  - Brought `README.md` fully up to date with the v1.3.0 release, documenting hardware telemetry (GPIO 9 battery ADC, touch-to-wake interrupt), 3-tab and 3-modal navigation hierarchy, modular UI decomposition, and API endpoints.
 
 ### Fixed
 - **Mute & Input Button Touch Interception**:
