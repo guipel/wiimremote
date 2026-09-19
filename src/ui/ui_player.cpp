@@ -20,13 +20,11 @@ static lv_obj_t* btn_next = nullptr;
 static lv_obj_t* btn_mute = nullptr;
 static lv_obj_t* lbl_mute = nullptr;
 static lv_obj_t* img_lock = nullptr;
-static lv_obj_t* lbl_x = nullptr;
 
 // UI Widgets - Variable Volume Controls
 static lv_obj_t* obj_vol_var_cont = nullptr;
 static lv_obj_t* btn_var_mute = nullptr;
 static lv_obj_t* lbl_var_mute = nullptr;
-static lv_obj_t* lbl_var_x = nullptr;
 static lv_obj_t* slider_vol = nullptr;
 static lv_obj_t* lbl_vol_percent = nullptr;
 static lv_obj_t* btn_var_input = nullptr;
@@ -225,12 +223,13 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_pad_all(parent, 8, 0);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
-    // 1. Bottom Telemetry Row: Audio Resolution (Left) & Track Counter (Right)
+    // 1. Telemetry: Audio Resolution (Centered under progress bar) & Track Counter (Bottom Right)
     lbl_resolution = lv_label_create(parent);
     lv_label_set_text(lbl_resolution, "");
     lv_obj_set_style_text_font(lbl_resolution, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lbl_resolution, COLOR_TEXT_MUTED, 0);
-    lv_obj_align(lbl_resolution, LV_ALIGN_BOTTOM_LEFT, 4, -2);
+    lv_obj_set_style_text_align(lbl_resolution, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(lbl_resolution, LV_ALIGN_TOP_MID, 0, 90);
 
     lbl_track_counter = lv_label_create(parent);
     lv_label_set_text(lbl_track_counter, "");
@@ -403,13 +402,6 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_img_recolor_opa(img_lock, 255, 0);
     lv_obj_align(img_lock, LV_ALIGN_LEFT_MID, 38, 0);
 
-    lbl_x = lv_label_create(btn_mute);
-    lv_label_set_text(lbl_x, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_font(lbl_x, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(lbl_x, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_align(lbl_x, LV_ALIGN_LEFT_MID, 38, 0);
-    lv_obj_add_flag(lbl_x, LV_OBJ_FLAG_HIDDEN);
-
     // 6B. Variable Volume Row Container
     obj_vol_var_cont = lv_obj_create(parent);
     lv_obj_set_size(obj_vol_var_cont, 224, 48);
@@ -443,13 +435,6 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_text_font(lbl_var_mute, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_var_mute, COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(lbl_var_mute);
-
-    lbl_var_x = lv_label_create(btn_var_mute);
-    lv_label_set_text(lbl_var_x, LV_SYMBOL_CLOSE);
-    lv_obj_set_style_text_font(lbl_var_x, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_var_x, lv_color_hex(0xFFFFFF), 0);
-    lv_obj_align(lbl_var_x, LV_ALIGN_CENTER, 8, -6);
-    lv_obj_add_flag(lbl_var_x, LV_OBJ_FLAG_HIDDEN);
 
     // Variable Input Button
     btn_var_input = lv_btn_create(obj_vol_var_cont);
@@ -657,10 +642,9 @@ void ui_player_set_volume(uint8_t volume, bool is_fixed, bool mute) {
                 lv_label_set_text(lbl_mute, LV_SYMBOL_VOLUME_MAX);
                 lv_obj_set_style_text_color(lbl_mute, lv_color_hex(0xFFFFFF), 0);
                 lv_obj_align(lbl_mute, LV_ALIGN_LEFT_MID, 12, 0);
-                if (img_lock) lv_obj_add_flag(img_lock, LV_OBJ_FLAG_HIDDEN);
-                if (lbl_x) {
-                    lv_obj_clear_flag(lbl_x, LV_OBJ_FLAG_HIDDEN);
-                    lv_obj_align(lbl_x, LV_ALIGN_LEFT_MID, 38, 0);
+                if (img_lock) {
+                    lv_obj_set_style_img_recolor(img_lock, lv_color_hex(0xFFFFFF), 0);
+                    lv_obj_align(img_lock, LV_ALIGN_LEFT_MID, 38, 0);
                 }
             } else {
                 lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x222732), 0);
@@ -672,9 +656,8 @@ void ui_player_set_volume(uint8_t volume, bool is_fixed, bool mute) {
                 lv_label_set_text(lbl_mute, LV_SYMBOL_VOLUME_MAX);
                 lv_obj_set_style_text_color(lbl_mute, COLOR_TEXT_PRIMARY, 0);
                 lv_obj_align(lbl_mute, LV_ALIGN_LEFT_MID, 12, 0);
-                if (lbl_x) lv_obj_add_flag(lbl_x, LV_OBJ_FLAG_HIDDEN);
                 if (img_lock) {
-                    lv_obj_clear_flag(img_lock, LV_OBJ_FLAG_HIDDEN);
+                    lv_obj_set_style_img_recolor(img_lock, COLOR_TEXT_PRIMARY, 0);
                     lv_obj_align(img_lock, LV_ALIGN_LEFT_MID, 38, 0);
                 }
             }
@@ -699,13 +682,11 @@ void ui_player_set_volume(uint8_t volume, bool is_fixed, bool mute) {
                 lv_obj_set_style_bg_color(btn_var_mute, lv_color_hex(0xE63946), 0);
                 lv_obj_set_style_border_width(btn_var_mute, 0, 0);
                 lv_obj_set_style_text_color(lbl_var_mute, lv_color_hex(0xFFFFFF), 0);
-                if (lbl_var_x) lv_obj_clear_flag(lbl_var_x, LV_OBJ_FLAG_HIDDEN);
             } else {
                 lv_obj_set_style_bg_color(btn_var_mute, lv_color_hex(0x222732), 0);
                 lv_obj_set_style_border_width(btn_var_mute, 1, 0);
                 lv_obj_set_style_border_color(btn_var_mute, lv_color_hex(0x3A4252), 0);
                 lv_obj_set_style_text_color(lbl_var_mute, COLOR_TEXT_PRIMARY, 0);
-                if (lbl_var_x) lv_obj_add_flag(lbl_var_x, LV_OBJ_FLAG_HIDDEN);
             }
         }
     }
