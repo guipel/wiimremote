@@ -107,7 +107,7 @@ static void event_slider_seek(lv_event_t* e) {
                 if (lbl_time_cur) lv_label_set_text(lbl_time_cur, preview_buf);
 
                 if (obj_seek_target) {
-                    lv_obj_set_pos(obj_seek_target, cx - 7, 74);
+                    lv_obj_set_pos(obj_seek_target, cx - 7, 64);
                     lv_obj_clear_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
                 }
             }
@@ -124,7 +124,7 @@ static void event_slider_seek(lv_event_t* e) {
                 pending_seek_timestamp = millis();
 
                 if (obj_seek_target) {
-                    lv_obj_set_pos(obj_seek_target, cx - 7, 74);
+                    lv_obj_set_pos(obj_seek_target, cx - 7, 64);
                     lv_obj_clear_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
                 }
 
@@ -223,29 +223,30 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_pad_all(parent, 8, 0);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
-    // 1. Telemetry: Audio Resolution (Centered under progress bar) & Track Counter (Bottom Right)
+    // 1. Telemetry: Audio Resolution (Centered under progress bar) & Track Counter (Centered under Play/Pause)
     lbl_resolution = lv_label_create(parent);
     lv_label_set_text(lbl_resolution, "");
     lv_obj_set_style_text_font(lbl_resolution, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lbl_resolution, COLOR_TEXT_MUTED, 0);
     lv_obj_set_style_text_align(lbl_resolution, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(lbl_resolution, LV_ALIGN_TOP_MID, 0, 90);
+    lv_obj_align(lbl_resolution, LV_ALIGN_TOP_MID, 0, 80);
 
     lbl_track_counter = lv_label_create(parent);
     lv_label_set_text(lbl_track_counter, "");
     lv_obj_set_style_text_font(lbl_track_counter, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lbl_track_counter, COLOR_TEXT_MUTED, 0);
-    lv_obj_align(lbl_track_counter, LV_ALIGN_BOTTOM_RIGHT, -4, -2);
+    lv_obj_set_style_text_align(lbl_track_counter, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(lbl_track_counter, LV_ALIGN_TOP_MID, 0, 168);
 
     // 2. Track Title
     lbl_title = lv_label_create(parent);
     lv_label_set_text(lbl_title, "");
-    lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_22, 0);
+    lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(lbl_title, COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_align(lbl_title, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_width(lbl_title, 224);
-    lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, 14);
+    lv_obj_align(lbl_title, LV_ALIGN_TOP_MID, 0, 6);
 
     // 3. Artist & Album
     lbl_artist = lv_label_create(parent);
@@ -255,12 +256,12 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_text_align(lbl_artist, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(lbl_artist, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_width(lbl_artist, 224);
-    lv_obj_align(lbl_artist, LV_ALIGN_TOP_MID, 0, 42);
+    lv_obj_align(lbl_artist, LV_ALIGN_TOP_MID, 0, 38);
 
     // 4. Progress Bar & Elapsed/Total Time
     bar_progress = lv_bar_create(parent);
     lv_obj_set_size(bar_progress, 220, 6);
-    lv_obj_align(bar_progress, LV_ALIGN_TOP_MID, 0, 78);
+    lv_obj_align(bar_progress, LV_ALIGN_TOP_MID, 0, 68);
     lv_obj_set_style_bg_color(bar_progress, lv_color_hex(0x242A35), 0);
     lv_obj_set_style_bg_opa(bar_progress, LV_OPA_COVER, 0);
     lv_obj_set_style_border_color(bar_progress, lv_color_hex(0x3A4252), 0);
@@ -295,18 +296,18 @@ void ui_player_init(lv_obj_t* parent) {
     lv_label_set_text(lbl_time_cur, "00:00");
     lv_obj_set_style_text_font(lbl_time_cur, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lbl_time_cur, COLOR_TEXT_MUTED, 0);
-    lv_obj_align(lbl_time_cur, LV_ALIGN_TOP_LEFT, 10, 90);
+    lv_obj_align(lbl_time_cur, LV_ALIGN_TOP_LEFT, 10, 80);
 
     lbl_time_total = lv_label_create(parent);
     lv_label_set_text(lbl_time_total, "--:--");
     lv_obj_set_style_text_font(lbl_time_total, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lbl_time_total, COLOR_TEXT_MUTED, 0);
-    lv_obj_align(lbl_time_total, LV_ALIGN_TOP_RIGHT, -10, 90);
+    lv_obj_align(lbl_time_total, LV_ALIGN_TOP_RIGHT, -10, 80);
 
     // 5. Transport Controls Row
     lv_obj_t* trans_cont = lv_obj_create(parent);
     lv_obj_set_size(trans_cont, 224, 60);
-    lv_obj_align(trans_cont, LV_ALIGN_TOP_MID, 0, 118);
+    lv_obj_align(trans_cont, LV_ALIGN_TOP_MID, 0, 104);
     lv_obj_set_style_bg_opa(trans_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_opa(trans_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(trans_cont, 0, 0);
@@ -375,7 +376,7 @@ void ui_player_init(lv_obj_t* parent) {
     // 6. Compact Volume / Mute Button (Fixed Mode)
     btn_mute = lv_btn_create(parent);
     lv_obj_set_size(btn_mute, 68, 40);
-    lv_obj_align(btn_mute, LV_ALIGN_TOP_MID, 0, 186);
+    lv_obj_align(btn_mute, LV_ALIGN_TOP_MID, 0, 196);
     lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x222732), 0);
     lv_obj_set_style_border_width(btn_mute, 1, 0);
     lv_obj_set_style_border_color(btn_mute, lv_color_hex(0x3A4252), 0);
@@ -405,7 +406,7 @@ void ui_player_init(lv_obj_t* parent) {
     // 6B. Variable Volume Row Container
     obj_vol_var_cont = lv_obj_create(parent);
     lv_obj_set_size(obj_vol_var_cont, 224, 48);
-    lv_obj_align(obj_vol_var_cont, LV_ALIGN_TOP_MID, 0, 186);
+    lv_obj_align(obj_vol_var_cont, LV_ALIGN_TOP_MID, 0, 192);
     lv_obj_set_style_bg_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(obj_vol_var_cont, 0, 0);
@@ -501,7 +502,7 @@ void ui_player_set_meta(const TrackMeta& meta) {
     if (lbl_title) {
         if (strlen(meta.title) > 0) {
             lv_point_t size;
-            lv_txt_get_size(&size, meta.title, &lv_font_montserrat_22, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
+            lv_txt_get_size(&size, meta.title, &lv_font_montserrat_24, 0, 0, LV_COORD_MAX, LV_TEXT_FLAG_NONE);
             if (size.x > 224) {
                 char formatted_title[192];
                 snprintf(formatted_title, sizeof(formatted_title), "%s                    ", meta.title);
