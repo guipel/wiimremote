@@ -236,7 +236,7 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_text_font(lbl_track_counter, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lbl_track_counter, COLOR_TEXT_MUTED, 0);
     lv_obj_set_style_text_align(lbl_track_counter, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(lbl_track_counter, LV_ALIGN_TOP_MID, 0, 188);
+    lv_obj_align(lbl_track_counter, LV_ALIGN_TOP_MID, 0, 184);
 
     // 2. Track Title
     lbl_title = lv_label_create(parent);
@@ -307,7 +307,7 @@ void ui_player_init(lv_obj_t* parent) {
     // 5. Transport Controls Row
     lv_obj_t* trans_cont = lv_obj_create(parent);
     lv_obj_set_size(trans_cont, 224, 60);
-    lv_obj_align(trans_cont, LV_ALIGN_TOP_MID, 0, 124);
+    lv_obj_align(trans_cont, LV_ALIGN_TOP_MID, 0, 122);
     lv_obj_set_style_bg_opa(trans_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_opa(trans_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(trans_cont, 0, 0);
@@ -376,7 +376,7 @@ void ui_player_init(lv_obj_t* parent) {
     // 6. Compact Volume / Mute Button (Fixed Mode)
     btn_mute = lv_btn_create(parent);
     lv_obj_set_size(btn_mute, 68, 40);
-    lv_obj_align(btn_mute, LV_ALIGN_TOP_MID, 0, 210);
+    lv_obj_align(btn_mute, LV_ALIGN_TOP_MID, 0, 202);
     lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x222732), 0);
     lv_obj_set_style_border_width(btn_mute, 1, 0);
     lv_obj_set_style_border_color(btn_mute, lv_color_hex(0x3A4252), 0);
@@ -406,7 +406,7 @@ void ui_player_init(lv_obj_t* parent) {
     // 6B. Variable Volume Row Container
     obj_vol_var_cont = lv_obj_create(parent);
     lv_obj_set_size(obj_vol_var_cont, 224, 48);
-    lv_obj_align(obj_vol_var_cont, LV_ALIGN_TOP_MID, 0, 210);
+    lv_obj_align(obj_vol_var_cont, LV_ALIGN_TOP_MID, 0, 202);
     lv_obj_set_style_bg_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(obj_vol_var_cont, 0, 0);
