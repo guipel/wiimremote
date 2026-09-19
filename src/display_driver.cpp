@@ -86,8 +86,8 @@ static void display_flush_cb(lv_disp_drv_t *disp, const lv_area_t *area, lv_colo
     uint32_t w = (area->x2 - area->x1 + 1);
     uint32_t h = (area->y2 - area->y1 + 1);
 
-    gfx.pushImageDMA(area->x1, area->y1, w, h, (const uint16_t *)&color_p->full);
     gfx.waitDMA();
+    gfx.pushImageDMA(area->x1, area->y1, w, h, (const uint16_t *)&color_p->full);
     lv_disp_flush_ready(disp);
 }
 
@@ -164,6 +164,9 @@ void display_driver_init() {
     indev_drv.type = LV_INDEV_TYPE_POINTER;
     indev_drv.read_cb = touchpad_read_cb;
     lv_indev_drv_register(&indev_drv);
+    if (indev_drv.read_timer) {
+        lv_timer_set_period(indev_drv.read_timer, 15); // 15ms (~66 Hz) polling rate
+    }
 
     log_i("Display and Touch driver initialized successfully");
 }
