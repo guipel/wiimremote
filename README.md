@@ -132,6 +132,28 @@ src/ui/
 
 ---
 
+## 📁 Modular Network Architecture
+
+The network subsystem is decoupled into single-responsibility services:
+
+```
+include/net/
+├── net_utils.h         # Stateless string transcoding (UTF-8, hex, URL, XML, LRC)
+├── wifi_service.h      # Wi-Fi station lifecycle, reconnect loop, synchronous scan
+├── discovery_service.h # SSDP M-SEARCH broadcast, candidate verification, device storage
+├── linkplay_client.h   # TLS socket session, player polling, buffering state, presets, UPnP
+└── lyrics_client.h     # LRCLIB REST client, track title sanitation, error categorization
+
+src/net/
+├── net_utils.cpp       # Pure stateless utility functions
+├── wifi_service.cpp    # ESP32 Wi-Fi station management & non-blocking reconnect
+├── discovery_service.cpp # SSDP UDP listener, HTTP/HTTPS verification, thread-safe list
+├── linkplay_client.cpp # LinkPlay HTTP/HTTPS client & UPnP SOAP transport control
+└── lyrics_client.cpp   # LRCLIB API client with regex timing tag sanitation
+```
+
+---
+
 ## 📱 Features & UI Navigation
 
 The interface features a **Top Header Bar**, a **3-Tab Navigation View**, and **3 Interactive Modals**:

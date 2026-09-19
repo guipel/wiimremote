@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.4.0] - 2026-09-19
+
+### Changed & Refactored
+- **Modular Network Architecture Decomposition**:
+  - Decomposed the monolithic 1,550-line `src/network_manager.cpp` into single-responsibility modular services under `include/net/` and `src/net/`:
+    - `net_utils.h` / `net_utils.cpp`: Stateless utilities for UTF-8 transcoding, hex decoding, URL encoding, XML tag extraction, and LRC timestamp stripping (`fad6bd9`).
+    - `wifi_service.h` / `wifi_service.cpp`: Wi-Fi station lifecycle, non-blocking reconnect loop, in-RAM credential retention, synchronous scanning on Core 0, and UI event dispatching (`fad6bd9`).
+    - `discovery_service.h` / `discovery_service.cpp`: SSDP M-SEARCH broadcast over UDP 1900, packet deduplication, two-tier streamer verification (HTTP port 49152 `description.xml` & HTTPS port 443 `getStatusEx`), thread-safe `DeviceList` storage (portMUX protected), and active device selection (`fad6bd9`).
+    - `linkplay_client.h` / `linkplay_client.cpp`: Persistent TLS socket session, status polling (`getPlayerStatus`), buffering state mapping (`PLAY_STATE_BUFFERING`), signed negative `curpos` DAC countdown handling, metadata parsing, preset retrieval, and UPnP SOAP transport control (`fad6bd9`).
+    - `lyrics_client.h` / `lyrics_client.cpp`: On-demand LRCLIB REST client, track title sanitation fallbacks, and error status differentiation (`fad6bd9`).
+  - Reduced `src/network_manager.cpp` from 1,550 lines to 264 lines, focusing purely on the Core 0 task loop orchestration, `xQueueUiCmd` router, volume command throttling, and periodic polling timers (`fad6bd9`).
+
+### Fixed
+- **Wi-Fi Connected Network Banner Flicker**:
+  - Eliminated artificial pre-scan disconnect (`WiFi.disconnect(false, false)`) from `wifi_service_start_scan()`. The ESP32-S3 radio now performs synchronous channel sweeps on Core 0 while remaining associated to the AP, preserving active TLS sockets and preventing the connected network banner (`✔ <SSID>`) from disappearing during network scans (`b235e0f`).
+
+---
+
 ## [1.3.0] - 2026-09-19
 
 ### Added
