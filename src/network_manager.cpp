@@ -1367,8 +1367,11 @@ void NetworkManager::processIncomingCommands() {
                 if (_lastPlayerState.state == PLAY_STATE_PLAYING) {
                     log_i("Dispatching Pause command");
                     sendHttpCommand("setPlayerCmd:pause");
+                } else if (_lastPlayerState.state == PLAY_STATE_PAUSED) {
+                    log_i("Dispatching Resume command");
+                    sendHttpCommand("setPlayerCmd:resume");
                 } else {
-                    log_i("Dispatching Play/Resume command");
+                    log_i("Dispatching Play command");
                     sendHttpCommand("setPlayerCmd:play");
                 }
                 _lastStatusPoll = millis() - (STATUS_POLL_INTERVAL_MS - 150);
