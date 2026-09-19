@@ -81,8 +81,6 @@ private:
     bool _initialPresetsFetched;
     String _lastKnownTrackTitle;
     String _lastKnownArtist;
-    String _lastLyricsTitle;
-    String _lastLyricsArtist;
     bool _metaResolved;
     uint32_t _cachedTrackDuration_ms;
     uint8_t _activeMode;

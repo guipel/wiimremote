@@ -120,8 +120,6 @@ NetworkManager::NetworkManager()
       _initialPresetsFetched(false),
       _lastKnownTrackTitle(""),
       _lastKnownArtist(""),
-      _lastLyricsTitle(""),
-      _lastLyricsArtist(""),
       _metaResolved(false),
       _cachedTrackDuration_ms(0),
       _activeMode(0),
@@ -838,8 +836,6 @@ void NetworkManager::selectDevice(const char* ip) {
         // Reset metadata and query new active device
         _lastKnownTrackTitle = "";
         _lastKnownArtist = "";
-        _lastLyricsTitle = "";
-        _lastLyricsArtist = "";
         _cachedTrackDuration_ms = 0;
         _metaResolved = false;
         pollActiveDevice();
@@ -982,12 +978,10 @@ void NetworkManager::pollActiveDevice() {
     _lastPlayerState = evt.data.player;
     xQueueSend(xQueueUiState, &evt, 0);
 
-    // Track metadata decoding
+    // Track metadata decoding & change detection
     if (evt.data.player.state == PLAY_STATE_NONE) {
         _lastKnownTrackTitle = "";
         _lastKnownArtist = "";
-        _lastLyricsTitle = "";
-        _lastLyricsArtist = "";
         _cachedTrackDuration_ms = 0;
         _metaResolved = false;
     } else {
@@ -1004,46 +998,24 @@ void NetworkManager::pollActiveDevice() {
                 if (fetchTrackMeta()) {
                     _metaResolved = true;
                 }
-                if (_cachedTrackDuration_ms == 0) {
-                    fetchUpnpTrackDuration();
-                }
             } else if (!_metaResolved && evt.data.player.state == PLAY_STATE_PLAYING) {
-                // Track is playing but resolution wasn't ready on the first instant (buffering).
-                // Naturally complete it on this normal status tick without extra timers.
                 if (fetchTrackMeta()) {
                     _metaResolved = true;
                 }
             }
-        } else {
-            if (_lastKnownTrackTitle.length() > 0) {
-                _lastKnownTrackTitle = "";
-                _lastKnownArtist = "";
-                _metaResolved = false;
+        } else if (_lastKnownTrackTitle.length() > 0) {
+            _lastKnownTrackTitle = "";
+            _lastKnownArtist = "";
+            _metaResolved = false;
 
-                TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
-                if (pMeta) {
-                    memset(pMeta, 0, sizeof(TrackMeta));
-                    UiEvent evtMeta;
-                    evtMeta.type = UI_EVT_META_UPDATED;
-                    evtMeta.data.meta = pMeta;
-                    if (xQueueSend(xQueueUiState, &evtMeta, 0) != pdTRUE) {
-                        free(pMeta);
-                    }
-                }
-
-                _lastLyricsTitle = "";
-                _lastLyricsArtist = "";
-                LyricsInfo* pLyrics = (LyricsInfo*)malloc(sizeof(LyricsInfo));
-                if (pLyrics) {
-                    memset(pLyrics, 0, sizeof(LyricsInfo));
-                    pLyrics->text = strdup("");
-                    UiEvent evtLyrics;
-                    evtLyrics.type = UI_EVT_LYRICS_UPDATED;
-                    evtLyrics.data.lyrics = pLyrics;
-                    if (xQueueSend(xQueueUiState, &evtLyrics, 0) != pdTRUE) {
-                        if (pLyrics->text) free(pLyrics->text);
-                        free(pLyrics);
-                    }
+            TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
+            if (pMeta) {
+                memset(pMeta, 0, sizeof(TrackMeta));
+                UiEvent evtMeta;
+                evtMeta.type = UI_EVT_META_UPDATED;
+                evtMeta.data.meta = pMeta;
+                if (xQueueSend(xQueueUiState, &evtMeta, 0) != pdTRUE) {
+                    free(pMeta);
                 }
             }
         }
@@ -1116,24 +1088,7 @@ void NetworkManager::fetchLyrics(const char* title, const char* artist) {
         return;
     }
 
-    // 1. Send loading status to UI
-    LyricsInfo* pLoading = (LyricsInfo*)malloc(sizeof(LyricsInfo));
-    if (pLoading) {
-        memset(pLoading, 0, sizeof(LyricsInfo));
-        strncpy(pLoading->title, title, sizeof(pLoading->title) - 1);
-        strncpy(pLoading->artist, (artist ? artist : ""), sizeof(pLoading->artist) - 1);
-        pLoading->text = strdup("Fetching lyrics from LRCLIB...");
-        pLoading->is_loading = true;
-        UiEvent evt;
-        evt.type = UI_EVT_LYRICS_UPDATED;
-        evt.data.lyrics = pLoading;
-        if (xQueueSend(xQueueUiState, &evt, 0) != pdTRUE) {
-            if (pLoading->text) free(pLoading->text);
-            free(pLoading);
-        }
-    }
-
-    // 2. Query LRCLIB
+    // Query LRCLIB
     String cleanTitle = title;
     String cleanArtist = (artist ? artist : "");
 

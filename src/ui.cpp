@@ -352,11 +352,6 @@ static void event_btn_prev(lv_event_t* e) {
         current_actual_curpos_ms = 0;
         if (bar_progress) lv_bar_set_value(bar_progress, 0, LV_ANIM_OFF);
         if (lbl_time_cur) lv_label_set_text(lbl_time_cur, "00:00");
-    } else {
-        if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, "");
-        if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, "");
-        if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "Loading new track...");
-        memset(&current_track_meta, 0, sizeof(current_track_meta));
     }
 }
 
@@ -377,11 +372,6 @@ static void event_btn_next(lv_event_t* e) {
     UiCommand cmd;
     cmd.type = CMD_NEXT;
     xQueueSend(xQueueUiCmd, &cmd, 0);
-
-    if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, "");
-    if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, "");
-    if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "Loading new track...");
-    memset(&current_track_meta, 0, sizeof(current_track_meta));
 }
 
 static void event_btn_mute(lv_event_t* e) {
@@ -403,44 +393,40 @@ static void event_btn_preset(lv_event_t* e) {
     cmd.data.preset_index = (uint8_t)index;
     xQueueSend(xQueueUiCmd, &cmd, 0);
 
-    if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, "");
-    if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, "");
-    if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "Loading preset...");
-    memset(&current_track_meta, 0, sizeof(current_track_meta));
-
     // Switch back to player tab for immediate playback feedback (Player is tab 1)
     lv_tabview_set_act(tabview, 1, LV_ANIM_ON);
 }
 
-// Event Callback - Tab Change (e.g. Swiping to Lyrics Tab)
-static void event_tabview_changed(lv_event_t* e) {
-    lv_obj_t* tv = lv_event_get_target(e);
-    uint16_t act = lv_tabview_get_tab_act(tv);
-    if (act == 0) { // Switched to Lyrics Tab
-        if (strlen(current_track_meta.title) == 0 ||
-            strcmp(current_track_meta.title, "Ready for stream") == 0 ||
-            strcmp(current_track_meta.title, "No Track Playing") == 0) {
-            if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, "Lyrics");
-            if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, "");
-            if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "Play a track to view lyrics.");
-            return;
-        }
+// Check and fetch lyrics on-demand if currently on Lyrics Tab (Tab 0)
+static void check_and_fetch_lyrics() {
+    if (!tabview || lv_tabview_get_tab_act(tabview) != 0) return;
 
-        const char* lyr_title = lbl_lyrics_title ? lv_label_get_text(lbl_lyrics_title) : "";
-        const char* lyr_artist = lbl_lyrics_artist ? lv_label_get_text(lbl_lyrics_artist) : "";
-
-        // If lyrics on screen do not match currently playing song, fetch them on-demand
-        if (strcmp(current_track_meta.title, lyr_title) != 0 || strcmp(current_track_meta.artist, lyr_artist) != 0) {
-            if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, current_track_meta.title);
-            if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, current_track_meta.artist);
-            if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "Fetching lyrics from LRCLIB...");
-            if (cont_lyrics_scroll) lv_obj_scroll_to_y(cont_lyrics_scroll, 0, LV_ANIM_OFF);
-
-            UiCommand cmd;
-            cmd.type = CMD_FETCH_LYRICS;
-            xQueueSend(xQueueUiCmd, &cmd, 0);
-        }
+    if (strlen(current_track_meta.title) == 0 ||
+        strcmp(current_track_meta.title, "Ready for stream") == 0 ||
+        strcmp(current_track_meta.title, "No Track Playing") == 0) {
+        if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, "Lyrics");
+        if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, "");
+        if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "Play a track to view lyrics.");
+        return;
     }
+
+    const char* lyr_title = lbl_lyrics_title ? lv_label_get_text(lbl_lyrics_title) : "";
+    const char* lyr_artist = lbl_lyrics_artist ? lv_label_get_text(lbl_lyrics_artist) : "";
+
+    if (strcmp(current_track_meta.title, lyr_title) != 0 || strcmp(current_track_meta.artist, lyr_artist) != 0) {
+        if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, current_track_meta.title);
+        if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, current_track_meta.artist);
+        if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "Fetching lyrics from LRCLIB...");
+        if (cont_lyrics_scroll) lv_obj_scroll_to_y(cont_lyrics_scroll, 0, LV_ANIM_OFF);
+
+        UiCommand cmd;
+        cmd.type = CMD_FETCH_LYRICS;
+        xQueueSend(xQueueUiCmd, &cmd, 0);
+    }
+}
+
+static void event_tabview_changed(lv_event_t* e) {
+    check_and_fetch_lyrics();
 }
 
 // Event Callbacks - Modal Device Selector
@@ -2098,30 +2084,8 @@ void ui_set_track_meta(const TrackMeta& meta) {
     has_pending_seek = false;
     if (obj_seek_target) lv_obj_add_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
 
-    // If the user is currently looking at the Lyrics Tab (Tab 0), auto-refresh lyrics for the new song
-    if (tabview && lv_tabview_get_tab_act(tabview) == 0) {
-        if (strlen(meta.title) == 0) {
-            if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, "Lyrics");
-            if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, "");
-            if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "Play a track to view lyrics.");
-        } else {
-            const char* lyr_title = lbl_lyrics_title ? lv_label_get_text(lbl_lyrics_title) : "";
-            const char* lyr_artist = lbl_lyrics_artist ? lv_label_get_text(lbl_lyrics_artist) : "";
-
-            if (strcmp(meta.title, lyr_title) != 0 || strcmp(meta.artist, lyr_artist) != 0) {
-                if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, meta.title);
-                if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, meta.artist);
-                if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "Fetching lyrics from LRCLIB...");
-                if (cont_lyrics_scroll) lv_obj_scroll_to_y(cont_lyrics_scroll, 0, LV_ANIM_OFF);
-
-                UiCommand cmd;
-                cmd.type = CMD_FETCH_LYRICS;
-                xQueueSend(xQueueUiCmd, &cmd, 0);
-            }
-        }
-    }
-
     update_stream_info_labels();
+    check_and_fetch_lyrics();
 }
 
 void ui_set_presets(const PresetList& presets) {
