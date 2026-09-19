@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.0] - 2026-09-19
+
+### Added
+- **Transient Buffering State (`PLAY_STATE_BUFFERING`)**:
+  - Added `PLAY_STATE_BUFFERING` to `include/model.h` to cleanly represent LinkPlay transient states (`"load"`, `"none"` during track transitions, and negative `curpos` DAC pre-buffer countdowns) (`6dae3c3`).
+- **Dedicated Lyrics Error Differentiation**:
+  - Enhanced `NetworkManager::fetchLyrics()` to capture HTTP response codes, distinguishing between missing lyrics (HTTP 404 &rarr; `"No lyrics found for this track."`) and connection or server failures (HTTP < 0 or >= 500 &rarr; `"Failed to retrieve lyrics.\nPlease check your connection."`) (`322fd23`).
+- **Montserrat 24 Typography**:
+  - Enabled `LV_FONT_MONTSERRAT_24` in `include/lv_conf.h` and applied it to the Now Playing song title with circular scrolling width calculation (`66650a7`).
+
+### Changed & Refactored
+- **Modular UI Architecture Decomposition**:
+  - Decomposed the monolithic 2,332-line `src/ui.cpp` into discrete, single-responsibility components under `include/ui/` and `src/ui/`:
+    - `ui_theme.h`: Design tokens, colors, padlock bitmap asset, and `format_time()` helper (`6dae3c3`).
+    - `ui_header.h` & `ui_header.cpp`: Top persistent status bar (Wi-Fi RSSI, active device label, battery gauge) (`6dae3c3`).
+    - `ui_player.h` & `ui_player.cpp`: Now Playing interface, transport controls, seek slider, adaptive volume modes, unified playback coordinator (`6dae3c3`).
+    - `ui_lyrics.h` & `ui_lyrics.cpp`: LRCLIB lyrics view container and on-demand activation (`6dae3c3`).
+    - `ui_presets.h` & `ui_presets.cpp`: 12-preset button grid with auto-navigation to Player (`6dae3c3`).
+    - `modal_device.h` & `modal_device.cpp`: Streamer discovery and selection modal (`6dae3c3`).
+    - `modal_wifi.h` & `modal_wifi.cpp`: Wi-Fi network scanner, password input, and on-screen keyboard (`6dae3c3`).
+    - `modal_power.h` & `modal_power.cpp`: Battery voltage, brightness slider, auto-dim, and sleep modal (`6dae3c3`).
+    - `ui_core.cpp`: Public API entry points (`ui_init()`, `ui_process_events()`), event queue routing, progress and battery timers (`6dae3c3`).
+- **Unified Playback Coordinator**:
+  - Established centralized state synchronization in `ui_player.cpp` to eliminate widget flapping: holds Play/Pause button symbol without toggling during buffering, freezes progress counter, and prevents progress bar jumping across track transitions (`6dae3c3`).
+- **Player Layout & Visual Refinements**:
+  - Removed cluttered '✕' overlay from both fixed and variable mute buttons; mute status is cleanly indicated by solid crimson red (`#E63946`) background transition with white icons (`e846f30`).
+  - Relocated audio resolution/bitrate label to center horizontally between the progress bar and transport controls on the same telemetry row as elapsed and total times (`e846f30`, `66650a7`).
+  - Relocated track counter from bottom-right corner to center horizontally beneath the Play/Pause button (`66650a7`).
+  - Vertically balanced layout: transport controls at `Y = 122`, track counter at `Y = 184`, and volume controls at `Y = 197` (`b479b36`, `a6c131f`).
+  - Formatted volume percentage label with `COLOR_TEXT_MUTED`, harmonizing it with the track counter (`a6c131f`).
+  - Moved active tab cyan accent line on the bottom navigation bar from the top of the tab to the bottom edge (`LV_BORDER_SIDE_BOTTOM`) (`a6c131f`).
+
+### Fixed
+- **Mute & Input Button Touch Interception**:
+  - Eliminated touch hitbox overlap where tapping the center or right half of the mute button hit the volume slider at 0% instead of muting (`d35559a`).
+  - Reduced slider extended click area from 20 px to 6 px, resized slider width to 120 px (8 px safe gap), and brought mute and input buttons to foreground in Z-order for 100% surface touch priority (`d35559a`).
+
+---
+
 ## [1.2.0] - 2026-09-18
 
 ### Added
