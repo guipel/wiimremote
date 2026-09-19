@@ -376,7 +376,7 @@ void ui_player_init(lv_obj_t* parent) {
     // 6. Compact Volume / Mute Button (Fixed Mode)
     btn_mute = lv_btn_create(parent);
     lv_obj_set_size(btn_mute, 68, 40);
-    lv_obj_align(btn_mute, LV_ALIGN_TOP_MID, 0, 202);
+    lv_obj_align(btn_mute, LV_ALIGN_TOP_MID, 0, 197);
     lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x222732), 0);
     lv_obj_set_style_border_width(btn_mute, 1, 0);
     lv_obj_set_style_border_color(btn_mute, lv_color_hex(0x3A4252), 0);
@@ -406,7 +406,7 @@ void ui_player_init(lv_obj_t* parent) {
     // 6B. Variable Volume Row Container
     obj_vol_var_cont = lv_obj_create(parent);
     lv_obj_set_size(obj_vol_var_cont, 224, 48);
-    lv_obj_align(obj_vol_var_cont, LV_ALIGN_TOP_MID, 0, 202);
+    lv_obj_align(obj_vol_var_cont, LV_ALIGN_TOP_MID, 0, 197);
     lv_obj_set_style_bg_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(obj_vol_var_cont, 0, 0);
@@ -492,7 +492,7 @@ void ui_player_init(lv_obj_t* parent) {
     lbl_vol_percent = lv_label_create(obj_vol_var_cont);
     lv_label_set_text(lbl_vol_percent, "0%");
     lv_obj_set_style_text_font(lbl_vol_percent, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_vol_percent, COLOR_TEXT_PRIMARY, 0);
+    lv_obj_set_style_text_color(lbl_vol_percent, COLOR_TEXT_MUTED, 0);
     lv_obj_set_style_text_align(lbl_vol_percent, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(lbl_vol_percent, 50);
     lv_obj_align(lbl_vol_percent, LV_ALIGN_CENTER, 0, 14);
