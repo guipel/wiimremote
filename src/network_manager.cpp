@@ -899,11 +899,68 @@ void NetworkManager::pollActiveDevice() {
     evt.data.player.mute = (strcmp(muteStr, "1") == 0 || atoi(muteStr) == 1);
     evt.data.player.is_fixed_volume = _activeDevice.is_fixed_volume;
 
+    // Track Identity & Change Detection (evaluated BEFORE duration/position math)
+    bool isNewTrack = false;
+    if (evt.data.player.state == PLAY_STATE_NONE) {
+        _lastKnownTrackTitle = "";
+        _lastKnownArtist = "";
+        _cachedTrackDuration_ms = 0;
+        _metaResolved = false;
+    } else {
+        const char* rawTitle = doc["Title"] | doc["title"] | "";
+        const char* rawArtist = doc["Artist"] | doc["artist"] | "";
+        if (strlen(rawTitle) > 0) {
+            String decTitle = decodeHexString(rawTitle);
+            String decArtist = decodeHexString(rawArtist);
+            if (_lastKnownTrackTitle != decTitle || _lastKnownArtist != decArtist) {
+                _lastKnownTrackTitle = decTitle;
+                _lastKnownArtist = decArtist;
+                _cachedTrackDuration_ms = 0;
+                _metaResolved = false;
+                isNewTrack = true;
+                if (fetchTrackMeta()) {
+                    _metaResolved = true;
+                }
+            } else if (!_metaResolved && evt.data.player.state == PLAY_STATE_PLAYING) {
+                if (fetchTrackMeta()) {
+                    _metaResolved = true;
+                }
+            }
+        } else if (_lastKnownTrackTitle.length() > 0) {
+            _lastKnownTrackTitle = "";
+            _lastKnownArtist = "";
+            _cachedTrackDuration_ms = 0;
+            _metaResolved = false;
+
+            TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
+            if (pMeta) {
+                memset(pMeta, 0, sizeof(TrackMeta));
+                UiEvent evtMeta;
+                evtMeta.type = UI_EVT_META_UPDATED;
+                evtMeta.data.meta = pMeta;
+                if (xQueueSend(xQueueUiState, &evtMeta, 0) != pdTRUE) {
+                    free(pMeta);
+                }
+            }
+        }
+    }
+
     // Track duration and position
     const char* totlenStr = doc["totlen"] | "0";
     const char* curposStr = doc["curpos"] | "0";
     uint32_t totlen = strtoul(totlenStr, nullptr, 10);
-    uint32_t curpos = strtoul(curposStr, nullptr, 10);
+    int32_t rawCurpos = strtol(curposStr, nullptr, 10);
+    uint32_t curpos = (rawCurpos > 0) ? (uint32_t)rawCurpos : 0;
+
+    // If streamer reports a negative pre-buffer countdown, audio has not started playing yet
+    if (rawCurpos < 0 && evt.data.player.state == PLAY_STATE_PLAYING) {
+        evt.data.player.state = PLAY_STATE_UNKNOWN;
+    }
+
+    // Discard any residual transition position or stale buffering offsets
+    if (isNewTrack || evt.data.player.state == PLAY_STATE_LOADING || evt.data.player.state == PLAY_STATE_NONE || evt.data.player.state == PLAY_STATE_UNKNOWN) {
+        curpos = 0;
+    }
 
     // If totlen is given in seconds (< 10000 for normal song durations), convert to ms
     if (totlen > 0 && totlen < 10000) {
@@ -980,49 +1037,6 @@ void NetworkManager::pollActiveDevice() {
 
     _lastPlayerState = evt.data.player;
     xQueueSend(xQueueUiState, &evt, 0);
-
-    // Track metadata decoding & change detection
-    if (evt.data.player.state == PLAY_STATE_NONE) {
-        _lastKnownTrackTitle = "";
-        _lastKnownArtist = "";
-        _cachedTrackDuration_ms = 0;
-        _metaResolved = false;
-    } else {
-        const char* rawTitle = doc["Title"] | doc["title"] | "";
-        const char* rawArtist = doc["Artist"] | doc["artist"] | "";
-        if (strlen(rawTitle) > 0) {
-            String decTitle = decodeHexString(rawTitle);
-            String decArtist = decodeHexString(rawArtist);
-            if (_lastKnownTrackTitle != decTitle || _lastKnownArtist != decArtist) {
-                _lastKnownTrackTitle = decTitle;
-                _lastKnownArtist = decArtist;
-                _cachedTrackDuration_ms = 0;
-                _metaResolved = false;
-                if (fetchTrackMeta()) {
-                    _metaResolved = true;
-                }
-            } else if (!_metaResolved && evt.data.player.state == PLAY_STATE_PLAYING) {
-                if (fetchTrackMeta()) {
-                    _metaResolved = true;
-                }
-            }
-        } else if (_lastKnownTrackTitle.length() > 0) {
-            _lastKnownTrackTitle = "";
-            _lastKnownArtist = "";
-            _metaResolved = false;
-
-            TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
-            if (pMeta) {
-                memset(pMeta, 0, sizeof(TrackMeta));
-                UiEvent evtMeta;
-                evtMeta.type = UI_EVT_META_UPDATED;
-                evtMeta.data.meta = pMeta;
-                if (xQueueSend(xQueueUiState, &evtMeta, 0) != pdTRUE) {
-                    free(pMeta);
-                }
-            }
-        }
-    }
 }
 
 bool NetworkManager::fetchTrackMeta() {
@@ -1225,14 +1239,6 @@ void NetworkManager::fetchUpnpTrackDuration() {
                 if (sscanf(durStr.c_str(), "%d:%d:%d", &h, &m, &s) == 3) {
                     _cachedTrackDuration_ms = (uint32_t)(h * 3600 + m * 60 + s) * 1000;
                     log_i("UPnP TrackDuration: %s (%u ms)", durStr.c_str(), _cachedTrackDuration_ms);
-
-                    if (_lastPlayerState.totlen_ms == 0 && _cachedTrackDuration_ms > 0) {
-                        _lastPlayerState.totlen_ms = _cachedTrackDuration_ms;
-                        UiEvent evt;
-                        evt.type = UI_EVT_PLAYER_STATE;
-                        evt.data.player = _lastPlayerState;
-                        xQueueSend(xQueueUiState, &evt, 0);
-                    }
                 }
             }
         }

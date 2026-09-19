@@ -345,12 +345,10 @@ static void event_btn_prev(lv_event_t* e) {
     cmd.data.seek_ms = current_actual_curpos_ms;
     xQueueSend(xQueueUiCmd, &cmd, 0);
 
-    // If restarting mid-song (>5s), snap local position to 0:00 so a subsequent tap skips track
-    if (current_actual_curpos_ms > 5000) {
-        current_actual_curpos_ms = 0;
-        if (bar_progress) lv_bar_set_value(bar_progress, 0, LV_ANIM_OFF);
-        if (lbl_time_cur) lv_label_set_text(lbl_time_cur, "00:00");
-    }
+    current_play_state = PLAY_STATE_UNKNOWN;
+    current_actual_curpos_ms = 0;
+    if (bar_progress) lv_bar_set_value(bar_progress, 0, LV_ANIM_OFF);
+    if (lbl_time_cur) lv_label_set_text(lbl_time_cur, "00:00");
 }
 
 static unsigned long last_play_pause_ts = 0;
@@ -370,6 +368,11 @@ static void event_btn_next(lv_event_t* e) {
     UiCommand cmd;
     cmd.type = CMD_NEXT;
     xQueueSend(xQueueUiCmd, &cmd, 0);
+
+    current_play_state = PLAY_STATE_UNKNOWN;
+    current_actual_curpos_ms = 0;
+    if (bar_progress) lv_bar_set_value(bar_progress, 0, LV_ANIM_OFF);
+    if (lbl_time_cur) lv_label_set_text(lbl_time_cur, "00:00");
 }
 
 static void event_btn_mute(lv_event_t* e) {
