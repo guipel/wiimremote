@@ -59,18 +59,6 @@ void wifi_service_start_scan() {
     if (s_wifi_scanning) return;
     s_wifi_scanning = true;
     log_i("Starting synchronous Wi-Fi network scan on Core 0 (current status: %d)...", WiFi.status());
-
-    bool wasConnected = (WiFi.status() == WL_CONNECTED);
-    if (wasConnected) {
-        log_i("Temporarily disconnecting from AP for clean channel scan...");
-        WiFi.disconnect(false, false);
-        unsigned long waitStart = millis();
-        while (WiFi.status() == WL_CONNECTED && millis() - waitStart < 1000) {
-            vTaskDelay(pdMS_TO_TICKS(50));
-        }
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(WIFI_PS_NONE);
     WiFi.scanDelete();
