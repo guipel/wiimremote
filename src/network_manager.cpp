@@ -840,8 +840,8 @@ void NetworkManager::selectDevice(const char* ip) {
         _lastLyricsArtist = "";
         _cachedTrackDuration_ms = 0;
         _metaResolved = false;
-        fetchPresetInfo();
         pollActiveDevice();
+        fetchPresetInfo();
         fetchDeviceConfig();
     }
 }
@@ -1234,6 +1234,14 @@ void NetworkManager::fetchUpnpTrackDuration() {
                 if (sscanf(durStr.c_str(), "%d:%d:%d", &h, &m, &s) == 3) {
                     _cachedTrackDuration_ms = (uint32_t)(h * 3600 + m * 60 + s) * 1000;
                     log_i("UPnP TrackDuration: %s (%u ms)", durStr.c_str(), _cachedTrackDuration_ms);
+
+                    if (_lastPlayerState.totlen_ms == 0 && _cachedTrackDuration_ms > 0) {
+                        _lastPlayerState.totlen_ms = _cachedTrackDuration_ms;
+                        UiEvent evt;
+                        evt.type = UI_EVT_PLAYER_STATE;
+                        evt.data.player = _lastPlayerState;
+                        xQueueSend(xQueueUiState, &evt, 0);
+                    }
                 }
             }
         }
