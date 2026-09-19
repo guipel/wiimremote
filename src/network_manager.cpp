@@ -1368,8 +1368,13 @@ void NetworkManager::processIncomingCommands() {
     while (xQueueReceive(xQueueUiCmd, &cmd, 0) == pdTRUE) {
         switch (cmd.type) {
             case CMD_PLAY_PAUSE:
-                log_i("Dispatching Play/Pause toggle");
-                sendHttpCommand("setPlayerCmd:onepause");
+                if (_lastPlayerState.state == PLAY_STATE_PLAYING) {
+                    log_i("Dispatching Pause command");
+                    sendHttpCommand("setPlayerCmd:pause");
+                } else {
+                    log_i("Dispatching Play/Resume command");
+                    sendHttpCommand("setPlayerCmd:play");
+                }
                 _lastStatusPoll = millis() - (STATUS_POLL_INTERVAL_MS - 150);
                 break;
 
