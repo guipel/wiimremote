@@ -149,7 +149,6 @@ static uint32_t pending_seek_target_ms = 0;
 static bool has_pending_seek = false;
 static unsigned long pending_seek_timestamp = 0;
 
-static char current_vendor[32] = "WiiM";
 static uint32_t current_sample_rate = 0;
 static uint8_t current_bit_depth = 0;
 static uint16_t current_track_num = 0;
@@ -206,7 +205,6 @@ static void ui_clear_playback_view() {
     current_bit_depth = 0;
     current_track_num = 0;
     current_track_total = 0;
-    current_vendor[0] = '\0';
     update_stream_info_labels();
 
     memset(&current_track_meta, 0, sizeof(current_track_meta));
@@ -401,9 +399,7 @@ static void event_btn_preset(lv_event_t* e) {
 static void check_and_fetch_lyrics() {
     if (!tabview || lv_tabview_get_tab_act(tabview) != 0) return;
 
-    if (strlen(current_track_meta.title) == 0 ||
-        strcmp(current_track_meta.title, "Ready for stream") == 0 ||
-        strcmp(current_track_meta.title, "No Track Playing") == 0) {
+    if (strlen(current_track_meta.title) == 0) {
         if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, "Lyrics");
         if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, "");
         if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "Play a track to view lyrics.");
@@ -712,7 +708,7 @@ static void build_player_tab(lv_obj_t* parent) {
 
     // 2. Track Title
     lbl_title = lv_label_create(parent);
-    lv_label_set_text(lbl_title, "No Track Playing");
+    lv_label_set_text(lbl_title, "");
     lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_22, 0);
     lv_obj_set_style_text_color(lbl_title, COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_align(lbl_title, LV_TEXT_ALIGN_CENTER, 0);
@@ -722,7 +718,7 @@ static void build_player_tab(lv_obj_t* parent) {
 
     // 3. Artist & Album
     lbl_artist = lv_label_create(parent);
-    lv_label_set_text(lbl_artist, "Ready for stream");
+    lv_label_set_text(lbl_artist, "");
     lv_obj_set_style_text_font(lbl_artist, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_artist, COLOR_TEXT_MUTED, 0);
     lv_obj_set_style_text_align(lbl_artist, LV_TEXT_ALIGN_CENTER, 0);
@@ -1846,6 +1842,15 @@ void ui_set_devices(const DeviceList& list) {
             snprintf(title, sizeof(title), "%s " LV_SYMBOL_DOWN, list.devices[i].name);
             lv_label_set_text(lbl_active_device, title);
             activeFound = true;
+
+            // Synchronize initial volume widget visibility to prevent mode-switch popping
+            if (list.devices[i].is_fixed_volume) {
+                if (btn_mute) lv_obj_clear_flag(btn_mute, LV_OBJ_FLAG_HIDDEN);
+                if (obj_vol_var_cont) lv_obj_add_flag(obj_vol_var_cont, LV_OBJ_FLAG_HIDDEN);
+            } else {
+                if (btn_mute) lv_obj_add_flag(btn_mute, LV_OBJ_FLAG_HIDDEN);
+                if (obj_vol_var_cont) lv_obj_clear_flag(obj_vol_var_cont, LV_OBJ_FLAG_HIDDEN);
+            }
             break;
         }
     }
@@ -2017,9 +2022,6 @@ void ui_set_player_state(const PlayerState& state) {
     }
 
     // 4. Stream Info Details Line
-    if (strlen(state.vendor) > 0) {
-        strncpy(current_vendor, state.vendor, sizeof(current_vendor) - 1);
-    }
     if (state.stream.sample_rate > 0) {
         current_sample_rate = state.stream.sample_rate;
         current_bit_depth = state.stream.bit_depth;

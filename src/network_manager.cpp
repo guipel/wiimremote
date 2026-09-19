@@ -210,6 +210,9 @@ void NetworkManager::init() {
     prefs.begin("wiimremote", false);
     loadSavedDevice();
     loadSavedDeviceList();
+    if (_deviceList.count > 0) {
+        broadcastDeviceList();
+    }
 
     // Start Wi-Fi in station mode
     WiFi.mode(WIFI_STA);
@@ -1084,7 +1087,7 @@ bool NetworkManager::fetchTrackMeta() {
 }
 
 void NetworkManager::fetchLyrics(const char* title, const char* artist) {
-    if (!title || strlen(title) == 0 || strcmp(title, "Ready for stream") == 0 || strcmp(title, "No Track Playing") == 0) {
+    if (!title || strlen(title) == 0) {
         return;
     }
 
@@ -1092,7 +1095,28 @@ void NetworkManager::fetchLyrics(const char* title, const char* artist) {
     String cleanTitle = title;
     String cleanArtist = (artist ? artist : "");
 
-    auto queryLrclib = [](const String& t, const String& a, String& outLyrics) -> bool {
+    // Helper: Strip [mm:ss.xx] timestamp tags from synced lyrics
+    auto stripLrcTimestamps = [](const char* lrc) -> String {
+        if (!lrc) return "";
+        String out = "";
+        out.reserve(strlen(lrc));
+        const char* p = lrc;
+        while (*p) {
+            if (*p == '[') {
+                const char* closeBracket = strchr(p, ']');
+                if (closeBracket && (closeBracket - p) <= 12) {
+                    p = closeBracket + 1;
+                    while (*p == ' ' || *p == '\t') p++;
+                    continue;
+                }
+            }
+            out += *p++;
+        }
+        out.trim();
+        return out;
+    };
+
+    auto queryLrclib = [&stripLrcTimestamps](const String& t, const String& a, String& outLyrics) -> bool {
         WiFiClientSecure secureClient;
         secureClient.setInsecure();
         secureClient.setTimeout(4000);
@@ -1116,6 +1140,12 @@ void NetworkManager::fetchLyrics(const char* title, const char* artist) {
                     outLyrics = plain;
                     http.end();
                     return true;
+                }
+                const char* synced = doc["syncedLyrics"];
+                if (synced && strlen(synced) > 0) {
+                    outLyrics = stripLrcTimestamps(synced);
+                    http.end();
+                    return (outLyrics.length() > 0);
                 }
             }
         }
@@ -1418,12 +1448,9 @@ void NetworkManager::processIncomingCommands() {
                 break;
 
             case CMD_WIFI_RECONNECT: {
-                bool setupDone = prefs.getBool("user_setup_done", false);
-                String savedSsid = setupDone ? prefs.getString("wifi_ssid", "") : "";
-                String savedPass = setupDone ? prefs.getString("wifi_pass", "") : "";
-                if (savedSsid.length() > 0 && WiFi.status() != WL_CONNECTED) {
-                    log_i("Reconnecting to saved Wi-Fi: %s", savedSsid.c_str());
-                    connectWiFi(savedSsid.c_str(), savedPass.c_str());
+                if (_cachedSavedSsid.length() > 0 && WiFi.status() != WL_CONNECTED) {
+                    log_i("Reconnecting to saved Wi-Fi: %s", _cachedSavedSsid.c_str());
+                    connectWiFi(_cachedSavedSsid.c_str(), _cachedSavedPass.c_str());
                 }
                 break;
             }
@@ -1494,13 +1521,6 @@ void NetworkManager::runTaskLoop() {
         vTaskDelay(pdMS_TO_TICKS(1)); // Yield to Wi-Fi/lwIP stack on Core 0
     } else {
         vTaskDelay(pdMS_TO_TICKS(50));
-    }
-
-    // Temporary: Log stack usage every 60s for tuning NET_TASK_STACK_SIZE
-    static unsigned long lastStackLog = 0;
-    if (millis() - lastStackLog > 60000) {
-        lastStackLog = millis();
-        log_i("NetTask stack HWM: %u words free", uxTaskGetStackHighWaterMark(NULL));
     }
 }
 

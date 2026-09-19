@@ -4,7 +4,7 @@
 
 LGFX_ESP32S3_Custom gfx;
 
-// LVGL Display Buffer allocated in PSRAM
+// LVGL Display Buffer allocated in Internal DMA SRAM
 static const uint32_t DRAW_BUF_PIXELS = SCREEN_WIDTH * 80;
 static lv_color_t *disp_draw_buf1 = nullptr;
 static lv_color_t *disp_draw_buf2 = nullptr;
