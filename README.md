@@ -189,10 +189,11 @@ The interface features a **Top Header Bar**, a **3-Tab Navigation View**, and **
    - Interactive progress bar with elapsed and total duration timestamps.
    - Centered transport controls: Previous, Play/Pause/Resume, Next.
    - Centered track counter (`X/Y`) directly beneath the Play/Pause button.
-   - **Adaptive Volume Modes**:
-     - **Variable Volume**: 120 px volume slider, volume percentage label, instant mute button (crimson red `#E63946` when active), and audio input source selector button.
-     - **Fixed Volume**: Full-width mute button with padlock icon and speaker icon when WiiM is set to fixed line-out.
-   - **Input Source Switching**: Cycle through Wi-Fi, Line-In, Optical, and Bluetooth.
+    - **Unified Volume Controls**:
+      - Persistent row containing the instant mute button, 120 px volume slider, percentage/status label, and shuffle/aux button across all modes.
+      - **Variable Volume**: Interactive slider updating output volume in real-time with numeric percentage label (`0%`–`100%`).
+      - **Fixed Volume**: Disables the volume slider, updates the status label to `"Fixed"`, and preserves mute toggle functionality via the mute button (crimson red `#E63946` when muted).
+    - **Input Source Switching**: Cycle through Wi-Fi, Line-In, Optical, and Bluetooth.
 3. **Presets Tab (Right)**:
    - 3x4 grid of **12 preset tiles** dynamically synced from the WiiM device (`getPresetInfo`).
    - One-touch preset recall with automatic navigation back to the Player tab.

@@ -48,10 +48,11 @@ static void load_saved_device_list() {
     if (count > MAX_DISCOVERED_DEVICES) count = MAX_DISCOVERED_DEVICES;
 
     for (uint8_t i = 0; i < count; ++i) {
-        char keyIp[12], keyUuid[14], keyName[14];
+        char keyIp[12], keyUuid[14], keyName[14], keyFixed[14];
         snprintf(keyIp, sizeof(keyIp), "dev_ip_%u", i);
         snprintf(keyUuid, sizeof(keyUuid), "dev_uuid_%u", i);
         snprintf(keyName, sizeof(keyName), "dev_name_%u", i);
+        snprintf(keyFixed, sizeof(keyFixed), "dev_fixed_%u", i);
 
         String ip = s_dev_prefs.getString(keyIp, "");
         String uuid = s_dev_prefs.getString(keyUuid, "");
@@ -64,6 +65,7 @@ static void load_saved_device_list() {
             strncpy(dev.uuid, uuid.c_str(), sizeof(dev.uuid) - 1);
             strncpy(dev.name, name.c_str(), sizeof(dev.name) - 1);
             dev.is_active = false;
+            dev.is_fixed_volume = s_dev_prefs.getBool(keyFixed, false);
             s_device_list.devices[s_device_list.count++] = dev;
         }
     }
@@ -77,23 +79,27 @@ static void save_saved_device_list() {
 
     s_dev_prefs.putUChar("dev_count", snapshot.count);
     for (uint8_t i = 0; i < snapshot.count; ++i) {
-        char keyIp[12], keyUuid[14], keyName[14];
+        char keyIp[12], keyUuid[14], keyName[14], keyFixed[14];
         snprintf(keyIp, sizeof(keyIp), "dev_ip_%u", i);
         snprintf(keyUuid, sizeof(keyUuid), "dev_uuid_%u", i);
         snprintf(keyName, sizeof(keyName), "dev_name_%u", i);
+        snprintf(keyFixed, sizeof(keyFixed), "dev_fixed_%u", i);
         s_dev_prefs.putString(keyIp, snapshot.devices[i].ip);
         s_dev_prefs.putString(keyUuid, snapshot.devices[i].uuid);
         s_dev_prefs.putString(keyName, snapshot.devices[i].name);
+        s_dev_prefs.putBool(keyFixed, snapshot.devices[i].is_fixed_volume);
     }
     // Clean up stale keys beyond current count
     for (uint8_t i = snapshot.count; i < MAX_DISCOVERED_DEVICES; ++i) {
-        char keyIp[12], keyUuid[14], keyName[14];
+        char keyIp[12], keyUuid[14], keyName[14], keyFixed[14];
         snprintf(keyIp, sizeof(keyIp), "dev_ip_%u", i);
         snprintf(keyUuid, sizeof(keyUuid), "dev_uuid_%u", i);
         snprintf(keyName, sizeof(keyName), "dev_name_%u", i);
+        snprintf(keyFixed, sizeof(keyFixed), "dev_fixed_%u", i);
         s_dev_prefs.remove(keyIp);
         s_dev_prefs.remove(keyUuid);
         s_dev_prefs.remove(keyName);
+        s_dev_prefs.remove(keyFixed);
     }
 }
 
@@ -165,10 +171,12 @@ static bool query_device_status(const char* ip, WiiMDevice* outDevice) {
     }
 
     if (outDevice) {
+        memset(outDevice, 0, sizeof(WiiMDevice));
         strncpy(outDevice->name, devName.c_str(), sizeof(outDevice->name) - 1);
         strncpy(outDevice->ip, ip, sizeof(outDevice->ip) - 1);
         strncpy(outDevice->uuid, uuid.c_str(), sizeof(outDevice->uuid) - 1);
         outDevice->is_active = false;
+        outDevice->is_fixed_volume = false;
     }
 
     log_i("Discovered WiiM Device: Name='%s', IP=%s, UUID=%s", devName.c_str(), ip, uuid.c_str());
@@ -407,8 +415,17 @@ bool discovery_service_has_active_device() {
 }
 
 void discovery_service_set_active_fixed_volume(bool is_fixed) {
+    portENTER_CRITICAL(&s_device_mux);
     s_active_device.is_fixed_volume = is_fixed;
+    for (uint8_t i = 0; i < s_device_list.count; ++i) {
+        if (strcmp(s_device_list.devices[i].ip, s_active_device.ip) == 0) {
+            s_device_list.devices[i].is_fixed_volume = is_fixed;
+            break;
+        }
+    }
+    portEXIT_CRITICAL(&s_device_mux);
     save_active_device(s_active_device);
+    save_saved_device_list();
 }
 
 void discovery_service_broadcast_list() {

@@ -11,14 +11,16 @@ static void on_active_device_changed(const WiiMDevice& dev) {
     linkplay_client_reset_session();
     linkplay_client_reset_track_cache();
 
-    PlayerState st;
-    linkplay_client_poll_active(dev.ip, dev.is_fixed_volume, st);
-    linkplay_client_fetch_presets(dev.ip);
-
-    bool isFixed = false;
-    if (linkplay_client_fetch_config(dev.ip, isFixed) && isFixed != dev.is_fixed_volume) {
+    // 1. Fetch hardware config FIRST so we know if the new device is fixed or variable
+    bool isFixed = dev.is_fixed_volume;
+    if (linkplay_client_fetch_config(dev.ip, isFixed)) {
         discovery_service_set_active_fixed_volume(isFixed);
     }
+
+    // 2. Poll player status with verified isFixed mode
+    PlayerState st;
+    linkplay_client_poll_active(dev.ip, isFixed, st);
+    linkplay_client_fetch_presets(dev.ip);
 }
 
 static void on_wifi_connected() {

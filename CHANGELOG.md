@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Unified Player Volume Controls & Fixed Line-Out Behavior**:
+  - Unified the Player screen volume layout across both Variable and Fixed line-out modes into a single persistent row: mute button, 120 px volume slider, percentage/status label, and shuffle button.
+  - Eliminated the separate fixed-mode padlock button (`btn_mute`, `lbl_mute`, `img_lock`) in `src/ui/ui_player.cpp` to eliminate jarring layout shifts when changing devices or output modes.
+  - When in fixed volume mode, the volume slider is disabled (`LV_STATE_DISABLED`, touch interactions ignored) with dimmed indicator styling, and the volume percentage label displays `"Fixed"`.
+  - The mute button maintains consistent mute toggle behavior across both fixed and variable modes, turning solid crimson red (`#E63946`) when muted.
+
+### Fixed
+- **Volume Bar Bouncing on Device Selection**:
+  - Eliminated volume bar bouncing (empty 0% &rarr; full 100% &rarr; adjusted level) when switching from a fixed-volume device to a variable-volume device.
+  - Inverted query sequence in `network_manager` so `linkplay_client_fetch_config()` fetches `getStatusEx` hardware line-out configuration prior to dispatching active player status.
+  - Zeroed memory in discovery queries (`query_device_status`) and persisted per-device `is_fixed_volume` flags in NVS.
+  - Retained current volume slider appearance during device transition without clobbering to 0%, smoothly applying the verified volume upon arrival.
+
+---
+
 ## [1.4.0] - 2026-09-19
 
 ### Changed & Refactored

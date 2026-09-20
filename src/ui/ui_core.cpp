@@ -118,7 +118,9 @@ void ui_init() {
         ui_header_set_active_device(dev.name);
         ui_player_clear();
         ui_lyrics_clear();
-        ui_player_set_fixed_volume_mode(dev.is_fixed_volume);
+        if (dev.is_fixed_volume) {
+            ui_player_set_fixed_volume_mode(true);
+        }
     });
 
     modal_wifi_init(lv_scr_act());
@@ -143,7 +145,9 @@ void ui_set_devices(const DeviceList& list) {
     for (uint8_t i = 0; i < list.count; ++i) {
         if (list.devices[i].is_active) {
             ui_header_set_active_device(list.devices[i].name);
-            ui_player_set_fixed_volume_mode(list.devices[i].is_fixed_volume);
+            if (list.devices[i].is_fixed_volume) {
+                ui_player_set_fixed_volume_mode(true);
+            }
             activeFound = true;
             break;
         }

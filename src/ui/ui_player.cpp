@@ -17,11 +17,7 @@ static lv_obj_t* btn_prev = nullptr;
 static lv_obj_t* btn_play_pause = nullptr;
 static lv_obj_t* lbl_play_pause = nullptr;
 static lv_obj_t* btn_next = nullptr;
-static lv_obj_t* btn_mute = nullptr;
-static lv_obj_t* lbl_mute = nullptr;
-static lv_obj_t* img_lock = nullptr;
-
-// UI Widgets - Variable Volume Controls
+// UI Widgets - Volume & Aux Controls
 static lv_obj_t* obj_vol_var_cont = nullptr;
 static lv_obj_t* btn_var_mute = nullptr;
 static lv_obj_t* lbl_var_mute = nullptr;
@@ -31,6 +27,7 @@ static lv_obj_t* btn_var_input = nullptr;
 static lv_obj_t* lbl_var_input = nullptr;
 
 // State tracking
+static bool current_is_fixed = false;
 static bool is_user_adjusting_volume = false;
 static uint8_t current_volume = 0;
 static bool is_user_seeking = false;
@@ -143,6 +140,7 @@ static void event_slider_seek(lv_event_t* e) {
 
 // Event Callback - Interactive Volume Slider
 static void event_slider_vol(lv_event_t* e) {
+    if (current_is_fixed) return;
     lv_event_code_t code = lv_event_get_code(e);
 
     if (code == LV_EVENT_PRESSED) {
@@ -373,37 +371,7 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_border_color(btn_next, COLOR_ACCENT, LV_STATE_PRESSED);
     lv_obj_set_style_border_width(btn_next, 2, LV_STATE_PRESSED);
 
-    // 6. Compact Volume / Mute Button (Fixed Mode)
-    btn_mute = lv_btn_create(parent);
-    lv_obj_set_size(btn_mute, 68, 40);
-    lv_obj_align(btn_mute, LV_ALIGN_TOP_MID, 0, 197);
-    lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x222732), 0);
-    lv_obj_set_style_border_width(btn_mute, 1, 0);
-    lv_obj_set_style_border_color(btn_mute, lv_color_hex(0x3A4252), 0);
-    lv_obj_set_style_radius(btn_mute, 10, 0);
-    lv_obj_set_style_pad_all(btn_mute, 0, 0);
-    lv_obj_clear_flag(btn_mute, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(btn_mute, event_btn_mute, LV_EVENT_CLICKED, nullptr);
-
-    lv_obj_set_style_transform_width(btn_mute, -2, LV_STATE_PRESSED);
-    lv_obj_set_style_transform_height(btn_mute, -2, LV_STATE_PRESSED);
-    lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x3B4455), LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(btn_mute, COLOR_ACCENT, LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(btn_mute, 2, LV_STATE_PRESSED);
-
-    lbl_mute = lv_label_create(btn_mute);
-    lv_label_set_text(lbl_mute, LV_SYMBOL_VOLUME_MAX);
-    lv_obj_set_style_text_font(lbl_mute, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(lbl_mute, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_align(lbl_mute, LV_ALIGN_LEFT_MID, 12, 0);
-
-    img_lock = lv_img_create(btn_mute);
-    lv_img_set_src(img_lock, &img_lock_dsc);
-    lv_obj_set_style_img_recolor(img_lock, COLOR_TEXT_PRIMARY, 0);
-    lv_obj_set_style_img_recolor_opa(img_lock, 255, 0);
-    lv_obj_align(img_lock, LV_ALIGN_LEFT_MID, 38, 0);
-
-    // 6B. Variable Volume Row Container
+    // 6. Volume & Aux Row Container (Mute, Slider, Shuffle)
     obj_vol_var_cont = lv_obj_create(parent);
     lv_obj_set_size(obj_vol_var_cont, 224, 48);
     lv_obj_align(obj_vol_var_cont, LV_ALIGN_TOP_MID, 0, 197);
@@ -411,7 +379,6 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_border_opa(obj_vol_var_cont, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(obj_vol_var_cont, 0, 0);
     lv_obj_clear_flag(obj_vol_var_cont, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_GESTURE_BUBBLE | LV_OBJ_FLAG_SCROLL_CHAIN);
-    lv_obj_add_flag(obj_vol_var_cont, LV_OBJ_FLAG_HIDDEN);
 
     // Variable Mute Button
     btn_var_mute = lv_btn_create(obj_vol_var_cont);
@@ -480,6 +447,12 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_bg_opa(slider_vol, LV_OPA_TRANSP, LV_PART_KNOB);
     lv_obj_set_style_border_opa(slider_vol, LV_OPA_TRANSP, LV_PART_KNOB);
     lv_obj_set_style_pad_all(slider_vol, 0, LV_PART_KNOB);
+
+    // Disabled state styles (Fixed volume mode)
+    lv_obj_set_style_bg_color(slider_vol, lv_color_hex(0x1F232B), LV_STATE_DISABLED);
+    lv_obj_set_style_border_color(slider_vol, lv_color_hex(0x2D3440), LV_STATE_DISABLED);
+    lv_obj_set_style_bg_color(slider_vol, lv_color_hex(0x3A4252), LV_PART_INDICATOR | LV_STATE_DISABLED);
+    lv_obj_set_style_bg_opa(slider_vol, LV_OPA_60, LV_PART_INDICATOR | LV_STATE_DISABLED);
 
     lv_obj_add_flag(slider_vol, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(slider_vol, 6);
@@ -631,47 +604,44 @@ void ui_player_update_state(PlayState state, uint32_t curpos_ms, uint32_t totlen
 
 void ui_player_set_volume(uint8_t volume, bool is_fixed, bool mute) {
     current_mute_state = mute;
+    current_is_fixed = is_fixed;
+
+    // Update mute button appearance (common to both fixed and variable modes)
+    if (btn_var_mute && lbl_var_mute) {
+        if (mute) {
+            lv_obj_set_style_bg_color(btn_var_mute, lv_color_hex(0xE63946), 0);
+            lv_obj_set_style_border_width(btn_var_mute, 0, 0);
+            lv_obj_set_style_bg_color(btn_var_mute, lv_color_hex(0x9E1B26), LV_STATE_PRESSED);
+            lv_obj_set_style_border_color(btn_var_mute, lv_color_hex(0xFFFFFF), LV_STATE_PRESSED);
+            lv_obj_set_style_border_width(btn_var_mute, 2, LV_STATE_PRESSED);
+            lv_obj_set_style_text_color(lbl_var_mute, lv_color_hex(0xFFFFFF), 0);
+        } else {
+            lv_obj_set_style_bg_color(btn_var_mute, lv_color_hex(0x222732), 0);
+            lv_obj_set_style_border_width(btn_var_mute, 1, 0);
+            lv_obj_set_style_border_color(btn_var_mute, lv_color_hex(0x3A4252), 0);
+            lv_obj_set_style_bg_color(btn_var_mute, lv_color_hex(0x3B4455), LV_STATE_PRESSED);
+            lv_obj_set_style_border_color(btn_var_mute, COLOR_ACCENT, LV_STATE_PRESSED);
+            lv_obj_set_style_border_width(btn_var_mute, 2, LV_STATE_PRESSED);
+            lv_obj_set_style_text_color(lbl_var_mute, COLOR_TEXT_PRIMARY, 0);
+        }
+    }
 
     if (is_fixed) {
-        // FIXED VOLUME MODE
-        if (obj_vol_var_cont) lv_obj_add_flag(obj_vol_var_cont, LV_OBJ_FLAG_HIDDEN);
-        if (btn_mute) lv_obj_clear_flag(btn_mute, LV_OBJ_FLAG_HIDDEN);
-
-        if (btn_mute && lbl_mute) {
-            if (mute) {
-                lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0xE63946), 0);
-                lv_obj_set_style_border_width(btn_mute, 0, 0);
-                lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x9E1B26), LV_STATE_PRESSED);
-                lv_obj_set_style_border_color(btn_mute, lv_color_hex(0xFFFFFF), LV_STATE_PRESSED);
-                lv_obj_set_style_border_width(btn_mute, 2, LV_STATE_PRESSED);
-                lv_label_set_text(lbl_mute, LV_SYMBOL_VOLUME_MAX);
-                lv_obj_set_style_text_color(lbl_mute, lv_color_hex(0xFFFFFF), 0);
-                lv_obj_align(lbl_mute, LV_ALIGN_LEFT_MID, 12, 0);
-                if (img_lock) {
-                    lv_obj_set_style_img_recolor(img_lock, lv_color_hex(0xFFFFFF), 0);
-                    lv_obj_align(img_lock, LV_ALIGN_LEFT_MID, 38, 0);
-                }
-            } else {
-                lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x222732), 0);
-                lv_obj_set_style_border_width(btn_mute, 1, 0);
-                lv_obj_set_style_border_color(btn_mute, lv_color_hex(0x3A4252), 0);
-                lv_obj_set_style_bg_color(btn_mute, lv_color_hex(0x3B4455), LV_STATE_PRESSED);
-                lv_obj_set_style_border_color(btn_mute, COLOR_ACCENT, LV_STATE_PRESSED);
-                lv_obj_set_style_border_width(btn_mute, 2, LV_STATE_PRESSED);
-                lv_label_set_text(lbl_mute, LV_SYMBOL_VOLUME_MAX);
-                lv_obj_set_style_text_color(lbl_mute, COLOR_TEXT_PRIMARY, 0);
-                lv_obj_align(lbl_mute, LV_ALIGN_LEFT_MID, 12, 0);
-                if (img_lock) {
-                    lv_obj_set_style_img_recolor(img_lock, COLOR_TEXT_PRIMARY, 0);
-                    lv_obj_align(img_lock, LV_ALIGN_LEFT_MID, 38, 0);
-                }
-            }
+        // FIXED VOLUME MODE: Slider disabled, fixed label
+        if (slider_vol) {
+            lv_obj_add_state(slider_vol, LV_STATE_DISABLED);
+            lv_obj_clear_flag(slider_vol, LV_OBJ_FLAG_CLICKABLE);
+            lv_slider_set_value(slider_vol, 100, LV_ANIM_OFF);
+        }
+        if (lbl_vol_percent) {
+            lv_label_set_text(lbl_vol_percent, "Fixed");
         }
     } else {
-        // VARIABLE VOLUME MODE
-        if (btn_mute) lv_obj_add_flag(btn_mute, LV_OBJ_FLAG_HIDDEN);
-        if (obj_vol_var_cont) lv_obj_clear_flag(obj_vol_var_cont, LV_OBJ_FLAG_HIDDEN);
-
+        // VARIABLE VOLUME MODE: Slider enabled, volume percentage label
+        if (slider_vol) {
+            lv_obj_clear_state(slider_vol, LV_STATE_DISABLED);
+            lv_obj_add_flag(slider_vol, LV_OBJ_FLAG_CLICKABLE);
+        }
         if (!is_user_adjusting_volume) {
             current_volume = volume;
             if (slider_vol) lv_slider_set_value(slider_vol, volume, LV_ANIM_OFF);
@@ -681,29 +651,26 @@ void ui_player_set_volume(uint8_t volume, bool is_fixed, bool mute) {
                 lv_label_set_text(lbl_vol_percent, buf);
             }
         }
-
-        if (btn_var_mute && lbl_var_mute) {
-            if (mute) {
-                lv_obj_set_style_bg_color(btn_var_mute, lv_color_hex(0xE63946), 0);
-                lv_obj_set_style_border_width(btn_var_mute, 0, 0);
-                lv_obj_set_style_text_color(lbl_var_mute, lv_color_hex(0xFFFFFF), 0);
-            } else {
-                lv_obj_set_style_bg_color(btn_var_mute, lv_color_hex(0x222732), 0);
-                lv_obj_set_style_border_width(btn_var_mute, 1, 0);
-                lv_obj_set_style_border_color(btn_var_mute, lv_color_hex(0x3A4252), 0);
-                lv_obj_set_style_text_color(lbl_var_mute, COLOR_TEXT_PRIMARY, 0);
-            }
-        }
     }
 }
 
 void ui_player_set_fixed_volume_mode(bool is_fixed) {
+    current_is_fixed = is_fixed;
+
     if (is_fixed) {
-        if (btn_mute) lv_obj_clear_flag(btn_mute, LV_OBJ_FLAG_HIDDEN);
-        if (obj_vol_var_cont) lv_obj_add_flag(obj_vol_var_cont, LV_OBJ_FLAG_HIDDEN);
+        if (slider_vol) {
+            lv_obj_add_state(slider_vol, LV_STATE_DISABLED);
+            lv_obj_clear_flag(slider_vol, LV_OBJ_FLAG_CLICKABLE);
+            lv_slider_set_value(slider_vol, 100, LV_ANIM_OFF);
+        }
+        if (lbl_vol_percent) {
+            lv_label_set_text(lbl_vol_percent, "Fixed");
+        }
     } else {
-        if (btn_mute) lv_obj_add_flag(btn_mute, LV_OBJ_FLAG_HIDDEN);
-        if (obj_vol_var_cont) lv_obj_clear_flag(obj_vol_var_cont, LV_OBJ_FLAG_HIDDEN);
+        if (slider_vol) {
+            lv_obj_clear_state(slider_vol, LV_STATE_DISABLED);
+            lv_obj_add_flag(slider_vol, LV_OBJ_FLAG_CLICKABLE);
+        }
     }
 }
 
