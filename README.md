@@ -1,3 +1,7 @@
+<img width="980" height="1307" alt="image" src="https://github.com/user-attachments/assets/5f1846cc-07bb-46b5-bad2-643902deeefa" />
+
+
+
 # WiiM ESP32-S3 Touchscreen Remote Control
 
 A modular, high-performance, dark-themed touchscreen remote control project tailored for **WiiM audio streamers** (WiiM Mini, WiiM Pro, WiiM Pro Plus, WiiM Amp, WiiM Ultra) and generic LinkPlay-based audio nodes.
