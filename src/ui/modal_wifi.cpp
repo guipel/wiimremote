@@ -1,6 +1,7 @@
 #include "ui/modal_wifi.h"
 #include "ui/ui_theme.h"
 #include "config.h"
+#include <Preferences.h>
 
 // External Queue for sending UI Commands to Network Task
 extern QueueHandle_t xQueueUiCmd;
@@ -28,6 +29,23 @@ static char current_connected_ssid[33] = "";
 static bool current_wifi_connected = false;
 static lv_timer_t* timer_wifi_close = nullptr;
 
+static char s_saved_wifi_ssid[33] = "";
+static char s_saved_wifi_pass[65] = "";
+static bool s_trying_saved_pass = false;
+
+static void load_saved_wifi_creds() {
+    Preferences prefs;
+    if (prefs.begin("wiimremote", true)) {
+        String ssid = prefs.getString("wifi_ssid", "");
+        String pass = prefs.getString("wifi_pass", "");
+        strncpy(s_saved_wifi_ssid, ssid.c_str(), sizeof(s_saved_wifi_ssid) - 1);
+        s_saved_wifi_ssid[sizeof(s_saved_wifi_ssid) - 1] = '\0';
+        strncpy(s_saved_wifi_pass, pass.c_str(), sizeof(s_saved_wifi_pass) - 1);
+        s_saved_wifi_pass[sizeof(s_saved_wifi_pass) - 1] = '\0';
+        prefs.end();
+    }
+}
+
 static void timer_close_wifi_modal_cb(lv_timer_t* timer) {
     if (modal_wifi_selector) {
         lv_obj_add_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN);
@@ -50,6 +68,9 @@ static void event_btn_wifi_forget(lv_event_t* e) {
 
     current_wifi_connected = false;
     current_connected_ssid[0] = '\0';
+    s_saved_wifi_ssid[0] = '\0';
+    s_saved_wifi_pass[0] = '\0';
+    s_trying_saved_pass = false;
     if (box_wifi_connected) {
         lv_obj_add_flag(box_wifi_connected, LV_OBJ_FLAG_HIDDEN);
     }
@@ -117,12 +138,44 @@ static void do_wifi_connect(const char* ssid, const char* pass) {
     }
 }
 
+static void open_password_input(const char* ssid, bool auth_failed) {
+    if (lbl_wifi_pass_title) {
+        char title[64];
+        if (auth_failed) {
+            snprintf(title, sizeof(title), "Failed: %s", ssid);
+            lv_label_set_text(lbl_wifi_pass_title, title);
+            lv_obj_set_style_text_color(lbl_wifi_pass_title, lv_color_hex(0xE63946), 0);
+        } else {
+            snprintf(title, sizeof(title), "Network: %s", ssid);
+            lv_label_set_text(lbl_wifi_pass_title, title);
+            lv_obj_set_style_text_color(lbl_wifi_pass_title, COLOR_ACCENT, 0);
+        }
+    }
+    if (ta_wifi_pass) {
+        lv_textarea_set_text(ta_wifi_pass, "");
+        lv_textarea_set_password_mode(ta_wifi_pass, true);
+        if (auth_failed) {
+            lv_textarea_set_placeholder_text(ta_wifi_pass, "Enter new password");
+        } else {
+            lv_textarea_set_placeholder_text(ta_wifi_pass, "Password");
+        }
+    }
+    if (kb_wifi && ta_wifi_pass) {
+        lv_keyboard_set_textarea(kb_wifi, ta_wifi_pass);
+    }
+    if (wifi_view_list) lv_obj_add_flag(wifi_view_list, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_view_status) lv_obj_add_flag(wifi_view_status, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_view_pass) lv_obj_clear_flag(wifi_view_pass, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void event_btn_wifi_pass_connect(lv_event_t* e) {
+    s_trying_saved_pass = false;
     const char* pass = ta_wifi_pass ? lv_textarea_get_text(ta_wifi_pass) : "";
     do_wifi_connect(selected_wifi_ssid, pass);
 }
 
 static void event_kb_wifi_ready(lv_event_t* e) {
+    s_trying_saved_pass = false;
     const char* pass = ta_wifi_pass ? lv_textarea_get_text(ta_wifi_pass) : "";
     do_wifi_connect(selected_wifi_ssid, pass);
 }
@@ -135,23 +188,15 @@ static void event_wifi_item_clicked(lv_event_t* e) {
     selected_wifi_ssid[sizeof(selected_wifi_ssid) - 1] = '\0';
 
     if (current_wifi_scan_list.networks[idx].is_open) {
+        s_trying_saved_pass = false;
         do_wifi_connect(selected_wifi_ssid, "");
+    } else if (strlen(s_saved_wifi_ssid) > 0 && strcmp(selected_wifi_ssid, s_saved_wifi_ssid) == 0 && strlen(s_saved_wifi_pass) > 0) {
+        log_i("Selected saved network '%s', attempting connection with stored password...", selected_wifi_ssid);
+        s_trying_saved_pass = true;
+        do_wifi_connect(selected_wifi_ssid, s_saved_wifi_pass);
     } else {
-        if (lbl_wifi_pass_title) {
-            char title[64];
-            snprintf(title, sizeof(title), "Network: %s", selected_wifi_ssid);
-            lv_label_set_text(lbl_wifi_pass_title, title);
-        }
-        if (ta_wifi_pass) {
-            lv_textarea_set_text(ta_wifi_pass, "");
-            lv_textarea_set_password_mode(ta_wifi_pass, true);
-        }
-        if (kb_wifi && ta_wifi_pass) {
-            lv_keyboard_set_textarea(kb_wifi, ta_wifi_pass);
-        }
-        if (wifi_view_list) lv_obj_add_flag(wifi_view_list, LV_OBJ_FLAG_HIDDEN);
-        if (wifi_view_status) lv_obj_add_flag(wifi_view_status, LV_OBJ_FLAG_HIDDEN);
-        if (wifi_view_pass) lv_obj_clear_flag(wifi_view_pass, LV_OBJ_FLAG_HIDDEN);
+        s_trying_saved_pass = false;
+        open_password_input(selected_wifi_ssid, false);
     }
 }
 
@@ -383,6 +428,9 @@ void modal_wifi_init(lv_obj_t* parent) {
 void modal_wifi_open() {
     if (!modal_wifi_selector) return;
 
+    load_saved_wifi_creds();
+    s_trying_saved_pass = false;
+
     if (timer_wifi_close) {
         lv_timer_del(timer_wifi_close);
         timer_wifi_close = nullptr;
@@ -503,6 +551,9 @@ void modal_wifi_set_scan_results(const WiFiScanList& list) {
 }
 
 void modal_wifi_on_connected(const char* ip) {
+    s_trying_saved_pass = false;
+    load_saved_wifi_creds();
+
     if (!modal_wifi_selector || lv_obj_has_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN)) return;
     if (!wifi_view_status || lv_obj_has_flag(wifi_view_status, LV_OBJ_FLAG_HIDDEN)) return;
 
@@ -522,6 +573,13 @@ void modal_wifi_on_connected(const char* ip) {
 
 void modal_wifi_on_connect_failed() {
     if (!modal_wifi_selector || lv_obj_has_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN)) return;
+
+    if (s_trying_saved_pass) {
+        s_trying_saved_pass = false;
+        log_w("Connection to '%s' with saved password failed. Prompting for new password.", selected_wifi_ssid);
+        open_password_input(selected_wifi_ssid, true);
+        return;
+    }
 
     if (spinner_wifi) lv_obj_add_flag(spinner_wifi, LV_OBJ_FLAG_HIDDEN);
     if (lbl_wifi_connecting_msg) {

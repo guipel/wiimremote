@@ -41,9 +41,6 @@ void wifi_service_init(WiFiConnectedCb onConnected, WiFiDisconnectedCb onDisconn
         WiFi.begin(s_cached_saved_ssid.c_str(), s_cached_saved_pass.c_str());
     } else {
         log_w("No user-configured Wi-Fi credentials. Setup required!");
-        s_wifi_prefs.remove("wifi_ssid");
-        s_wifi_prefs.remove("wifi_pass");
-        s_wifi_prefs.remove("user_setup_done");
         WiFi.disconnect(true, true);
 
         UiEvent evt;

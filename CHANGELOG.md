@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Inverted query sequence in `network_manager` so `linkplay_client_fetch_config()` fetches `getStatusEx` hardware line-out configuration prior to dispatching active player status.
   - Zeroed memory in discovery queries (`query_device_status`) and persisted per-device `is_fixed_volume` flags in NVS.
   - Retained current volume slider appearance during device transition without clobbering to 0%, smoothly applying the verified volume upon arrival.
+- **Smart Saved Wi-Fi Reconnect & Failure Input Fallback**:
+  - Eliminated artificial password prompts when selecting a previously configured network from the Wi-Fi scan list.
+  - `modal_wifi` now caches stored credentials and immediately attempts connection with the saved password when the user selects their existing network.
+  - If connecting with the saved password fails, the UI automatically transitions to the manual password entry view (`"Failed: <SSID>"`) with the on-screen keyboard focused.
+  - Removed destructive `s_wifi_prefs.remove()` calls in `wifi_service_init()` fallback to protect against transient NVS read glitches wiping stored credentials on boot.
 
 ---
 
