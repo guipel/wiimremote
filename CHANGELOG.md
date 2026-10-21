@@ -9,14 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Input Source Cycling & Dynamic Source Icon**:
+  - Repurposed `btn_var_input` on the Player volume row (`src/ui/ui_player.cpp`) to cycle through WiiM input modes (`wifi` &rarr; `bluetooth` &rarr; `line-in` &rarr; `optical`) via `setPlayerCmd:switchmode:<mode>` (`CMD_SWITCH_MODE`).
+  - Added dynamic icon updates (`LV_SYMBOL_WIFI`, `LV_SYMBOL_BLUETOOTH`, `"AUX"`, `"OPT"`) synchronized with the active LinkPlay `mode` telemetry (`10/31/32` Wi-Fi, `41` Bluetooth, `40` Line-In, `43` Optical).
+- **Version-Controlled Extended UTF-8 Montserrat Fonts (`10..24px`)**:
+  - Updated `scripts/generate_fonts.py` and generated `ui_font_montserrat_{10,12,14,16,20,24}.c` in `src/ui/fonts/` covering Basic Latin, Latin-1 Supplement (`0x20–0xFF`), Smart Punctuation (`0x2010–0x2026`), and FontAwesome LVGL symbols.
+  - Configured `include/lv_conf.h` to alias `lv_font_montserrat_*` to the extended UTF-8 fonts so accented characters on the 24px Now Playing song title render properly and persist across `pio run -t clean`.
+- **Deep Sleep & Dimmed Mode Battery Optimizations**:
+  - Configured the FT6336G capacitive touch controller to automatically enter low-power Monitor mode (`0x86 = 0x01`, `0x87 = 5s`) when idle and explicitly switch to Monitor mode (`0xA5 = 0x01`) before deep sleep while preserving instant `TOUCH_INT` (`GPIO 17`) wake.
+  - Added full ILI9341V display power-down (`DISPOFF 0x28` + `SLPIN 0x10` + 120ms charge-pump discharge), deep-sleep GPIO hold on `PIN_PA_EN` (`GPIO 1` HIGH) and `TFT_BL` (`GPIO 45` LOW), RTC pull-up on `TOUCH_INT`, and explicit `WiFi.mode(WIFI_OFF)` shutdown.
+  - Implemented dynamic CPU frequency scaling (full `240 MHz` while awake, stepping down to `80 MHz` when dimmed) and adaptive HTTPS polling (`1000ms` playing, `2500ms` paused/stopped, `5000ms` dimmed).
+- **Critical Low-Battery Protection & Task Watchdog Timer**:
+  - Added a 3-sample consecutive `<= 3350 mV` (`BAT_VOLT_CRIT_MV`) cutoff in `src/ui/ui_core.cpp` that automatically enters deep sleep to protect the Li-Po cell.
+  - Subscribed both `UiTask` (Core 1) and `NetTask` (Core 0) to the 15-second ESP32 Task Watchdog Timer (`esp_task_wdt`).
+- **UI/UX Refinements**:
+  - Swallowed the initial wake-from-dim touch gesture in `src/display_driver.cpp` until finger release so waking the screen does not trigger underlying buttons or sliders.
+  - Added backdrop tap-to-close on all three modals (`modal_device.cpp`, `modal_wifi.cpp`, `modal_power.cpp`).
+  - Visually dimmed unassigned preset tiles (`LV_OPA_50`) in `src/ui/ui_presets.cpp` and hid the `0/0` track counter when no playlist queue is active.
+  - Replaced `(-XX dBm)` text suffixes in the Wi-Fi scan list with RSSI color-coded signal icons.
+
 ### Changed
+- **Asynchronous Wi-Fi Scanning & Zero-Allocation SSDP Parsing**:
+  - Switched `wifi_service_start_scan()` to non-blocking async scanning (`WiFi.scanNetworks(true, ...)`) harvested in `wifi_service_handle()`, keeping `NetTask` responsive to transport/volume commands during scans.
+  - Replaced per-packet `String` heap allocations in `discovery_service.cpp` (`ssdp_listen_window`) with zero-allocation `strstr()` parsing and added a 350ms LAN connect timeout for fast-path NVS verification.
+  - Throttled LVGL progress bar (`PROGRESS_BAR_MAX = 220`) and elapsed-time label redraws in `src/ui/ui_player.cpp` to only invalidate when visual values change.
+  - Pinned exact library versions (`LovyanGFX @ 1.2.28`, `lvgl @ 8.4.0`, `ArduinoJson @ 7.4.3`) and enabled `-Wall -Wextra -Wno-unused-parameter` in `platformio.ini`.
 - **Unified Player Volume Controls & Fixed Line-Out Behavior**:
-  - Unified the Player screen volume layout across both Variable and Fixed line-out modes into a single persistent row: mute button, 120 px volume slider, percentage/status label, and shuffle button.
+  - Unified the Player screen volume layout across both Variable and Fixed line-out modes into a single persistent row: mute button, 120 px volume slider, percentage/status label, and input mode button.
   - Eliminated the separate fixed-mode padlock button (`btn_mute`, `lbl_mute`, `img_lock`) in `src/ui/ui_player.cpp` to eliminate jarring layout shifts when changing devices or output modes.
-  - When in fixed volume mode, the volume slider is disabled (`LV_STATE_DISABLED`, touch interactions ignored) with dimmed indicator styling, and the volume percentage label displays `"Fixed"`.
+  - When in fixed volume mode, the volume slider is disabled (`LV_STATE_DISABLED`, touch interactions ignored) with dimmed indicator styling, and a padlock icon is displayed beneath the slider.
   - The mute button maintains consistent mute toggle behavior across both fixed and variable modes, turning solid crimson red (`#E63946`) when muted.
 
 ### Fixed
+- **Boot Brightness Persistence Override**:
+  - Reordered `display_driver_init()` before `power_manager_init()` in `src/main.cpp` and removed the hardcoded `BL_DEFAULT_BRIGHT` (85%) override so NVS-saved brightness is applied on boot and wake from deep sleep.
+- **Deep Sleep Immediate Re-Wake Race**:
+  - Added a finger-release wait loop on `PIN_TOUCH_INT` (`GPIO 17`) in `power_manager_enter_deep_sleep()` so tapping the "Sleep" button does not immediately re-wake the ESP32-S3 via `EXT0` while the finger is still lifting.
+- **On-Demand Lyrics Fetch Hang (`"Fetching lyrics from LRCLIB..."`)**:
+  - Passed the active track `title` and `artist` directly inside `CMD_FETCH_LYRICS` (`UiCommand::data::lyrics_req`) and synchronized `s_last_known_track_title` in `linkplay_client_fetch_meta()` so metadata from `getMetaInfo` and `getPlayerStatus` never desynchronize or get discarded as stale.
+  - Closed the persistent WiiM TLS session before opening the `lrclib.net` TLS session to free ~40 KB of internal SRAM and configured explicit 4s connect / 5s handshake timeouts in `src/net/lyrics_client.cpp`.
+- **Hex String Decoder False Positives**:
+  - Hardened `net_decode_hex_string()` in `src/net/net_utils.cpp` with strict UTF-8 printability and numeric-only checks so plain ASCII artist/track names composed of hex characters (`"ABBA"`, `"ACDC"`, `"CAFE"`, `"1984"`) are never corrupted.
+- **Fixed-Volume Lock Clobbering on SSDP Refresh**:
+  - Preserved `is_fixed_volume` across `add_or_update_device()` discovery refreshes in `src/net/discovery_service.cpp` and avoided redundant NVS flash writes when the flag has not changed.
 - **Volume Bar Bouncing on Device Selection**:
   - Eliminated volume bar bouncing (empty 0% &rarr; full 100% &rarr; adjusted level) when switching from a fixed-volume device to a variable-volume device.
   - Inverted query sequence in `network_manager` so `linkplay_client_fetch_config()` fetches `getStatusEx` hardware line-out configuration prior to dispatching active player status.
