@@ -39,15 +39,16 @@ Built for **ESP32-S3 (N16R8: 16MB Flash, 8MB Octal OPI PSRAM)** with an **ILI934
 
 * **Voltage Thresholds**:
   * **Charging / USB Power**: $\ge 4100\text{ mV}$ (tested ~4.12V float voltage)
-  * **Full**: $\ge 3950\text{ mV}$ (~75% – 100%)
-  * **High**: $\ge 3800\text{ mV}$ (~50% – 75%)
-  * **Medium**: $\ge 3650\text{ mV}$ (~25% – 50%)
-  * **Low**: $< 3500\text{ mV}$ (~10% – 25%)
+  * **Full**: $\ge 3950\text{ mV}$
+  * **High**: $\ge 3800\text{ mV}$
+  * **Medium**: $\ge 3650\text{ mV}$
+  * **Low**: $< 3500\text{ mV}$
+  * **Critical Protection**: $\le 3350\text{ mV}$ (3 consecutive samples trigger automatic deep sleep to protect the Li-Po cell)
 
 ### 4. Reserved Onboard Pins (Isolated / Protected)
 | Peripheral | Pin(s) | Description |
 | :--- | :--- | :--- |
-| **PA_EN** | **GPIO 1** | **Driven HIGH** at boot to keep onboard amplifier muted |
+| **PA_EN** | **GPIO 1** | **Driven HIGH** at boot and held during deep sleep to keep onboard amplifier muted |
 | **Codec I2S** | **GPIO 4, 5, 6, 7, 8** | High-impedance pulldown, no bus collision |
 | **Status RGB** | **GPIO 42** | Status indicator LED |
 
@@ -71,14 +72,14 @@ The system runs on **FreeRTOS** leveraging the ESP32-S3 dual cores to achieve co
          |                         |                    |                         |
     [ LovyanGFX ]             [ LVGL 8.4 ]        [ WiFi & SSDP ]            [ HTTP / UPnP ]
    • ILI9341V DMA            • 3 Tabs             • UDP 239.255.255.250     • getPlayerStatus
-   • FT6336G (66 Hz)         • 3 Modals           • /24 Subnet Scan         • getMetaInfo
-   • Backlight PWM           • Playback Coord.    • Touchscreen Provision   • MCUKeyShortClick
-   • Async Double Buff       • PSRAM Draw Buffers • In-RAM Reconnect        • LRCLIB REST API
-                             • Theme & Tokens                               • ADC Battery Telemetry
+   • FT6336G (66 Hz)         • 3 Modals           • NVS Fast-Path Verify    • getMetaInfo
+   • Backlight PWM           • Playback Coord.    • Async Network Scan      • MCUKeyShortClick
+   • Internal DMA Buffs      • PSRAM LVGL Heap    • Auto Reconnect          • LRCLIB REST API
+   • ADC Battery Telemetry   • Extended UTF-8                               • UPnP AVTransport
                                    ^                                              |
                                    |              xQueueUiState                   |
                                    +==============================================+
-                                   |  (PlayerState, TrackMeta, Presets, Battery)  |
+                                   |    (PlayerState, TrackMeta, Presets, WiFi)   |
                                    +==============================================+
                                    |               xQueueUiCmd                    |
                                    |==============================================+
@@ -87,20 +88,19 @@ The system runs on **FreeRTOS** leveraging the ESP32-S3 dual cores to achieve co
 ```
 
 ### 1. UI Task (Core 1)
-- Dedicated exclusively to LovyanGFX display rendering, touch polling (66 Hz / 15ms period), and LVGL 8.4 execution.
-- Allocates dual draw buffers in 8MB Octal PSRAM (`MALLOC_CAP_SPIRAM`) with asynchronous SPI DMA transfers (`display_flush_cb`).
+- Dedicated exclusively to LovyanGFX display rendering, touch polling (66 Hz / 15ms period), LVGL 8.4 execution, and 5-second ADC battery telemetry.
+- Allocates dual draw buffers in **internal DMA-capable SRAM** (`MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL`) for zero-copy SPI DMA transfers (`display_flush_cb`), while placing the 256 KB LVGL object heap in 8MB Octal PSRAM (`MALLOC_CAP_SPIRAM`).
 - **Zero network requests** in this thread ensures zero UI lag or dropped frames.
 
 ### 2. Network Task (Core 0)
-- Wi-Fi connection manager with automatic non-blocking in-RAM retry.
-- Dual discovery engine:
+- Wi-Fi connection manager with automatic non-blocking reconnect and asynchronous background SSID scanning.
+- Dual-phase discovery engine:
+  - **Fast-path NVS verification**: Immediately probes previously saved streamer IPs on boot for sub-second reconnection.
   - **SSDP M-SEARCH** broadcast to `239.255.255.250:1900` (`urn:schemas-upnp-org:device:MediaRenderer:1` and `ssdp:all`).
-  - **Subnet scanner fallback** probing port 80 across the active `/24` subnet.
-- Fast LinkPlay HTTP API polling (`command=getPlayerStatus`) at 1000ms intervals with a strict 1500ms timeout limit.
-- LRCLIB REST client for on-demand lyrics retrieval with regex synced tag parsing.
+- Fast LinkPlay HTTP/HTTPS API polling (`command=getPlayerStatusEx`) at 1000ms intervals with persistent connection reuse and UPnP SOAP fallback.
+- LRCLIB REST client for on-demand lyrics retrieval with synced tag stripping.
 - Volume throttling (150ms) to prevent HTTP request flooding while dragging the volume slider.
-- Battery fuel gauge sampling at 5-second intervals via ADC1 Channel 8.
-- NVS persistence via ESP32 `Preferences` for retaining the selected streamer, Wi-Fi credentials, brightness, and sleep timeouts.
+- NVS persistence via ESP32 `Preferences` for retaining saved streamers, fixed-volume lock states, Wi-Fi credentials, brightness, and sleep timeouts.
 
 ### 3. Unified Playback Coordinator
 - Normalizes LinkPlay transient states (`"load"`, `"none"` during track transitions, and negative `curpos` pre-buffer countdowns) into `PLAY_STATE_BUFFERING`.
@@ -126,12 +126,13 @@ include/ui/
 src/ui/
 ├── ui_core.cpp        # ui_init(), event loop router (ui_process_events), timers
 ├── ui_header.cpp      # Header layout & event dispatching
-├── ui_player.cpp      # Player tab, adaptive volume logic, playback coordinator
+├── ui_player.cpp      # Player tab, adaptive volume logic, input mode cycling
 ├── ui_lyrics.cpp      # Lyrics container, auto-scroll, formatted error handling
 ├── ui_presets.cpp     # 12-preset grid and recall routing
 ├── modal_device.cpp   # Device discovery UI and active selection
 ├── modal_wifi.cpp     # Wi-Fi scanning list, LVGL keyboard, connection flow
-└── modal_power.cpp    # Brightness LEDC control, sleep trigger, timeout selection
+├── modal_power.cpp    # Brightness LEDC control, sleep trigger, timeout selection
+└── fonts/             # Extended Latin-1 + LVGL symbol Montserrat fonts (10..24px)
 ```
 
 ---
@@ -143,17 +144,17 @@ The network subsystem is decoupled into single-responsibility services:
 ```
 include/net/
 ├── net_utils.h         # Stateless string transcoding (UTF-8, hex, URL, XML, LRC)
-├── wifi_service.h      # Wi-Fi station lifecycle, reconnect loop, synchronous scan
+├── wifi_service.h      # Wi-Fi station lifecycle, reconnect loop, async scan
 ├── discovery_service.h # SSDP M-SEARCH broadcast, candidate verification, device storage
 ├── linkplay_client.h   # TLS socket session, player polling, buffering state, presets, UPnP
 └── lyrics_client.h     # LRCLIB REST client, track title sanitation, error categorization
 
 src/net/
 ├── net_utils.cpp       # Pure stateless utility functions
-├── wifi_service.cpp    # ESP32 Wi-Fi station management & non-blocking reconnect
+├── wifi_service.cpp    # ESP32 Wi-Fi station management & non-blocking reconnect/scan
 ├── discovery_service.cpp # SSDP UDP listener, HTTP/HTTPS verification, thread-safe list
 ├── linkplay_client.cpp # LinkPlay HTTP/HTTPS client & UPnP SOAP transport control
-└── lyrics_client.cpp   # LRCLIB API client with regex timing tag sanitation
+└── lyrics_client.cpp   # LRCLIB API client with timing tag sanitation
 ```
 
 ---
@@ -177,9 +178,9 @@ The interface features a **Top Header Bar**, a **3-Tab Navigation View**, and **
 ```
 
 ### Top Header Bar
-1. **Wi-Fi Signal**: Live RSSI indicator (e.g. ` -52dBm`). **Tap** opens the **Wi-Fi Manager Modal**.
+1. **Wi-Fi Signal**: Live RSSI indicator. **Tap** opens the **Wi-Fi Manager Modal**.
 2. **Active Streamer**: Displays the friendly name of the active WiiM streamer. **Tap** opens the **Device Selector Modal**.
-3. **Battery Fuel Gauge**: Dynamic battery icon and voltage telemetry. **Tap** opens the **Power Management Modal**.
+3. **Battery Fuel Gauge**: Dynamic battery icon. **Tap** opens the **Power Management Modal**.
 
 ### Tab Navigation (3 Tabs)
 1. **Lyrics Tab (Left)**:
@@ -187,37 +188,35 @@ The interface features a **Top Header Bar**, a **3-Tab Navigation View**, and **
    - Automatically strips `[mm:ss.xx]` timing tags from synced LRC records if plain text is unavailable.
    - Distinct error feedback: differentiates between track not found (HTTP 404) and connection/server failures.
 2. **Now Playing Tab (Center)**:
-   - High-contrast track title rendered in **Montserrat 24** typography with circular scrolling for long titles.
+   - High-contrast track title rendered in extended UTF-8 **Montserrat 24** typography with circular scrolling for long titles.
    - Artist and album metadata.
-   - Centered audio resolution/bitrate label (e.g., `FLAC • 192 kHz / 24-bit`) positioned between progress bar and transport controls.
+   - Compact audio resolution telemetry (`bits/sample_rate_kHz`, e.g., `24/96`) in the transport row.
    - Interactive progress bar with elapsed and total duration timestamps.
    - Centered transport controls: Previous, Play/Pause/Resume, Next.
-   - Centered track counter (`X/Y`) directly beneath the Play/Pause button.
-    - **Unified Volume Controls**:
-      - Persistent row containing the instant mute button, 120 px volume slider, percentage/status label, and shuffle/aux button across all modes.
-      - **Variable Volume**: Interactive slider updating output volume in real-time with numeric percentage label (`0%`–`100%`).
-      - **Fixed Volume**: Disables the volume slider, updates the status label to `"Fixed"`, and preserves mute toggle functionality via the mute button (crimson red `#E63946` when muted).
-    - **Input Source Switching**: Cycle through Wi-Fi, Line-In, Optical, and Bluetooth.
+   - Centered track counter (`X/Y`) directly beneath the Play/Pause button (auto-hidden when `0/0`).
+   - **Unified Volume & Input Source Row**:
+     - Persistent row containing the instant mute button, 120 px volume slider, percentage/lock indicator, and Input Source cycle button (`` Wi-Fi $\rightarrow$ `蓝牙` Bluetooth $\rightarrow$ `AUX` Line-In $\rightarrow$ `OPT` Optical).
+     - **Variable Volume**: Interactive slider updating output volume in real-time with numeric percentage label (`0%`–`100%`).
+     - **Fixed Volume**: Disables the volume slider, displays a padlock icon, and preserves mute toggle functionality.
 3. **Presets Tab (Right)**:
-   - 3x4 grid of **12 preset tiles** dynamically synced from the WiiM device (`getPresetInfo`).
+   - 3x4 grid of **12 preset tiles** dynamically synced from the WiiM device (`getPresetInfo`), with unassigned slots visually dimmed.
    - One-touch preset recall with automatic navigation back to the Player tab.
 
 ### Interactive Modals (3 Modals)
 1. **Device Selector Modal** (Tap Streamer Name):
-   - Lists all WiiM streamers discovered via SSDP and subnet scanning.
-   - Shows device name, IP address, and active checkmark.
-   - **Rescan Network** button to trigger discovery on demand.
-   - Persists the selected device to NVS memory.
+   - Lists all WiiM streamers discovered via NVS cache and SSDP broadcast.
+   - Shows device name, IP address, and per-device Fixed Volume lock toggle.
+   - **Scan** button to trigger SSDP discovery on demand.
 2. **Wi-Fi Manager Modal** (Tap Wi-Fi Icon):
-   - Touchscreen network scanner displaying available SSIDs and signal strength.
+   - Non-blocking touchscreen network scanner displaying available SSIDs with RSSI-colored signal icons.
    - Full on-screen QWERTY touch keyboard for password entry.
    - Live connection status spinner with automatic modal close on success.
 3. **Power Management Modal** (Tap Battery Icon):
-   - Live battery voltage readout ($mV$) and battery fuel gauge.
+   - Live battery voltage readout (`V`) and battery fuel gauge.
    - 20%–100% screen brightness slider matching the volume bar aesthetic.
-   - Configurable auto-dimming timeout (dims to 10% brightness on inactivity).
+   - Configurable auto-dimming timeout (dims to 10% brightness on inactivity; first tap wakes display without triggering accidental UI actions).
    - Configurable auto-sleep timeout and manual **Sleep** button.
-   - ESP32-S3 deep sleep with capacitive touch-to-wake interrupt support.
+   - ESP32-S3 deep sleep with capacitive touch-to-wake interrupt support (`ILI9341V SLPIN` + `PA_EN` GPIO hold).
 
 ---
 
@@ -226,9 +225,9 @@ The interface features a **Top Header Bar**, a **3-Tab Navigation View**, and **
 ### LinkPlay / WiiM HTTP API
 | Operation | HTTP Command | Description |
 | :--- | :--- | :--- |
-| **Device Identification** | `GET /httpapi.asp?command=getStatus` | Discovers device name, UUID, and MAC |
-| **Playback Telemetry** | `GET /httpapi.asp?command=getPlayerStatus` | Polling play state, position, duration, and volume |
-| **Track Metadata** | `GET /httpapi.asp?command=getMetaInfo` | Retrieves title, artist, album, format, and bitrate |
+| **Device Identification** | `GET /httpapi.asp?command=getStatusEx` | Discovers device name, UUID, and MAC |
+| **Playback Telemetry** | `GET /httpapi.asp?command=getPlayerStatusEx` | Polls play state, position, duration, mode, and volume |
+| **Track Metadata** | `GET /httpapi.asp?command=getMetaInfo` | Retrieves title, artist, album, sample rate, and bit depth |
 | **Presets List** | `GET /httpapi.asp?command=getPresetInfo` | Retrieves 12 preset names and mappings |
 | **Play / Pause Toggle** | `GET /httpapi.asp?command=setPlayerCmd:onepause` | Toggles playback state |
 | **Resume Playback** | `GET /httpapi.asp?command=setPlayerCmd:resume` | Resumes playback from pause without restarting track |
@@ -237,7 +236,7 @@ The interface features a **Top Header Bar**, a **3-Tab Navigation View**, and **
 | **Seek Position** | `GET /httpapi.asp?command=setPlayerCmd:seek:<SECS>` | Seeks to timestamp in seconds |
 | **Set Volume** | `GET /httpapi.asp?command=setPlayerCmd:vol:<VAL>` | Adjusts volume (0..100) |
 | **Set Mute** | `GET /httpapi.asp?command=setPlayerCmd:mute:<1\|0>` | Toggles mute state |
-| **Input Source Switch** | `GET /httpapi.asp?command=setPlayerCmd:switchmode:<MODE>` | Switches input (`wifi`, `line-in`, `optical`, `bluetooth`) |
+| **Input Source Switch** | `GET /httpapi.asp?command=setPlayerCmd:switchmode:<MODE>` | Switches input (`wifi`, `bluetooth`, `line-in`, `optical`) |
 | **Trigger Preset** | `GET /httpapi.asp?command=MCUKeyShortClick:<INDEX>` | Recalls preset slot (1..12) |
 
 ### External Lyrics API (LRCLIB)

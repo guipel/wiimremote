@@ -53,6 +53,7 @@
 #define BAT_VOLT_HIGH_MV    3800 // ~50% - 75%
 #define BAT_VOLT_MED_MV     3650 // ~25% - 50%
 #define BAT_VOLT_LOW_MV     3500 // ~10% - 25%
+#define BAT_VOLT_CRIT_MV    3350 // Critical low-battery protective deep sleep cutoff
 
 // Backlight PWM Channel
 #define BL_LEDC_CHANNEL     0
@@ -101,4 +102,4 @@
 #define NET_TASK_CORE             0
 
 #define QUEUE_UI_CMD_LEN          16
-#define QUEUE_UI_STATE_LEN        8
+#define QUEUE_UI_STATE_LEN        24

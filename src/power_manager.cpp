@@ -4,9 +4,11 @@
 #include <Preferences.h>
 #include <WiFi.h>
 #include <esp_sleep.h>
+#include <driver/gpio.h>
+#include <driver/rtc_io.h>
 
 static unsigned long s_last_activity_ms = 0;
-static bool s_is_dimmed = false;
+static volatile bool s_is_dimmed = false;
 
 static uint16_t s_dim_timeout_sec = 30;
 static uint32_t s_dim_timeout_ms = 30000;
@@ -44,12 +46,19 @@ void power_manager_init() {
     display_set_backlight((uint8_t)(s_brightness_pct * 255 / 100));
 }
 
-void power_manager_notify_activity() {
+bool power_manager_notify_activity() {
     s_last_activity_ms = millis();
     if (s_is_dimmed) {
         s_is_dimmed = false;
+        setCpuFrequencyMhz(240);
         display_set_backlight((uint8_t)(s_brightness_pct * 255 / 100));
+        return true;
     }
+    return false;
+}
+
+bool power_manager_is_dimmed() {
+    return s_is_dimmed;
 }
 
 void power_manager_check_inactivity() {
@@ -66,10 +75,11 @@ void power_manager_check_inactivity() {
         return;
     }
 
-    // 2. Check Screen Dim timeout (dim strictly to 10% brightness)
+    // 2. Check Screen Dim timeout (dim strictly to 10% brightness and step CPU down to 80 MHz)
     if (s_dim_timeout_ms > 0 && !s_is_dimmed && idle_ms > s_dim_timeout_ms) {
         s_is_dimmed = true;
         display_set_backlight(25); // 10% brightness (25/255)
+        setCpuFrequencyMhz(80);
     }
 }
 
@@ -84,6 +94,7 @@ void power_manager_set_dim_timeout_sec(uint16_t seconds) {
     }
     if (seconds == 0 && s_is_dimmed) {
         s_is_dimmed = false;
+        setCpuFrequencyMhz(240);
         display_set_backlight((uint8_t)(s_brightness_pct * 255 / 100));
     }
 }
@@ -132,8 +143,30 @@ uint16_t power_manager_get_sleep_timeout_sec() {
 void power_manager_enter_deep_sleep() {
     log_i("Entering Deep Sleep (Touch-to-Wake on GPIO %d)...", TOUCH_INT);
     display_set_backlight(0);
+
+    // Wait for user to lift finger from touch screen so active-LOW TOUCH_INT does not immediately wake
+    pinMode(TOUCH_INT, INPUT_PULLUP);
+    unsigned long waitStart = millis();
+    uint16_t tx, ty;
+    while ((gfx.getTouch(&tx, &ty) || digitalRead(TOUCH_INT) == LOW) && (millis() - waitStart < 1500)) {
+        delay(20);
+    }
+
+    // Put FT6336G in low-power Monitor mode, shut down ILI9341V charge pumps, and lock TFT_BL LOW
+    display_prepare_deep_sleep();
+
+    // Hold Audio Amp Enable (PIN_PA_EN) HIGH during deep sleep to keep speaker muted
+    digitalWrite(PIN_PA_EN, HIGH);
+    gpio_hold_en((gpio_num_t)PIN_PA_EN);
+    gpio_deep_sleep_hold_en();
+
+    // Cleanly shut down Wi-Fi radio and wait 100ms (also completes 120ms ILI9341V SLPIN blanking period)
     WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
     delay(100);
+
+    rtc_gpio_pullup_en((gpio_num_t)TOUCH_INT);
+    rtc_gpio_pulldown_dis((gpio_num_t)TOUCH_INT);
     esp_sleep_enable_ext0_wakeup((gpio_num_t)TOUCH_INT, 0);
     esp_deep_sleep_start();
 }

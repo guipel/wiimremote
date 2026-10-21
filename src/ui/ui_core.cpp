@@ -7,6 +7,7 @@
 #include "ui/modal_device.h"
 #include "ui/modal_wifi.h"
 #include "ui/modal_power.h"
+#include "power_manager.h"
 #include "config.h"
 
 // External Queue handles
@@ -20,6 +21,7 @@ static lv_obj_t* tab_presets = nullptr;
 
 // Battery monitoring state
 static float s_battery_filtered_mv = 0.0f;
+static uint8_t s_crit_battery_count = 0;
 static uint32_t last_progress_tick_ms = 0;
 
 static void timer_progress_cb(lv_timer_t* timer) {
@@ -47,6 +49,17 @@ static void timer_battery_cb(lv_timer_t* timer) {
     uint32_t bat_mv = (uint32_t)s_battery_filtered_mv;
     ui_header_update_battery(bat_mv);
     modal_power_update_battery(bat_mv);
+
+    // Critical low-battery cutoff protection (3 consecutive samples <= 3350mV)
+    if (bat_mv > 1000 && bat_mv <= BAT_VOLT_CRIT_MV) {
+        s_crit_battery_count++;
+        if (s_crit_battery_count >= 3) {
+            log_w("CRITICAL: Battery voltage (%u mV) <= %u mV! Entering protective deep sleep...", bat_mv, BAT_VOLT_CRIT_MV);
+            power_manager_enter_deep_sleep();
+        }
+    } else {
+        s_crit_battery_count = 0;
+    }
 }
 
 static void event_tabview_changed(lv_event_t* e) {
@@ -165,7 +178,7 @@ void ui_set_devices(const DeviceList& list) {
 void ui_set_player_state(const PlayerState& state) {
     ui_player_update_state(state.state, state.curpos_ms, state.totlen_ms);
     ui_player_set_volume(state.volume, state.is_fixed_volume, state.mute);
-    ui_player_set_stream_info(state.stream, state.track_num, state.track_total);
+    ui_player_set_stream_info(state.stream, state.track_num, state.track_total, state.mode);
 }
 
 void ui_set_track_meta(const TrackMeta& meta) {

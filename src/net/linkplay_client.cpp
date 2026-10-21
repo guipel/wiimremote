@@ -12,6 +12,8 @@ static HTTPClient s_persistent_http;
 static String s_persistent_ip = "";
 static bool s_persistent_http_configured = false;
 
+static String s_last_raw_title = "";
+static String s_last_raw_artist = "";
 static String s_last_known_track_title = "";
 static String s_last_known_artist = "";
 static bool s_meta_resolved = false;
@@ -23,6 +25,8 @@ static PlayerState s_last_player_state;
 
 void linkplay_client_init() {
     memset(&s_last_player_state, 0, sizeof(s_last_player_state));
+    s_last_raw_title = "";
+    s_last_raw_artist = "";
     s_last_known_track_title = "";
     s_last_known_artist = "";
     s_meta_resolved = false;
@@ -40,6 +44,8 @@ void linkplay_client_reset_session() {
 }
 
 void linkplay_client_reset_track_cache() {
+    s_last_raw_title = "";
+    s_last_raw_artist = "";
     s_last_known_track_title = "";
     s_last_known_artist = "";
     s_cached_track_duration_ms = 0;
@@ -112,7 +118,8 @@ static void fetch_upnp_track_duration(const char* targetIp) {
 
     HTTPClient http;
     String url = "http://" + String(targetIp) + ":49152/upnp/control/rendertransport1";
-    http.setTimeout(1500);
+    http.setConnectTimeout(500);
+    http.setTimeout(1200);
 
     if (!http.begin(url)) {
         return;
@@ -171,6 +178,14 @@ bool linkplay_client_fetch_meta(const char* targetIp) {
     String decArtist = net_decode_hex_string(rawArtist);
     String decAlbum = net_decode_hex_string(rawAlbum);
 
+    if (decTitle.length() > 0) {
+        s_last_known_track_title = decTitle;
+        s_last_known_artist = decArtist;
+    } else if (s_last_known_track_title.length() > 0) {
+        decTitle = s_last_known_track_title;
+        decArtist = s_last_known_artist;
+    }
+
     strncpy(pMeta->title, decTitle.c_str(), sizeof(pMeta->title) - 1);
     strncpy(pMeta->artist, decArtist.c_str(), sizeof(pMeta->artist) - 1);
     strncpy(pMeta->album, decAlbum.c_str(), sizeof(pMeta->album) - 1);
@@ -222,6 +237,7 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
     if (err) return;
 
     UiEvent evt;
+    memset(&evt, 0, sizeof(evt));
     evt.type = UI_EVT_PLAYER_STATE;
 
     // Parse status
@@ -254,22 +270,28 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
     // Track Identity & Change Detection (evaluated BEFORE duration/position math)
     bool isNewTrack = false;
     if (evt.data.player.state == PLAY_STATE_NONE) {
+        s_last_raw_title = "";
+        s_last_raw_artist = "";
         s_last_known_track_title = "";
         s_last_known_artist = "";
         s_cached_track_duration_ms = 0;
         s_meta_resolved = false;
     } else {
         if (strlen(rawTitle) > 0) {
-            String decTitle = net_decode_hex_string(rawTitle);
-            String decArtist = net_decode_hex_string(rawArtist);
-            if (s_last_known_track_title != decTitle || s_last_known_artist != decArtist) {
-                s_last_known_track_title = decTitle;
-                s_last_known_artist = decArtist;
-                s_cached_track_duration_ms = 0;
-                s_meta_resolved = false;
-                isNewTrack = true;
-                if (linkplay_client_fetch_meta(targetIp)) {
-                    s_meta_resolved = true;
+            if (strcmp(s_last_raw_title.c_str(), rawTitle) != 0 || strcmp(s_last_raw_artist.c_str(), rawArtist) != 0) {
+                s_last_raw_title = rawTitle;
+                s_last_raw_artist = rawArtist;
+                String decTitle = net_decode_hex_string(rawTitle);
+                String decArtist = net_decode_hex_string(rawArtist);
+                if (s_last_known_track_title != decTitle || s_last_known_artist != decArtist) {
+                    s_last_known_track_title = decTitle;
+                    s_last_known_artist = decArtist;
+                    s_cached_track_duration_ms = 0;
+                    s_meta_resolved = false;
+                    isNewTrack = true;
+                    if (linkplay_client_fetch_meta(targetIp)) {
+                        s_meta_resolved = true;
+                    }
                 }
             } else if (!s_meta_resolved && evt.data.player.state == PLAY_STATE_PLAYING) {
                 if (linkplay_client_fetch_meta(targetIp)) {
@@ -277,6 +299,8 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
                 }
             }
         } else if (s_last_known_track_title.length() > 0) {
+            s_last_raw_title = "";
+            s_last_raw_artist = "";
             s_last_known_track_title = "";
             s_last_known_artist = "";
             s_cached_track_duration_ms = 0;
@@ -295,7 +319,7 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
         }
     }
 
-    // Track duration and position
+    // Track duration and position (LinkPlay getPlayerStatus reports totlen and curpos in ms)
     const char* totlenStr = doc["totlen"] | "0";
     const char* curposStr = doc["curpos"] | "0";
     uint32_t totlen = strtoul(totlenStr, nullptr, 10);
@@ -312,11 +336,6 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
         curpos = 0;
     }
 
-    // If totlen is given in seconds (< 10000 for normal song durations), convert to ms
-    if (totlen > 0 && totlen < 10000) {
-        totlen *= 1000;
-    }
-
     // Fallback: If LinkPlay reports totlen == 0 (e.g. Amazon Music / Prime streams),
     // use the cached duration obtained from UPnP AVTransport for any active or stopped media
     if (totlen == 0 && evt.data.player.state != PLAY_STATE_NONE) {
@@ -329,7 +348,6 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
     }
 
     // Atomic validation: Curpos cannot legitimately exceed totlen in normal playback.
-    // Cap curpos at totlen to accurately reflect when a song has reached the end.
     if (totlen > 0 && curpos > totlen) {
         curpos = totlen;
     }
@@ -337,39 +355,10 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
     evt.data.player.totlen_ms = totlen;
     evt.data.player.curpos_ms = curpos;
 
-    // Vendor / Service Provider & Stream Format
-    if (evt.data.player.state == PLAY_STATE_NONE) {
-        evt.data.player.vendor[0] = '\0';
-        evt.data.player.stream.format[0] = '\0';
-    } else {
-        const char* rawVendor = doc["vendor"] | "";
-        static const struct { const char* raw; const char* clean; } vendor_map[] = {
-            {"Prime", "Amazon Music"},
-            {"Spotify", "Spotify"},
-            {"Tidal", "Tidal"},
-            {"Qobuz", "Qobuz"},
-            {"TuneIn", "TuneIn"},
-            {"Deezer", "Deezer"}
-        };
-        const char* cleanVendor = nullptr;
-        for (size_t i = 0; i < sizeof(vendor_map) / sizeof(vendor_map[0]); ++i) {
-            if (strcasecmp(rawVendor, vendor_map[i].raw) == 0) {
-                cleanVendor = vendor_map[i].clean;
-                break;
-            }
-        }
-        if (!cleanVendor) {
-            cleanVendor = (strlen(rawVendor) > 0) ? rawVendor : "WiiM";
-        }
-        strncpy(evt.data.player.vendor, cleanVendor, sizeof(evt.data.player.vendor) - 1);
-
-        const char* format = doc["format"] | doc["Type"] | doc["type"] | doc["vendor"] | "FLAC";
-        strncpy(evt.data.player.stream.format, format, sizeof(evt.data.player.stream.format) - 1);
-    }
-
-    // Operating Mode
+    // Operating Mode (10/31/32=Wi-Fi, 40=Line-In, 41=BT, 43=Optical)
     const char* modeStr = doc["mode"] | "0";
     s_active_mode = (uint8_t)atoi(modeStr);
+    evt.data.player.mode = s_active_mode;
 
     // Queue / Playlist Track Count
     const char* plicurrStr = doc["plicurr"] | "0";
@@ -382,7 +371,7 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
     // Stream / Audio Format
     const char* rate = doc["rate"] | doc["SampleRate"] | doc["samplerate"] | "";
     const char* bitDepth = doc["bitDepth"] | doc["bitdepth"] | "";
-    evt.data.player.stream.sample_rate = atoi(rate);
+    evt.data.player.stream.sample_rate = (uint32_t)atoi(rate);
     evt.data.player.stream.bit_depth = (uint8_t)atoi(bitDepth);
 
     s_last_player_state = evt.data.player;
@@ -411,6 +400,7 @@ void linkplay_client_fetch_presets(const char* targetIp) {
     for (uint8_t i = 0; i < MAX_PRESETS; ++i) {
         pPresets->items[i].index = i + 1;
         snprintf(pPresets->items[i].name, sizeof(pPresets->items[i].name), "Preset %d", i + 1);
+        pPresets->items[i].is_assigned = false;
     }
 
     if (!err) {
@@ -422,10 +412,11 @@ void linkplay_client_fetch_presets(const char* targetIp) {
                 int pNum = item["number"] | item["preset_key"] | (idx + 1);
                 const char* pName = item["name"] | item["title"] | "";
                 if (pNum >= 1 && pNum <= MAX_PRESETS) {
-                    pPresets->items[pNum - 1].index = pNum;
+                    pPresets->items[pNum - 1].index = (uint8_t)pNum;
                     if (strlen(pName) > 0) {
-                        String dec = net_decode_hex_string(pName);
+                        String dec = net_to_valid_utf8(String(pName));
                         strncpy(pPresets->items[pNum - 1].name, dec.c_str(), sizeof(pPresets->items[pNum - 1].name) - 1);
+                        pPresets->items[pNum - 1].is_assigned = true;
                     }
                 }
                 idx++;
@@ -442,11 +433,11 @@ void linkplay_client_fetch_presets(const char* targetIp) {
     }
 }
 
-bool linkplay_client_fetch_config(const char* targetIp, bool& outIsFixedVol) {
+bool linkplay_client_fetch_config(const char* targetIp, bool& outIsFixedVolume) {
     if (!targetIp || strlen(targetIp) == 0) return false;
 
     String payload;
-    int httpCode = execute_api_get(targetIp, "getStatusEx", payload);
+    int httpCode = execute_api_get(targetIp, "getNewAudioOutputHardwareMode", payload);
     if (httpCode != HTTP_CODE_OK || payload.length() == 0) {
         return false;
     }
@@ -455,26 +446,35 @@ bool linkplay_client_fetch_config(const char* targetIp, bool& outIsFixedVol) {
     DeserializationError err = deserializeJson(doc, payload);
     if (err) return false;
 
-    const char* vc = doc["volume_control"] | "0";
-    outIsFixedVol = (strcmp(vc, "1") == 0);
-    s_last_player_state.is_fixed_volume = outIsFixedVol;
-    return true;
+    const char* volCtrl = doc["volume_control"] | "";
+    const char* fixedVol = doc["fixed_volume"] | "";
+
+    if (strlen(volCtrl) > 0) {
+        outIsFixedVolume = (strcmp(volCtrl, "1") == 0);
+        return true;
+    } else if (strlen(fixedVol) > 0) {
+        outIsFixedVolume = (strcmp(fixedVol, "1") == 0);
+        return true;
+    }
+
+    return false;
 }
 
 void linkplay_client_seek(const char* targetIp, uint32_t seek_ms) {
     if (!targetIp || strlen(targetIp) == 0) return;
 
     uint32_t totalSec = seek_ms / 1000;
-    uint8_t h = totalSec / 3600;
-    uint8_t m = (totalSec % 3600) / 60;
-    uint8_t s = totalSec % 60;
+    uint8_t h = (uint8_t)(totalSec / 3600);
+    uint8_t m = (uint8_t)((totalSec % 3600) / 60);
+    uint8_t s = (uint8_t)(totalSec % 60);
 
     char targetStr[16];
     snprintf(targetStr, sizeof(targetStr), "%02u:%02u:%02u", h, m, s);
 
     HTTPClient http;
     String url = "http://" + String(targetIp) + ":49152/upnp/control/rendertransport1";
-    http.setTimeout(1500);
+    http.setConnectTimeout(500);
+    http.setTimeout(1200);
 
     if (!http.begin(url)) {
         return;
@@ -483,17 +483,21 @@ void linkplay_client_seek(const char* targetIp, uint32_t seek_ms) {
     http.addHeader("Content-Type", "text/xml; charset=\"utf-8\"");
     http.addHeader("SOAPAction", "\"urn:schemas-upnp-org:service:AVTransport:1#Seek\"");
 
-    String soapBody = "<?xml version=\"1.0\"?>"
-                      "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">"
-                      "<s:Body><u:Seek xmlns:u=\"urn:schemas-upnp-org:service:AVTransport:1\">"
-                      "<InstanceID>0</InstanceID>"
-                      "<Unit>REL_TIME</Unit>"
-                      "<Target>" + String(targetStr) + "</Target>"
-                      "</u:Seek></s:Body></s:Envelope>";
+    String soapBody = String("<?xml version=\"1.0\"?>"
+                             "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">"
+                             "<s:Body><u:Seek xmlns:u=\"urn:schemas-upnp-org:service:AVTransport:1\">"
+                             "<InstanceID>0</InstanceID>"
+                             "<Unit>REL_TIME</Unit>"
+                             "<Target>") + targetStr + String("</Target>"
+                             "</u:Seek></s:Body></s:Envelope>");
 
     int httpCode = http.POST(soapBody);
     log_i("UPnP Seek to %s returned HTTP %d", targetStr, httpCode);
     http.end();
+}
+
+const PlayerState& linkplay_client_get_last_player_state() {
+    return s_last_player_state;
 }
 
 const String& linkplay_client_get_last_title() {
@@ -502,8 +506,4 @@ const String& linkplay_client_get_last_title() {
 
 const String& linkplay_client_get_last_artist() {
     return s_last_known_artist;
-}
-
-const PlayerState& linkplay_client_get_last_player_state() {
-    return s_last_player_state;
 }

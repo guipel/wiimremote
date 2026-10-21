@@ -23,6 +23,9 @@ public:
     // Get active device info
     bool getActiveDevice(WiiMDevice* dev);
 
+    // Synchronize poll timestamps after an immediate active-device fetch
+    void markActiveDevicePolled();
+
 private:
     NetworkManager();
     ~NetworkManager() = default;

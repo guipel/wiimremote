@@ -1,4 +1,5 @@
 #include "net/wifi_service.h"
+#include "power_manager.h"
 #include <Preferences.h>
 #include "config.h"
 #include "model.h"
@@ -12,12 +13,52 @@ static WiFiDisconnectedCb s_on_disconnected_cb = nullptr;
 static bool s_wifi_connected = false;
 static unsigned long s_last_wifi_check = 0;
 static bool s_wifi_scanning = false;
+static unsigned long s_wifi_scan_start = 0;
 static bool s_wifi_connecting = false;
 static unsigned long s_wifi_connect_start = 0;
 static String s_pending_connect_ssid = "";
 static String s_pending_connect_pass = "";
 static String s_cached_saved_ssid = "";
 static String s_cached_saved_pass = "";
+
+static void collect_wifi_scan_results(int16_t n) {
+    s_wifi_scanning = false;
+
+    WiFiScanList* pScan = (WiFiScanList*)malloc(sizeof(WiFiScanList));
+    if (pScan) {
+        pScan->count = 0;
+        if (n > 0) {
+            for (int16_t i = 0; i < n && pScan->count < 20; ++i) {
+                String ssid = WiFi.SSID(i);
+                if (ssid.length() == 0) continue;
+
+                bool dup = false;
+                for (uint8_t j = 0; j < pScan->count; ++j) {
+                    if (strcmp(pScan->networks[j].ssid, ssid.c_str()) == 0) {
+                        dup = true;
+                        break;
+                    }
+                }
+                if (dup) continue;
+
+                WiFiNetworkInfo& net = pScan->networks[pScan->count++];
+                strncpy(net.ssid, ssid.c_str(), sizeof(net.ssid) - 1);
+                net.ssid[sizeof(net.ssid) - 1] = '\0';
+                net.rssi = (int8_t)WiFi.RSSI(i);
+                net.is_open = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
+                log_i("  [%d] SSID: '%s', RSSI: %d dBm, Open: %d", pScan->count, net.ssid, net.rssi, net.is_open ? 1 : 0);
+            }
+        }
+        UiEvent evt;
+        evt.type = UI_EVT_WIFI_SCAN_RESULT;
+        evt.data.wifi_scan = pScan;
+        if (xQueueSend(xQueueUiState, &evt, 0) != pdTRUE) {
+            free(pScan);
+        }
+    }
+    WiFi.scanDelete();
+    WiFi.setSleep(WIFI_PS_MIN_MODEM);
+}
 
 void wifi_service_init(WiFiConnectedCb onConnected, WiFiDisconnectedCb onDisconnected) {
     s_on_connected_cb = onConnected;
@@ -54,62 +95,32 @@ void wifi_service_init(WiFiConnectedCb onConnected, WiFiDisconnectedCb onDisconn
 
 void wifi_service_start_scan() {
     if (s_wifi_scanning) return;
-    s_wifi_scanning = true;
-    log_i("Starting synchronous Wi-Fi network scan on Core 0 (current status: %d)...", WiFi.status());
+    log_i("Starting async Wi-Fi network scan on Core 0 (current status: %d)...", WiFi.status());
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(WIFI_PS_NONE);
     WiFi.scanDelete();
 
-    int16_t n = WiFi.scanNetworks(false, false, false, 150);
-    log_i("WiFi.scanNetworks returned: %d", n);
-
-    if (n < 0) {
-        log_w("Scan returned %d, retrying after 200ms...", n);
-        vTaskDelay(pdMS_TO_TICKS(200));
-        WiFi.scanDelete();
-        n = WiFi.scanNetworks(false, false, false, 200);
-        log_i("Retry scan returned: %d", n);
-    }
-
-    s_wifi_scanning = false;
-
-    WiFiScanList* pScan = (WiFiScanList*)malloc(sizeof(WiFiScanList));
-    if (pScan) {
-        pScan->count = 0;
-        if (n > 0) {
-            for (int16_t i = 0; i < n && pScan->count < 20; ++i) {
-                String ssid = WiFi.SSID(i);
-                if (ssid.length() == 0) continue;
-
-                bool dup = false;
-                for (uint8_t j = 0; j < pScan->count; ++j) {
-                    if (strcmp(pScan->networks[j].ssid, ssid.c_str()) == 0) {
-                        dup = true;
-                        break;
-                    }
-                }
-                if (dup) continue;
-
-                WiFiNetworkInfo& net = pScan->networks[pScan->count++];
-                strncpy(net.ssid, ssid.c_str(), sizeof(net.ssid) - 1);
-                net.ssid[sizeof(net.ssid) - 1] = '\0';
-                net.rssi = WiFi.RSSI(i);
-                net.is_open = (WiFi.encryptionType(i) == WIFI_AUTH_OPEN);
-                log_i("  [%d] SSID: '%s', RSSI: %d dBm, Open: %d", pScan->count, net.ssid, net.rssi, net.is_open ? 1 : 0);
-            }
+    int16_t res = WiFi.scanNetworks(true, false, false, 150);
+    if (res == WIFI_SCAN_RUNNING || res >= 0) {
+        s_wifi_scanning = true;
+        s_wifi_scan_start = millis();
+        if (res >= 0) {
+            collect_wifi_scan_results(res);
         }
-        UiEvent evt;
-        evt.type = UI_EVT_WIFI_SCAN_RESULT;
-        evt.data.wifi_scan = pScan;
-        xQueueSend(xQueueUiState, &evt, 0);
+    } else {
+        log_w("Async scan start failed (%d), falling back to sync scan...", res);
+        int16_t n = WiFi.scanNetworks(false, false, false, 150);
+        collect_wifi_scan_results(n);
     }
-    WiFi.scanDelete();
-    WiFi.setSleep(WIFI_PS_MIN_MODEM);
 }
 
 void wifi_service_connect(const char* ssid, const char* pass) {
     if (!ssid || strlen(ssid) == 0) return;
     log_i("Connecting to user-selected Wi-Fi: %s", ssid);
+    if (s_wifi_scanning) {
+        WiFi.scanDelete();
+        s_wifi_scanning = false;
+    }
     s_wifi_connecting = true;
     s_wifi_connect_start = millis();
     s_pending_connect_ssid = ssid;
@@ -161,6 +172,19 @@ void wifi_service_reconnect() {
 
 void wifi_service_handle() {
     unsigned long now = millis();
+
+    // Check asynchronous Wi-Fi scan completion
+    if (s_wifi_scanning) {
+        int16_t scanRes = WiFi.scanComplete();
+        if (scanRes >= 0) {
+            log_i("Async WiFi scan completed: %d networks found", scanRes);
+            collect_wifi_scan_results(scanRes);
+        } else if (scanRes == WIFI_SCAN_FAILED || (now - s_wifi_scan_start > 8000)) {
+            log_w("Async WiFi scan failed or timed out (%d)", scanRes);
+            collect_wifi_scan_results(0);
+        }
+    }
+
     wl_status_t status = WiFi.status();
 
     if (status == WL_CONNECTED) {
@@ -206,21 +230,24 @@ void wifi_service_handle() {
             if (s_on_connected_cb) {
                 s_on_connected_cb();
             }
-        } else if (now - s_last_wifi_check >= 5000) {
-            // Periodic RSSI refresh
-            s_last_wifi_check = now;
-            String localIpStr = WiFi.localIP().toString();
-            int8_t rssi = WiFi.RSSI();
-            String ssidStr = WiFi.SSID();
-            UiEvent evt;
-            evt.type = UI_EVT_WIFI_STATUS;
-            evt.data.wifi.connected = true;
-            evt.data.wifi.rssi = rssi;
-            strncpy(evt.data.wifi.ip, localIpStr.c_str(), sizeof(evt.data.wifi.ip) - 1);
-            evt.data.wifi.ip[sizeof(evt.data.wifi.ip) - 1] = '\0';
-            strncpy(evt.data.wifi.ssid, ssidStr.c_str(), sizeof(evt.data.wifi.ssid) - 1);
-            evt.data.wifi.ssid[sizeof(evt.data.wifi.ssid) - 1] = '\0';
-            xQueueSend(xQueueUiState, &evt, 0);
+        } else {
+            unsigned long rssiInterval = power_manager_is_dimmed() ? 15000UL : 5000UL;
+            if (now - s_last_wifi_check >= rssiInterval) {
+                // Periodic RSSI refresh
+                s_last_wifi_check = now;
+                String localIpStr = WiFi.localIP().toString();
+                int8_t rssi = WiFi.RSSI();
+                String ssidStr = WiFi.SSID();
+                UiEvent evt;
+                evt.type = UI_EVT_WIFI_STATUS;
+                evt.data.wifi.connected = true;
+                evt.data.wifi.rssi = rssi;
+                strncpy(evt.data.wifi.ip, localIpStr.c_str(), sizeof(evt.data.wifi.ip) - 1);
+                evt.data.wifi.ip[sizeof(evt.data.wifi.ip) - 1] = '\0';
+                strncpy(evt.data.wifi.ssid, ssidStr.c_str(), sizeof(evt.data.wifi.ssid) - 1);
+                evt.data.wifi.ssid[sizeof(evt.data.wifi.ssid) - 1] = '\0';
+                xQueueSend(xQueueUiState, &evt, 0);
+            }
         }
     } else {
         if (s_wifi_connected) {
@@ -249,7 +276,7 @@ void wifi_service_handle() {
                 xQueueSend(xQueueUiState, &evt, 0);
                 wifi_service_start_scan();
             }
-        } else {
+        } else if (!s_wifi_scanning) {
             if (s_cached_saved_ssid.length() > 0 && now - s_last_wifi_check >= WIFI_RECONNECT_INTERVAL_MS) {
                 s_last_wifi_check = now;
                 log_i("Reconnecting to Wi-Fi...");

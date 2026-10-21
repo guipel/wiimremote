@@ -82,6 +82,9 @@ void ui_presets_set_list(const PresetList& presets) {
         if (preset_lbls[i]) {
             lv_label_set_text(preset_lbls[i], presets.items[i].name);
         }
+        if (preset_btns[i]) {
+            lv_obj_set_style_opa(preset_btns[i], presets.items[i].is_assigned ? LV_OPA_COVER : LV_OPA_50, 0);
+        }
     }
 }
 

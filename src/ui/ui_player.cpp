@@ -35,7 +35,8 @@ static bool current_mute_state = false;
 static PlayState current_play_state = PLAY_STATE_UNKNOWN;
 static uint32_t current_totlen_ms = 0;
 static uint32_t current_actual_curpos_ms = 0;
-static uint32_t last_progress_tick_ms = 0;
+static int32_t s_last_bar_val = -1;
+static uint32_t s_last_displayed_sec = 0xFFFFFFFF;
 static lv_obj_t* obj_seek_target = nullptr;
 static uint32_t pending_seek_target_ms = 0;
 static bool has_pending_seek = false;
@@ -46,6 +47,65 @@ static uint8_t current_bit_depth = 0;
 static uint16_t current_track_num = 0;
 static uint16_t current_track_total = 0;
 
+// Input Source cycling state (0=wifi, 1=bluetooth, 2=line-in, 3=optical)
+static uint8_t s_current_input_idx = 0;
+static unsigned long s_last_input_switch_ms = 0;
+
+static uint8_t linkplay_mode_to_input_idx(uint8_t mode) {
+    if (mode == 41) return 1; // Bluetooth
+    if (mode == 40) return 2; // Line-In
+    if (mode == 43) return 3; // Optical
+    return 0;                 // Wi-Fi / Network
+}
+
+static void update_input_mode_button() {
+    if (!lbl_var_input) return;
+    switch (s_current_input_idx) {
+        case 1: // Bluetooth
+            lv_label_set_text(lbl_var_input, LV_SYMBOL_BLUETOOTH);
+            lv_obj_set_style_text_font(lbl_var_input, &lv_font_montserrat_16, 0);
+            lv_obj_set_style_text_color(lbl_var_input, COLOR_ACCENT, 0);
+            break;
+        case 2: // Line-In
+            lv_label_set_text(lbl_var_input, "AUX");
+            lv_obj_set_style_text_font(lbl_var_input, &lv_font_montserrat_12, 0);
+            lv_obj_set_style_text_color(lbl_var_input, COLOR_ACCENT, 0);
+            break;
+        case 3: // Optical
+            lv_label_set_text(lbl_var_input, "OPT");
+            lv_obj_set_style_text_font(lbl_var_input, &lv_font_montserrat_12, 0);
+            lv_obj_set_style_text_color(lbl_var_input, COLOR_ACCENT, 0);
+            break;
+        default: // Wi-Fi / Network
+            lv_label_set_text(lbl_var_input, LV_SYMBOL_WIFI);
+            lv_obj_set_style_text_font(lbl_var_input, &lv_font_montserrat_16, 0);
+            lv_obj_set_style_text_color(lbl_var_input, COLOR_TEXT_PRIMARY, 0);
+            break;
+    }
+}
+
+static void set_bar_and_time(uint32_t cur_ms, uint32_t tot_ms, bool force) {
+    uint32_t cur_sec = cur_ms / 1000;
+    if (lbl_time_cur && (force || cur_sec != s_last_displayed_sec)) {
+        s_last_displayed_sec = cur_sec;
+        char time_cur_buf[16];
+        format_time(cur_ms, time_cur_buf, sizeof(time_cur_buf));
+        lv_label_set_text(lbl_time_cur, time_cur_buf);
+    }
+
+    if (bar_progress) {
+        int32_t val = (tot_ms > 0)
+            ? (int32_t)(((uint64_t)cur_ms * PROGRESS_BAR_MAX) / tot_ms)
+            : 0;
+        if (val > PROGRESS_BAR_MAX) val = PROGRESS_BAR_MAX;
+        if (val < 0) val = 0;
+        if (force || val != s_last_bar_val) {
+            s_last_bar_val = val;
+            lv_bar_set_value(bar_progress, val, LV_ANIM_OFF);
+        }
+    }
+}
+
 // Helper: Update audio resolution (top left) and track counter (top right)
 static void update_stream_info_labels() {
     if (lbl_resolution) {
@@ -55,9 +115,9 @@ static void update_stream_info_labels() {
             if (display_depth >= 32) display_depth = 24;
             uint32_t khz = current_sample_rate / 1000;
             if (display_depth > 0) {
-                snprintf(res_buf, sizeof(res_buf), "%u/%u", display_depth, khz);
+                snprintf(res_buf, sizeof(res_buf), "%u/%u", (unsigned int)display_depth, (unsigned int)khz);
             } else {
-                snprintf(res_buf, sizeof(res_buf), "%u", khz);
+                snprintf(res_buf, sizeof(res_buf), "%u", (unsigned int)khz);
             }
         }
         lv_label_set_text(lbl_resolution, res_buf);
@@ -66,7 +126,7 @@ static void update_stream_info_labels() {
     if (lbl_track_counter) {
         char track_buf[24] = "";
         if (current_track_total > 0 && current_track_num > 0) {
-            snprintf(track_buf, sizeof(track_buf), "%u/%u", current_track_num, current_track_total);
+            snprintf(track_buf, sizeof(track_buf), "%u/%u", (unsigned int)current_track_num, (unsigned int)current_track_total);
         }
         lv_label_set_text(lbl_track_counter, track_buf);
     }
@@ -102,6 +162,7 @@ static void event_slider_seek(lv_event_t* e) {
                 char preview_buf[16];
                 format_time(seek_ms, preview_buf, sizeof(preview_buf));
                 if (lbl_time_cur) lv_label_set_text(lbl_time_cur, preview_buf);
+                s_last_displayed_sec = seek_ms / 1000;
 
                 if (obj_seek_target) {
                     lv_obj_set_pos(obj_seek_target, cx - 7, 74);
@@ -128,6 +189,7 @@ static void event_slider_seek(lv_event_t* e) {
                 char cur_buf[16];
                 format_time(seek_ms, cur_buf, sizeof(cur_buf));
                 if (lbl_time_cur) lv_label_set_text(lbl_time_cur, cur_buf);
+                s_last_displayed_sec = seek_ms / 1000;
 
                 UiCommand cmd;
                 cmd.type = CMD_SEEK_POSITION;
@@ -176,8 +238,7 @@ static void event_btn_prev(lv_event_t* e) {
     // Enter buffering state: freeze progress, retain current play/pause icon
     current_play_state = PLAY_STATE_BUFFERING;
     current_actual_curpos_ms = 0;
-    if (bar_progress) lv_bar_set_value(bar_progress, 0, LV_ANIM_OFF);
-    if (lbl_time_cur) lv_label_set_text(lbl_time_cur, "00:00");
+    set_bar_and_time(0, current_totlen_ms, true);
 }
 
 static unsigned long last_play_pause_ts = 0;
@@ -201,8 +262,7 @@ static void event_btn_next(lv_event_t* e) {
     // Enter buffering state: freeze progress, retain current play/pause icon
     current_play_state = PLAY_STATE_BUFFERING;
     current_actual_curpos_ms = 0;
-    if (bar_progress) lv_bar_set_value(bar_progress, 0, LV_ANIM_OFF);
-    if (lbl_time_cur) lv_label_set_text(lbl_time_cur, "00:00");
+    set_bar_and_time(0, current_totlen_ms, true);
 }
 
 static void event_btn_mute(lv_event_t* e) {
@@ -213,7 +273,16 @@ static void event_btn_mute(lv_event_t* e) {
 }
 
 static void event_btn_input(lv_event_t* e) {
-    // Placeholder for Input Source selection / cycle action
+    static const char* const kInputModes[4] = { "wifi", "bluetooth", "line-in", "optical" };
+    s_current_input_idx = (s_current_input_idx + 1) % 4;
+    s_last_input_switch_ms = millis();
+    update_input_mode_button();
+
+    UiCommand cmd;
+    cmd.type = CMD_SWITCH_MODE;
+    strncpy(cmd.data.input_mode, kInputModes[s_current_input_idx], sizeof(cmd.data.input_mode) - 1);
+    cmd.data.input_mode[sizeof(cmd.data.input_mode) - 1] = '\0';
+    xQueueSend(xQueueUiCmd, &cmd, 0);
 }
 
 void ui_player_init(lv_obj_t* parent) {
@@ -371,7 +440,7 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_border_color(btn_next, COLOR_ACCENT, LV_STATE_PRESSED);
     lv_obj_set_style_border_width(btn_next, 2, LV_STATE_PRESSED);
 
-    // 6. Volume & Aux Row Container (Mute, Slider, Shuffle)
+    // 6. Volume & Aux Row Container (Mute, Slider, Input Source)
     obj_vol_var_cont = lv_obj_create(parent);
     lv_obj_set_size(obj_vol_var_cont, 224, 48);
     lv_obj_align(obj_vol_var_cont, LV_ALIGN_TOP_MID, 0, 197);
@@ -404,7 +473,7 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_text_color(lbl_var_mute, COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(lbl_var_mute);
 
-    // Variable Input Button
+    // Input Source Selector Button (cycles Wi-Fi -> Bluetooth -> Line-In -> Optical)
     btn_var_input = lv_btn_create(obj_vol_var_cont);
     lv_obj_set_size(btn_var_input, 38, 38);
     lv_obj_align(btn_var_input, LV_ALIGN_RIGHT_MID, 0, 0);
@@ -423,7 +492,7 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_border_width(btn_var_input, 2, LV_STATE_PRESSED);
 
     lbl_var_input = lv_label_create(btn_var_input);
-    lv_label_set_text(lbl_var_input, LV_SYMBOL_SHUFFLE);
+    lv_label_set_text(lbl_var_input, LV_SYMBOL_WIFI);
     lv_obj_set_style_text_font(lbl_var_input, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(lbl_var_input, COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(lbl_var_input);
@@ -493,7 +562,7 @@ void ui_player_set_meta(const TrackMeta& meta) {
     }
 
     if (lbl_artist) {
-        char artist_album[192];
+        char artist_album[200];
         if (strlen(meta.artist) > 0 && strlen(meta.album) > 0) {
             snprintf(artist_album, sizeof(artist_album), "%s - %s", meta.artist, meta.album);
         } else if (strlen(meta.artist) > 0) {
@@ -561,8 +630,7 @@ void ui_player_update_state(PlayState state, uint32_t curpos_ms, uint32_t totlen
         }
         if (curpos_ms == 0 && !has_pending_seek) {
             current_actual_curpos_ms = 0;
-            if (bar_progress) lv_bar_set_value(bar_progress, 0, LV_ANIM_OFF);
-            if (lbl_time_cur) lv_label_set_text(lbl_time_cur, "00:00");
+            set_bar_and_time(0, current_totlen_ms, true);
         }
         return;
     }
@@ -570,7 +638,6 @@ void ui_player_update_state(PlayState state, uint32_t curpos_ms, uint32_t totlen
     // 4. Active Playback State (PLAYING, PAUSED, STOPPED)
     current_totlen_ms = totlen_ms;
     current_actual_curpos_ms = (totlen_ms > 0 && curpos_ms > totlen_ms) ? totlen_ms : curpos_ms;
-    last_progress_tick_ms = millis();
 
     // Check if streamer caught up with pending seek target
     if (has_pending_seek) {
@@ -589,15 +656,7 @@ void ui_player_update_state(PlayState state, uint32_t curpos_ms, uint32_t totlen
         if (lbl_time_total) lv_label_set_text(lbl_time_total, time_tot_buf);
 
         if (!has_pending_seek) {
-            char time_cur_buf[16] = "00:00";
-            format_time(current_actual_curpos_ms, time_cur_buf, sizeof(time_cur_buf));
-            if (lbl_time_cur) lv_label_set_text(lbl_time_cur, time_cur_buf);
-
-            uint32_t val = (current_totlen_ms > 0)
-                ? (uint32_t)(((uint64_t)current_actual_curpos_ms * PROGRESS_BAR_MAX) / current_totlen_ms)
-                : 0;
-            if (val > PROGRESS_BAR_MAX) val = PROGRESS_BAR_MAX;
-            lv_bar_set_value(bar_progress, (int32_t)val, LV_ANIM_OFF);
+            set_bar_and_time(current_actual_curpos_ms, current_totlen_ms, false);
         }
     }
 }
@@ -674,15 +733,23 @@ void ui_player_set_fixed_volume_mode(bool is_fixed) {
     }
 }
 
-void ui_player_set_stream_info(const StreamInfo& stream, uint16_t track_num, uint16_t track_total) {
+void ui_player_set_stream_info(const StreamInfo& stream, uint16_t track_num, uint16_t track_total, uint8_t mode) {
     if (stream.sample_rate > 0) {
         current_sample_rate = stream.sample_rate;
         current_bit_depth = stream.bit_depth;
     }
-    if (track_total > 0) {
-        current_track_num = track_num;
-        current_track_total = track_total;
+    current_track_num = track_num;
+    current_track_total = track_total;
+
+    // Sync input mode indicator unless user just tapped the mode button within the last 2.5 seconds
+    if (millis() - s_last_input_switch_ms > 2500) {
+        uint8_t polled_idx = linkplay_mode_to_input_idx(mode);
+        if (polled_idx != s_current_input_idx) {
+            s_current_input_idx = polled_idx;
+            update_input_mode_button();
+        }
     }
+
     update_stream_info_labels();
 }
 
@@ -693,28 +760,17 @@ void ui_player_tick_progress(uint32_t delta_ms) {
             current_actual_curpos_ms = current_totlen_ms;
         }
 
-        if (bar_progress) {
-            uint32_t val = (uint32_t)(((uint64_t)current_actual_curpos_ms * PROGRESS_BAR_MAX) / current_totlen_ms);
-            if (val > PROGRESS_BAR_MAX) val = PROGRESS_BAR_MAX;
-            lv_bar_set_value(bar_progress, (int32_t)val, LV_ANIM_OFF);
-        }
-
-        if (lbl_time_cur) {
-            char time_cur_buf[16];
-            format_time(current_actual_curpos_ms, time_cur_buf, sizeof(time_cur_buf));
-            lv_label_set_text(lbl_time_cur, time_cur_buf);
-        }
+        set_bar_and_time(current_actual_curpos_ms, current_totlen_ms, false);
     }
 }
 
 void ui_player_clear() {
     if (lbl_title) lv_label_set_text(lbl_title, "");
     if (lbl_artist) lv_label_set_text(lbl_artist, "");
-    if (bar_progress) lv_bar_set_value(bar_progress, 0, LV_ANIM_OFF);
-    if (lbl_time_cur) lv_label_set_text(lbl_time_cur, "00:00");
-    if (lbl_time_total) lv_label_set_text(lbl_time_total, "--:--");
     current_totlen_ms = 0;
     current_actual_curpos_ms = 0;
+    set_bar_and_time(0, 0, true);
+    if (lbl_time_total) lv_label_set_text(lbl_time_total, "--:--");
     has_pending_seek = false;
     if (obj_seek_target) lv_obj_add_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
 

@@ -3,6 +3,7 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <esp_task_wdt.h>
 #include "model.h"
 
 extern QueueHandle_t xQueueUiState;
@@ -18,19 +19,29 @@ void lyrics_client_fetch(const char* title, const char* artist) {
     int lastHttpCode = 0;
 
     auto queryLrclib = [&lastHttpCode](const String& t, const String& a, String& outLyrics) -> bool {
+        esp_task_wdt_reset();
+
         WiFiClientSecure secureClient;
         secureClient.setInsecure();
-        secureClient.setTimeout(4000);
+        secureClient.setHandshakeTimeout(5); // 5 seconds TLS handshake timeout
+        secureClient.setTimeout(5);          // 5 seconds socket read/write timeout
 
         HTTPClient http;
+        http.setConnectTimeout(4000);
+        http.setTimeout(5000);
+
         String url = "https://lrclib.net/api/get?track_name=" + net_url_encode(t.c_str());
         if (a.length() > 0) {
             url += "&artist_name=" + net_url_encode(a.c_str());
         }
 
-        http.begin(secureClient, url);
+        if (!http.begin(secureClient, url)) {
+            lastHttpCode = -1;
+            return false;
+        }
         http.setUserAgent("WiiMRemote/1.0 (ESP32-S3)");
         int code = http.GET();
+        esp_task_wdt_reset();
         lastHttpCode = code;
 
         if (code == 200) {
