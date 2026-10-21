@@ -1,27 +1,34 @@
 #include "net/net_utils.h"
 
-String net_to_valid_utf8(const String& str) {
-    bool validUtf8 = true;
+static bool is_strict_utf8_printable(const char* buf, size_t len) {
     size_t i = 0;
-    size_t len = str.length();
     while (i < len) {
-        uint8_t c = (uint8_t)str[i];
+        uint8_t c = (uint8_t)buf[i];
+        if (c < 0x20 && c != '\t' && c != '\n' && c != '\r') {
+            return false; // Control character
+        }
         if (c < 0x80) {
             i++;
-        } else if ((c & 0xE0) == 0xC0 && i + 1 < len && ((uint8_t)str[i + 1] & 0xC0) == 0x80) {
+        } else if ((c & 0xE0) == 0xC0 && c >= 0xC2 && i + 1 < len && ((uint8_t)buf[i + 1] & 0xC0) == 0x80) {
             i += 2;
-        } else if ((c & 0xF0) == 0xE0 && i + 2 < len && ((uint8_t)str[i + 1] & 0xC0) == 0x80 && ((uint8_t)str[i + 2] & 0xC0) == 0x80) {
+        } else if ((c & 0xF0) == 0xE0 && i + 2 < len && ((uint8_t)buf[i + 1] & 0xC0) == 0x80 && ((uint8_t)buf[i + 2] & 0xC0) == 0x80) {
             i += 3;
-        } else if ((c & 0xF8) == 0xF0 && i + 3 < len && ((uint8_t)str[i + 1] & 0xC0) == 0x80 && ((uint8_t)str[i + 2] & 0xC0) == 0x80 && ((uint8_t)str[i + 3] & 0xC0) == 0x80) {
+        } else if ((c & 0xF8) == 0xF0 && c <= 0xF4 && i + 3 < len && ((uint8_t)buf[i + 1] & 0xC0) == 0x80 && ((uint8_t)buf[i + 2] & 0xC0) == 0x80 && ((uint8_t)buf[i + 3] & 0xC0) == 0x80) {
             i += 4;
         } else {
-            validUtf8 = false;
-            break;
+            return false;
         }
     }
-    if (validUtf8) return str;
+    return true;
+}
+
+String net_to_valid_utf8(const String& str) {
+    if (is_strict_utf8_printable(str.c_str(), str.length())) {
+        return str;
+    }
 
     // String has isolated Latin-1 / ISO-8859-1 bytes; transcode each non-ASCII byte to UTF-8
+    size_t len = str.length();
     String out = "";
     out.reserve(len * 2);
     for (size_t j = 0; j < len; ++j) {
@@ -39,28 +46,44 @@ String net_to_valid_utf8(const String& str) {
 String net_decode_hex_string(const char* hex) {
     if (!hex || strlen(hex) == 0) return "";
     size_t len = strlen(hex);
+
     // Check if it looks like a valid hex string (even length, hex chars)
-    bool isHex = (len % 2 == 0);
+    bool isHex = (len >= 2 && (len % 2 == 0));
+    bool allDigits = true;
     for (size_t i = 0; i < len && isHex; ++i) {
         char c = hex[i];
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) {
+        if (c >= '0' && c <= '9') {
+            continue;
+        } else if ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+            allDigits = false;
+        } else {
             isHex = false;
         }
     }
-    if (!isHex || len < 2) {
-        return net_to_valid_utf8(String(hex)); // Not hex encoded, return as valid UTF-8 string
+
+    // Short numeric strings like "1984", "2024", "99" are plain numbers, not hex
+    if (!isHex || (allDigits && len <= 6)) {
+        return net_to_valid_utf8(String(hex));
     }
 
     String decoded = "";
     decoded.reserve(len / 2);
     for (size_t i = 0; i < len; i += 2) {
         char byteChars[3] = { hex[i], hex[i + 1], '\0' };
-        char byteVal = (char)strtol(byteChars, nullptr, 16);
-        if (byteVal != 0) {
-            decoded += byteVal;
+        uint8_t byteVal = (uint8_t)strtoul(byteChars, nullptr, 16);
+        if (byteVal == 0) {
+            return net_to_valid_utf8(String(hex));
         }
+        decoded += (char)byteVal;
     }
-    return net_to_valid_utf8(decoded);
+
+    // Guard against plain ASCII words made of hex letters (e.g. "ABBA", "ACDC", "CAFE", "FACE"):
+    // If the decoded bytes contain control chars or invalid UTF-8, treat the input as plain text.
+    if (!is_strict_utf8_printable(decoded.c_str(), decoded.length())) {
+        return net_to_valid_utf8(String(hex));
+    }
+
+    return decoded;
 }
 
 String net_url_encode(const char* str) {

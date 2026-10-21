@@ -14,7 +14,7 @@
 #define COLOR_SUCCESS       lv_color_hex(0x10B981)
 #define COLOR_WARNING       lv_color_hex(0xF59E0B)
 
-#define PROGRESS_BAR_MAX 10000
+#define PROGRESS_BAR_MAX 220
 
 // 10x12 Pixel Alpha Bitmap for clean Padlock Icon
 static const uint8_t lock_alpha_map[120] = {
@@ -49,5 +49,5 @@ static inline void format_time(uint32_t ms, char* buffer, size_t buf_len) {
     uint32_t total_sec = ms / 1000;
     uint32_t mins = total_sec / 60;
     uint32_t secs = total_sec % 60;
-    snprintf(buffer, buf_len, "%02u:%02u", mins, secs);
+    snprintf(buffer, buf_len, "%02u:%02u", (unsigned int)mins, (unsigned int)secs);
 }

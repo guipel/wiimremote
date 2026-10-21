@@ -23,6 +23,12 @@ static void event_btn_close_modal(lv_event_t* e) {
     modal_device_close();
 }
 
+static void event_backdrop_clicked(lv_event_t* e) {
+    if (lv_event_get_target(e) == modal_device_selector) {
+        modal_device_close();
+    }
+}
+
 static void event_btn_rescan(lv_event_t* e) {
     UiCommand cmd;
     cmd.type = CMD_TRIGGER_RESCAN;
@@ -58,7 +64,8 @@ void modal_device_init(lv_obj_t* parent) {
     lv_obj_set_style_radius(modal_device_selector, 0, 0);
     lv_obj_set_style_border_side(modal_device_selector, LV_BORDER_SIDE_NONE, 0);
     lv_obj_set_style_pad_all(modal_device_selector, 10, 0);
-    lv_obj_add_flag(modal_device_selector, LV_OBJ_FLAG_HIDDEN); // Hidden by default
+    lv_obj_add_flag(modal_device_selector, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_HIDDEN); // Hidden by default
+    lv_obj_add_event_cb(modal_device_selector, event_backdrop_clicked, LV_EVENT_CLICKED, nullptr);
 
     // Modal Card
     lv_obj_t* card = lv_obj_create(modal_device_selector);

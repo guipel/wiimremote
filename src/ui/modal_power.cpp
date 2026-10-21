@@ -57,6 +57,12 @@ static void event_btn_close_power_modal(lv_event_t* e) {
     modal_power_close();
 }
 
+static void event_power_backdrop_clicked(lv_event_t* e) {
+    if (lv_event_get_target(e) == modal_power_manager) {
+        modal_power_close();
+    }
+}
+
 void modal_power_init(lv_obj_t* parent) {
     modal_power_manager = lv_obj_create(parent ? parent : lv_scr_act());
     lv_obj_set_size(modal_power_manager, 240, 320);
@@ -66,7 +72,8 @@ void modal_power_init(lv_obj_t* parent) {
     lv_obj_set_style_radius(modal_power_manager, 0, 0);
     lv_obj_set_style_border_side(modal_power_manager, LV_BORDER_SIDE_NONE, 0);
     lv_obj_set_style_pad_all(modal_power_manager, 10, 0);
-    lv_obj_add_flag(modal_power_manager, LV_OBJ_FLAG_HIDDEN); // Hidden by default
+    lv_obj_add_flag(modal_power_manager, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_HIDDEN); // Hidden by default
+    lv_obj_add_event_cb(modal_power_manager, event_power_backdrop_clicked, LV_EVENT_CLICKED, nullptr);
 
     // Modal Card
     lv_obj_t* card = lv_obj_create(modal_power_manager);

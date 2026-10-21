@@ -35,7 +35,6 @@ struct DeviceList {
 };
 
 struct StreamInfo {
-    char format[16];        // e.g. "FLAC", "MP3", "AAC"
     uint32_t sample_rate;   // e.g. 44100, 96000, 192000
     uint8_t bit_depth;      // e.g. 16, 24
 };
@@ -48,7 +47,7 @@ struct PlayerState {
     uint32_t curpos_ms;     // Track position in ms
     uint32_t totlen_ms;     // Track total duration in ms
     StreamInfo stream;
-    char vendor[32];        // e.g. "Amazon Music", "Spotify", "Tidal"
+    uint8_t mode;           // LinkPlay operating mode (10/31/32=Wi-Fi, 40=Line-In, 41=BT, 43=Optical)
     uint16_t track_num;     // e.g. 11
     uint16_t track_total;   // e.g. 97
 };
@@ -64,6 +63,7 @@ struct TrackMeta {
 struct PresetItem {
     uint8_t index;          // 1 - 12
     char name[48];
+    bool is_assigned;       // True if configured on streamer
 };
 
 struct PresetList {
@@ -171,7 +171,8 @@ enum CmdType {
     CMD_WIFI_CONNECT,
     CMD_WIFI_FORGET,
     CMD_WIFI_RECONNECT,
-    CMD_FETCH_LYRICS
+    CMD_FETCH_LYRICS,
+    CMD_SWITCH_MODE
 };
 
 struct UiCommand {
@@ -182,10 +183,15 @@ struct UiCommand {
         uint8_t preset_index;       // For CMD_TRIGGER_PRESET (1..12)
         char device_ip[24];         // For CMD_SELECT_DEVICE
         uint32_t seek_ms;           // For CMD_SEEK_POSITION
+        char input_mode[16];        // For CMD_SWITCH_MODE ("wifi", "bluetooth", "line-in", "optical")
         struct {
             char ssid[33];
             char password[65];
         } wifi_connect;             // For CMD_WIFI_CONNECT
+        struct {
+            char title[128];
+            char artist[96];
+        } lyrics_req;               // For CMD_FETCH_LYRICS
     } data;
 };
 

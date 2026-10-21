@@ -6,6 +6,7 @@
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
 #include <ArduinoJson.h>
+#include <esp_task_wdt.h>
 #include "config.h"
 
 extern QueueHandle_t xQueueUiState;
@@ -15,6 +16,7 @@ static WiFiUDP s_udp_ssdp;
 static ActiveDeviceChangedCb s_on_active_changed_cb = nullptr;
 
 static DeviceList s_device_list;
+static uint8_t s_prev_saved_count = 0;
 static portMUX_TYPE s_device_mux = portMUX_INITIALIZER_UNLOCKED;
 static WiiMDevice s_active_device;
 static bool s_has_active_device = false;
@@ -64,11 +66,12 @@ static void load_saved_device_list() {
             strncpy(dev.ip, ip.c_str(), sizeof(dev.ip) - 1);
             strncpy(dev.uuid, uuid.c_str(), sizeof(dev.uuid) - 1);
             strncpy(dev.name, name.c_str(), sizeof(dev.name) - 1);
-            dev.is_active = false;
+            dev.is_active = (s_has_active_device && strcmp(dev.ip, s_active_device.ip) == 0);
             dev.is_fixed_volume = s_dev_prefs.getBool(keyFixed, false);
             s_device_list.devices[s_device_list.count++] = dev;
         }
     }
+    s_prev_saved_count = s_device_list.count;
     log_i("Loaded %u saved devices from NVS", s_device_list.count);
 }
 
@@ -89,8 +92,8 @@ static void save_saved_device_list() {
         s_dev_prefs.putString(keyName, snapshot.devices[i].name);
         s_dev_prefs.putBool(keyFixed, snapshot.devices[i].is_fixed_volume);
     }
-    // Clean up stale keys beyond current count
-    for (uint8_t i = snapshot.count; i < MAX_DISCOVERED_DEVICES; ++i) {
+    // Clean up only stale keys beyond current count up to previously saved count
+    for (uint8_t i = snapshot.count; i < s_prev_saved_count && i < MAX_DISCOVERED_DEVICES; ++i) {
         char keyIp[12], keyUuid[14], keyName[14], keyFixed[14];
         snprintf(keyIp, sizeof(keyIp), "dev_ip_%u", i);
         snprintf(keyUuid, sizeof(keyUuid), "dev_uuid_%u", i);
@@ -101,6 +104,7 @@ static void save_saved_device_list() {
         s_dev_prefs.remove(keyName);
         s_dev_prefs.remove(keyFixed);
     }
+    s_prev_saved_count = snapshot.count;
 }
 
 static bool query_device_status(const char* ip, WiiMDevice* outDevice) {
@@ -113,7 +117,8 @@ static bool query_device_status(const char* ip, WiiMDevice* outDevice) {
     {
         HTTPClient http;
         String url = "http://" + String(ip) + ":" + String(WIIM_UPNP_PORT) + "/description.xml";
-        http.setTimeout(800);
+        http.setConnectTimeout(350);
+        http.setTimeout(600);
         if (http.begin(url)) {
             int code = http.GET();
             if (code == HTTP_CODE_OK) {
@@ -136,10 +141,11 @@ static bool query_device_status(const char* ip, WiiMDevice* outDevice) {
     if (devName.length() == 0) {
         WiFiClientSecure secureClient;
         secureClient.setInsecure(); // Accept WiiM self-signed TLS cert
-        secureClient.setTimeout(2); // 2 sec timeout
+        secureClient.setTimeout(1); // 1 sec handshake timeout
 
         HTTPClient https;
         String url = "https://" + String(ip) + "/httpapi.asp?command=getStatusEx";
+        https.setConnectTimeout(500);
         https.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
 
         if (https.begin(secureClient, url)) {
@@ -188,10 +194,13 @@ static void add_or_update_device(const WiiMDevice& dev) {
 
     bool exists = false;
     bool changed = false;
+    bool preservedFixed = dev.is_fixed_volume;
+
     for (uint8_t i = 0; i < s_device_list.count; ++i) {
         if (strcmp(s_device_list.devices[i].uuid, dev.uuid) == 0 ||
             strcmp(s_device_list.devices[i].ip, dev.ip) == 0) {
             exists = true;
+            preservedFixed = s_device_list.devices[i].is_fixed_volume;
             if (strcmp(s_device_list.devices[i].name, dev.name) != 0 ||
                 strcmp(s_device_list.devices[i].ip, dev.ip) != 0) {
                 strncpy(s_device_list.devices[i].name, dev.name, sizeof(s_device_list.devices[i].name) - 1);
@@ -210,16 +219,21 @@ static void add_or_update_device(const WiiMDevice& dev) {
 
     // Auto-select if no active device, or if this matches saved device
     bool newActive = false;
+    bool activeUpdated = false;
     if (!s_has_active_device) {
         s_active_device = dev;
         s_active_device.is_active = true;
+        s_active_device.is_fixed_volume = preservedFixed;
         s_has_active_device = true;
         newActive = true;
         changed = true;
     } else if (strcmp(s_active_device.uuid, dev.uuid) == 0) {
         if (strcmp(s_active_device.ip, dev.ip) != 0 || strcmp(s_active_device.name, dev.name) != 0) {
+            bool prevActiveFixed = s_active_device.is_fixed_volume;
             s_active_device = dev;
             s_active_device.is_active = true;
+            s_active_device.is_fixed_volume = prevActiveFixed;
+            activeUpdated = true;
             changed = true;
         }
     }
@@ -231,9 +245,9 @@ static void add_or_update_device(const WiiMDevice& dev) {
 
     portEXIT_CRITICAL(&s_device_mux);
 
-    if (newActive) {
+    if (newActive || activeUpdated) {
         save_active_device(s_active_device);
-        if (s_on_active_changed_cb) {
+        if (newActive && s_on_active_changed_cb) {
             s_on_active_changed_cb(s_active_device);
         }
     }
@@ -300,45 +314,50 @@ void discovery_service_process_ssdp() {
         if (len <= 0) continue;
         packetBuffer[len] = '\0';
 
+        // Zero-allocation check on stack buffer before constructing String objects
+        if (strstr(packetBuffer, "MediaRenderer") == nullptr &&
+            strstr(packetBuffer, "Linkplay") == nullptr &&
+            strstr(packetBuffer, "LinkPlay") == nullptr &&
+            strstr(packetBuffer, "WiFiAudio") == nullptr &&
+            strstr(packetBuffer, "WiiM") == nullptr &&
+            strstr(packetBuffer, "wiim") == nullptr) {
+            continue;
+        }
+
         IPAddress remoteIP = s_udp_ssdp.remoteIP();
         String ipStr = remoteIP.toString();
 
-        String packetContent(packetBuffer);
-        if (packetContent.indexOf("MediaRenderer") >= 0 ||
-            packetContent.indexOf("Linkplay") >= 0 ||
-            packetContent.indexOf("LinkPlay") >= 0 ||
-            packetContent.indexOf("WiFiAudio") >= 0 ||
-            packetContent.indexOf("WiiM") >= 0 ||
-            packetContent.indexOf("wiim") >= 0) {
-
-            int locIdx = packetContent.indexOf("LOCATION: http://");
-            if (locIdx < 0) locIdx = packetContent.indexOf("location: http://");
-            if (locIdx >= 0) {
-                int start = locIdx + 17;
-                int colonIdx = packetContent.indexOf(":", start);
-                int slashIdx = packetContent.indexOf("/", start);
-                int end = (colonIdx > 0 && colonIdx < slashIdx) ? colonIdx : slashIdx;
-                if (end > start) {
-                    ipStr = packetContent.substring(start, end);
-                }
+        const char* locPtr = strstr(packetBuffer, "LOCATION: http://");
+        if (!locPtr) locPtr = strstr(packetBuffer, "location: http://");
+        if (locPtr) {
+            const char* start = locPtr + 17;
+            const char* colonPtr = strchr(start, ':');
+            const char* slashPtr = strchr(start, '/');
+            const char* end = (colonPtr && (!slashPtr || colonPtr < slashPtr)) ? colonPtr : slashPtr;
+            if (end && end > start && (end - start) < 24) {
+                char parsedIp[24];
+                size_t ipLen = (size_t)(end - start);
+                memcpy(parsedIp, start, ipLen);
+                parsedIp[ipLen] = '\0';
+                ipStr = String(parsedIp);
             }
+        }
 
-            bool alreadyKnown = false;
-            portENTER_CRITICAL(&s_device_mux);
-            for (uint8_t i = 0; i < s_device_list.count; ++i) {
-                if (strcmp(s_device_list.devices[i].ip, ipStr.c_str()) == 0) {
-                    alreadyKnown = true;
-                    break;
-                }
+        bool alreadyKnown = false;
+        portENTER_CRITICAL(&s_device_mux);
+        for (uint8_t i = 0; i < s_device_list.count; ++i) {
+            if (strcmp(s_device_list.devices[i].ip, ipStr.c_str()) == 0) {
+                alreadyKnown = true;
+                break;
             }
-            portEXIT_CRITICAL(&s_device_mux);
+        }
+        portEXIT_CRITICAL(&s_device_mux);
 
-            if (alreadyKnown) continue;
+        if (alreadyKnown) continue;
 
-            WiiMDevice dev;
-            if (query_device_status(ipStr.c_str(), &dev)) {
-                add_or_update_device(dev);
-            }
+        WiiMDevice dev;
+        if (query_device_status(ipStr.c_str(), &dev)) {
+            add_or_update_device(dev);
         }
     }
 }
@@ -357,11 +376,12 @@ void discovery_service_trigger_rescan() {
     DeviceList savedSnapshot = s_device_list;
     portEXIT_CRITICAL(&s_device_mux);
     for (uint8_t i = 0; i < savedSnapshot.count; ++i) {
+        esp_task_wdt_reset();
         WiiMDevice dev;
         if (query_device_status(savedSnapshot.devices[i].ip, &dev)) {
             add_or_update_device(dev);
         }
-        vTaskDelay(pdMS_TO_TICKS(20)); // Yield to prevent WDT timeout
+        vTaskDelay(pdMS_TO_TICKS(15)); // Yield to prevent WDT timeout
     }
 
     // 2. Broadcast SSDP discovery
@@ -415,6 +435,8 @@ bool discovery_service_has_active_device() {
 }
 
 void discovery_service_set_active_fixed_volume(bool is_fixed) {
+    if (s_active_device.is_fixed_volume == is_fixed) return;
+
     portENTER_CRITICAL(&s_device_mux);
     s_active_device.is_fixed_volume = is_fixed;
     for (uint8_t i = 0; i < s_device_list.count; ++i) {

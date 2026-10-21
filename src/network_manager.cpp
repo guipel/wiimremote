@@ -3,6 +3,8 @@
 #include "net/discovery_service.h"
 #include "net/linkplay_client.h"
 #include "net/lyrics_client.h"
+#include "power_manager.h"
+#include <esp_task_wdt.h>
 #include "config.h"
 
 extern QueueHandle_t xQueueUiCmd;
@@ -21,6 +23,9 @@ static void on_active_device_changed(const WiiMDevice& dev) {
     PlayerState st;
     linkplay_client_poll_active(dev.ip, isFixed, st);
     linkplay_client_fetch_presets(dev.ip);
+
+    // 3. Synchronize poll timers so runTaskLoop() doesn't immediately re-poll
+    NetworkManager::getInstance().markActiveDevicePolled();
 }
 
 static void on_wifi_connected() {
@@ -64,6 +69,13 @@ bool NetworkManager::getActiveDevice(WiiMDevice* dev) {
     return discovery_service_get_active_device(dev);
 }
 
+void NetworkManager::markActiveDevicePolled() {
+    unsigned long now = millis();
+    _lastStatusPoll = now;
+    _lastConfigPoll = now;
+    _initialPresetsFetched = true;
+}
+
 void NetworkManager::processIncomingCommands() {
     UiCommand cmd;
     WiiMDevice activeDev;
@@ -105,7 +117,6 @@ void NetworkManager::processIncomingCommands() {
                         // Mid-song (>5s): Restart current song from 0:00
                         log_i("Mid-song (>5s): restarting current song from beginning");
                         linkplay_client_seek(activeDev.ip, 0);
-                        linkplay_client_send_cmd(activeDev.ip, "setPlayerCmd:seek:0");
                     } else {
                         // Within first 5s: Move to previous track
                         log_i("Within first 5s (<=5s): moving to previous track");
@@ -171,14 +182,30 @@ void NetworkManager::processIncomingCommands() {
                 break;
 
             case CMD_FETCH_LYRICS: {
-                const String& title = linkplay_client_get_last_title();
-                const String& artist = linkplay_client_get_last_artist();
-                if (title.length() > 0) {
-                    log_i("Dispatching on-demand lyrics fetch for: %s - %s", title.c_str(), artist.c_str());
-                    lyrics_client_fetch(title.c_str(), artist.c_str());
+                const char* reqTitle = (strlen(cmd.data.lyrics_req.title) > 0)
+                                       ? cmd.data.lyrics_req.title
+                                       : linkplay_client_get_last_title().c_str();
+                const char* reqArtist = (strlen(cmd.data.lyrics_req.artist) > 0)
+                                        ? cmd.data.lyrics_req.artist
+                                        : linkplay_client_get_last_artist().c_str();
+                if (reqTitle && strlen(reqTitle) > 0) {
+                    log_i("Dispatching on-demand lyrics fetch for: %s - %s", reqTitle, reqArtist);
+                    // Close persistent WiiM TLS session first to free ~40KB internal SRAM for LRCLIB TLS handshake
+                    linkplay_client_reset_session();
+                    lyrics_client_fetch(reqTitle, reqArtist);
                 }
                 break;
             }
+
+            case CMD_SWITCH_MODE:
+                if (hasActive && strlen(cmd.data.input_mode) > 0) {
+                    char modeCmd[40];
+                    snprintf(modeCmd, sizeof(modeCmd), "setPlayerCmd:switchmode:%s", cmd.data.input_mode);
+                    log_i("Dispatching Input Mode switch: %s", modeCmd);
+                    linkplay_client_send_cmd(activeDev.ip, String(modeCmd));
+                    _lastStatusPoll = millis() - (STATUS_POLL_INTERVAL_MS - 250);
+                }
+                break;
         }
     }
 
@@ -214,27 +241,38 @@ void NetworkManager::runTaskLoop() {
 
         // 3. Auto-fetch presets, metadata, and device config once connected
         if (hasActive && !_initialPresetsFetched) {
-            _initialPresetsFetched = true;
+            markActiveDevicePolled();
             log_i("Auto-fetching presets, metadata, and config for %s...", activeDev.name);
             linkplay_client_fetch_presets(activeDev.ip);
             linkplay_client_fetch_meta(activeDev.ip);
 
-            bool isFixed = false;
+            bool isFixed = activeDev.is_fixed_volume;
             if (linkplay_client_fetch_config(activeDev.ip, isFixed) && isFixed != activeDev.is_fixed_volume) {
                 discovery_service_set_active_fixed_volume(isFixed);
+                activeDev.is_fixed_volume = isFixed;
             }
+            PlayerState st;
+            linkplay_client_poll_active(activeDev.ip, activeDev.is_fixed_volume, st);
         }
 
         unsigned long now = millis();
-        // 4. Poll status every 1000ms
-        if (hasActive && (now - _lastStatusPoll >= STATUS_POLL_INTERVAL_MS)) {
+        bool dimmed = power_manager_is_dimmed();
+        const PlayerState& lastPs = linkplay_client_get_last_player_state();
+        bool isPlayingOrBuffering = (lastPs.state == PLAY_STATE_PLAYING || lastPs.state == PLAY_STATE_BUFFERING);
+
+        // 4. Adaptive status poll interval:
+        //    - 5000ms when screen is dimmed (saves Wi-Fi TX/RX spikes)
+        //    - 2500ms when awake but paused/stopped
+        //    - 1000ms when awake and actively playing/buffering
+        unsigned long pollInterval = dimmed ? 5000UL : (isPlayingOrBuffering ? STATUS_POLL_INTERVAL_MS : 2500UL);
+        if (hasActive && (now - _lastStatusPoll >= pollInterval)) {
             _lastStatusPoll = now;
             PlayerState st;
             linkplay_client_poll_active(activeDev.ip, activeDev.is_fixed_volume, st);
         }
 
-        // 5. Poll device configuration (volume_control / fixed mode) every 30000ms
-        if (hasActive && (now - _lastConfigPoll >= 30000)) {
+        // 5. Poll device configuration (volume_control / fixed mode) every 30000ms (skip while dimmed)
+        if (hasActive && !dimmed && (now - _lastConfigPoll >= 30000)) {
             _lastConfigPoll = now;
             bool isFixed = false;
             if (linkplay_client_fetch_config(activeDev.ip, isFixed) && isFixed != activeDev.is_fixed_volume) {
@@ -242,23 +280,25 @@ void NetworkManager::runTaskLoop() {
             }
         }
 
-        // 6. Periodic SSDP refresh only if no devices found yet
-        if (discovery_service_get_count() == 0 && (now - _lastSSDPBroadcast >= SSDP_DISCOVERY_INTERVAL_MS)) {
+        // 6. Periodic SSDP refresh only if no devices found yet and screen is awake
+        if (!dimmed && discovery_service_get_count() == 0 && (now - _lastSSDPBroadcast >= SSDP_DISCOVERY_INTERVAL_MS)) {
             _lastSSDPBroadcast = now;
             discovery_service_send_ssdp_query();
         }
 
-        vTaskDelay(pdMS_TO_TICKS(1)); // Yield to Wi-Fi/lwIP stack on Core 0
+        vTaskDelay(pdMS_TO_TICKS(dimmed ? 25 : 1)); // Yield to Wi-Fi/lwIP stack on Core 0
     } else {
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }
 
 void network_task_entry(void* param) {
+    esp_task_wdt_add(NULL);
     NetworkManager& net = NetworkManager::getInstance();
     net.init();
 
     for (;;) {
+        esp_task_wdt_reset();
         net.runTaskLoop();
         vTaskDelay(pdMS_TO_TICKS(10)); // Yield cleanly to FreeRTOS scheduler
     }

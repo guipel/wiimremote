@@ -1,6 +1,7 @@
 #include "display_driver.h"
 #include "power_manager.h"
 #include <esp_heap_caps.h>
+#include <driver/gpio.h>
 
 LGFX_ESP32S3_Custom gfx;
 
@@ -11,6 +12,7 @@ static lv_color_t *disp_draw_buf2 = nullptr;
 static lv_disp_draw_buf_t disp_buf;
 static lv_disp_drv_t disp_drv;
 static lv_indev_drv_t indev_drv;
+static bool s_ignore_touch_until_release = false;
 
 LGFX_ESP32S3_Custom::LGFX_ESP32S3_Custom() {
     {
@@ -97,7 +99,15 @@ static void touchpad_read_cb(lv_indev_drv_t *indev_driver, lv_indev_data_t *data
     bool touched = gfx.getTouch(&touchX, &touchY);
 
     if (touched) {
-        power_manager_notify_activity();
+        if (power_manager_notify_activity()) {
+            // Screen was dimmed; swallow this wake gesture until finger is lifted
+            s_ignore_touch_until_release = true;
+        }
+        if (s_ignore_touch_until_release) {
+            data->state = LV_INDEV_STATE_REL;
+            return;
+        }
+
         data->state = LV_INDEV_STATE_PR;
 
         int32_t x = touchX;
@@ -122,16 +132,20 @@ static void touchpad_read_cb(lv_indev_drv_t *indev_driver, lv_indev_data_t *data
         data->point.x = (lv_coord_t)x;
         data->point.y = (lv_coord_t)y;
     } else {
+        s_ignore_touch_until_release = false;
         data->state = LV_INDEV_STATE_REL;
     }
 }
 
 void display_driver_init() {
-    // 1. Initialize LovyanGFX
+    // 1. Initialize LovyanGFX (backlight brightness is applied immediately after by power_manager_init)
     gfx.init();
     gfx.setRotation(SCREEN_ROTATION);
     gfx.setColorDepth(16);
-    display_set_backlight(BL_DEFAULT_BRIGHT);
+
+    // Enable FT6336G automatic low-power Monitor Mode after 5 seconds of touch inactivity
+    lgfx::i2c::writeRegister8(TOUCH_I2C_PORT, TOUCH_ADDR, 0x86, 0x01, 0, TOUCH_I2C_FREQ); // ID_G_CTRL = 1 (auto-monitor)
+    lgfx::i2c::writeRegister8(TOUCH_I2C_PORT, TOUCH_ADDR, 0x87, 0x05, 0, TOUCH_I2C_FREQ); // ID_G_TIMEENTERMONITOR = 5s
 
     // 2. Initialize LVGL core
     lv_init();
@@ -149,7 +163,7 @@ void display_driver_init() {
         disp_draw_buf2 = (lv_color_t *)heap_caps_malloc(sizeof(lv_color_t) * DRAW_BUF_PIXELS, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
 
-    lv_disp_draw_buf_init(&disp_buf, disp_draw_buf1, disp_draw_buf2, disp_draw_buf2 ? DRAW_BUF_PIXELS : (SCREEN_WIDTH * 20));
+    lv_disp_draw_buf_init(&disp_buf, disp_draw_buf1, disp_draw_buf2, DRAW_BUF_PIXELS);
 
     // 4. Register LVGL Display Driver
     lv_disp_drv_init(&disp_drv);
@@ -175,3 +189,20 @@ void display_set_backlight(uint8_t brightness) {
     gfx.setBrightness(brightness);
 }
 
+void display_prepare_deep_sleep() {
+    // 1. Put FT6336G touch controller into low-power Monitor mode (0xA5 = 0x01)
+    //    Scans at ~25Hz (~0.8mA instead of ~5mA) while still asserting TOUCH_INT LOW on touch
+    lgfx::i2c::writeRegister8(TOUCH_I2C_PORT, TOUCH_ADDR, 0x86, 0x01, 0, TOUCH_I2C_FREQ);
+    lgfx::i2c::writeRegister8(TOUCH_I2C_PORT, TOUCH_ADDR, 0xA5, 0x01, 0, TOUCH_I2C_FREQ);
+
+    // 2. Shut down ILI9341V display output (DISPOFF 0x28) and charge pumps (SLPIN 0x10)
+    gfx.waitDisplay();
+    gfx.writeCommand(0x28); // DISPOFF
+    delay(20);
+    gfx.sleep();            // SLPIN (0x10) + setBrightness(0)
+
+    // 3. Drive TFT_BL LOW and lock it in deep sleep so the MOSFET gate cannot float
+    pinMode(TFT_BL, OUTPUT);
+    digitalWrite(TFT_BL, LOW);
+    gpio_hold_en((gpio_num_t)TFT_BL);
+}

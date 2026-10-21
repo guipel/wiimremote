@@ -80,19 +80,34 @@
 /*==================
  *   FONT USAGE
  *==================*/
-#define LV_FONT_MONTSERRAT_10 1
-#define LV_FONT_MONTSERRAT_12 1
-#define LV_FONT_MONTSERRAT_14 1
-#define LV_FONT_MONTSERRAT_16 1
+#define LV_FONT_MONTSERRAT_10 0
+#define LV_FONT_MONTSERRAT_12 0
+#define LV_FONT_MONTSERRAT_14 0
+#define LV_FONT_MONTSERRAT_16 0
 #define LV_FONT_MONTSERRAT_18 0
-#define LV_FONT_MONTSERRAT_20 1
-#define LV_FONT_MONTSERRAT_22 1
-#define LV_FONT_MONTSERRAT_24 1
+#define LV_FONT_MONTSERRAT_20 0
+#define LV_FONT_MONTSERRAT_22 0
+#define LV_FONT_MONTSERRAT_24 0
 #define LV_FONT_MONTSERRAT_28 0
 #define LV_FONT_MONTSERRAT_32 0
 
+#define LV_FONT_CUSTOM_DECLARE \
+    LV_FONT_DECLARE(ui_font_montserrat_10) \
+    LV_FONT_DECLARE(ui_font_montserrat_12) \
+    LV_FONT_DECLARE(ui_font_montserrat_14) \
+    LV_FONT_DECLARE(ui_font_montserrat_16) \
+    LV_FONT_DECLARE(ui_font_montserrat_20) \
+    LV_FONT_DECLARE(ui_font_montserrat_24)
+
+#define lv_font_montserrat_10 ui_font_montserrat_10
+#define lv_font_montserrat_12 ui_font_montserrat_12
+#define lv_font_montserrat_14 ui_font_montserrat_14
+#define lv_font_montserrat_16 ui_font_montserrat_16
+#define lv_font_montserrat_20 ui_font_montserrat_20
+#define lv_font_montserrat_24 ui_font_montserrat_24
+
 /* Set the default font */
-#define LV_FONT_DEFAULT &lv_font_montserrat_14
+#define LV_FONT_DEFAULT &ui_font_montserrat_14
 
 /* Enable handling large font tables */
 #define LV_FONT_FMT_TXT_LARGE 0

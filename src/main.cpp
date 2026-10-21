@@ -1,5 +1,7 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
+#include <esp_task_wdt.h>
+#include <driver/gpio.h>
 #include "config.h"
 #include "model.h"
 #include "display_driver.h"
@@ -14,11 +16,14 @@ QueueHandle_t xQueueUiState = nullptr;
 // UI Task (Pinned to Core 1)
 void ui_task_entry(void* param) {
     log_i("UI Task started on Core %d", xPortGetCoreID());
+    esp_task_wdt_add(NULL);
 
     // Initialize UI Layout & Widgets
     ui_init();
 
     for (;;) {
+        esp_task_wdt_reset();
+
         // 1. Process pending state events from Network Task (Core 0)
         ui_process_events();
 
@@ -28,16 +33,22 @@ void ui_task_entry(void* param) {
         // 3. Handle LVGL animations, timers, and rendering
         uint32_t delay_ms = lv_timer_handler();
 
-        // 4. Dynamic frame delay: responsive under interaction (down to 4ms), yielding when idle (up to 16ms)
-        if (delay_ms > 16) delay_ms = 16;
-        else if (delay_ms < 4) delay_ms = 4;
+        // 4. Dynamic frame delay: sleep 35ms (~28 Hz) while dimmed to save power, or 4..16ms when awake
+        if (power_manager_is_dimmed()) {
+            delay_ms = 35;
+        } else {
+            if (delay_ms > 16) delay_ms = 16;
+            else if (delay_ms < 4) delay_ms = 4;
+        }
         vTaskDelay(pdMS_TO_TICKS(delay_ms));
     }
 }
 
 // System Hardware Setup
 static void hardware_pins_init() {
-    // 1. Audio Amp Enable (PA_EN): Pin 1 must be driven HIGH immediately to prevent popping and keep amp muted
+    // 1. Release deep-sleep GPIO holds on PA_EN and Backlight, then mute audio amp immediately
+    gpio_hold_dis((gpio_num_t)PIN_PA_EN);
+    gpio_hold_dis((gpio_num_t)TFT_BL);
     pinMode(PIN_PA_EN, OUTPUT);
     digitalWrite(PIN_PA_EN, HIGH);
 
@@ -60,11 +71,13 @@ void setup() {
     log_i("  WiiM ESP32-S3 Touchscreen Remote Control       ");
     log_i("=================================================");
 
-    // 1. Initialize Hardware Pins & Power Management
+    // 1. Initialize Hardware Pins
     hardware_pins_init();
-    power_manager_init();
 
-    // 2. PSRAM & Memory Diagnostics
+    // 2. Initialize Task Watchdog Timer (15s timeout, panic on hang)
+    esp_task_wdt_init(15, true);
+
+    // 3. PSRAM & Memory Diagnostics
     log_i("Total Heap:  %u bytes", ESP.getHeapSize());
     log_i("Free Heap:   %u bytes", ESP.getFreeHeap());
     log_i("Total PSRAM: %u bytes", ESP.getPsramSize());
@@ -74,7 +87,7 @@ void setup() {
         log_w("WARNING: PSRAM was not detected! Check board_build.arduino.memory_type in platformio.ini");
     }
 
-    // 3. Create Inter-Task Communication Queues
+    // 4. Create Inter-Task Communication Queues
     xQueueUiCmd = xQueueCreate(QUEUE_UI_CMD_LEN, sizeof(UiCommand));
     xQueueUiState = xQueueCreate(QUEUE_UI_STATE_LEN, sizeof(UiEvent));
 
@@ -83,10 +96,11 @@ void setup() {
         while (1) delay(1000);
     }
 
-    // 4. Initialize LovyanGFX Display and FT6336G Capacitive Touch
+    // 5. Initialize LovyanGFX Display and FT6336G Capacitive Touch FIRST, then apply saved brightness
     display_driver_init();
+    power_manager_init();
 
-    // 5. Spawn Network & Polling Task on Core 0
+    // 6. Spawn Network & Polling Task on Core 0
     xTaskCreatePinnedToCore(
         network_task_entry,
         "NetTask",
@@ -97,7 +111,7 @@ void setup() {
         NET_TASK_CORE
     );
 
-    // 6. Spawn UI & Display Task on Core 1
+    // 7. Spawn UI & Display Task on Core 1
     xTaskCreatePinnedToCore(
         ui_task_entry,
         "UiTask",

@@ -60,6 +60,15 @@ static void event_btn_close_wifi_modal(lv_event_t* e) {
     xQueueSend(xQueueUiCmd, &cmd, 0);
 }
 
+static void event_wifi_backdrop_clicked(lv_event_t* e) {
+    if (lv_event_get_target(e) == modal_wifi_selector) {
+        modal_wifi_close();
+        UiCommand cmd;
+        cmd.type = CMD_WIFI_RECONNECT;
+        xQueueSend(xQueueUiCmd, &cmd, 0);
+    }
+}
+
 static void event_btn_wifi_forget(lv_event_t* e) {
     log_i("User tapped Forget Network");
     UiCommand cmd;
@@ -209,7 +218,8 @@ void modal_wifi_init(lv_obj_t* parent) {
     lv_obj_set_style_radius(modal_wifi_selector, 0, 0);
     lv_obj_set_style_border_side(modal_wifi_selector, LV_BORDER_SIDE_NONE, 0);
     lv_obj_set_style_pad_all(modal_wifi_selector, 8, 0);
-    lv_obj_add_flag(modal_wifi_selector, LV_OBJ_FLAG_HIDDEN); // Hidden by default
+    lv_obj_add_flag(modal_wifi_selector, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_HIDDEN); // Hidden by default
+    lv_obj_add_event_cb(modal_wifi_selector, event_wifi_backdrop_clicked, LV_EVENT_CLICKED, nullptr);
 
     // Modal Card
     lv_obj_t* card = lv_obj_create(modal_wifi_selector);
@@ -518,26 +528,32 @@ void modal_wifi_set_scan_results(const WiFiScanList& list) {
     }
 
     for (uint8_t i = 0; i < list.count; ++i) {
-        char item_text[64];
-        snprintf(item_text, sizeof(item_text), "%s (%d dBm)", list.networks[i].ssid, list.networks[i].rssi);
-
-        lv_obj_t* btn = lv_list_add_btn(list_wifi, LV_SYMBOL_WIFI, item_text);
+        lv_obj_t* btn = lv_list_add_btn(list_wifi, LV_SYMBOL_WIFI, list.networks[i].ssid);
         lv_obj_set_style_bg_color(btn, COLOR_SURFACE, 0);
         lv_obj_set_style_text_color(btn, COLOR_TEXT_PRIMARY, 0);
         lv_obj_set_style_text_font(btn, &lv_font_montserrat_12, 0);
         lv_obj_set_style_radius(btn, 6, 0);
         lv_obj_set_style_pad_bottom(btn, 4, 0);
 
-        // Prevent marquee / rotating text
+        lv_color_t sig_color = lv_color_hex(0xE63946); // Red (Weak)
+        if (list.networks[i].rssi >= -65) {
+            sig_color = COLOR_SUCCESS; // Green (Strong)
+        } else if (list.networks[i].rssi >= -75) {
+            sig_color = COLOR_WARNING; // Amber (Fair)
+        }
+
+        // Prevent marquee / rotating text on SSID label & color-code Wi-Fi icon
         uint32_t child_cnt = lv_obj_get_child_cnt(btn);
         for (uint32_t c = 0; c < child_cnt; ++c) {
             lv_obj_t* child = lv_obj_get_child(btn, c);
-            if (lv_obj_check_type(child, &lv_label_class)) {
+            if (lv_obj_check_type(child, &lv_img_class)) {
+                lv_obj_set_style_text_color(child, sig_color, 0);
+            } else if (lv_obj_check_type(child, &lv_label_class)) {
                 lv_label_set_long_mode(child, LV_LABEL_LONG_DOT);
             }
         }
 
-        // Add volume padlock icon on the right side if password-protected
+        // Add padlock icon on the right side if password-protected
         if (!list.networks[i].is_open) {
             lv_obj_t* img = lv_img_create(btn);
             lv_img_set_src(img, &img_lock_dsc);

@@ -3,8 +3,9 @@
 #include <Arduino.h>
 
 void power_manager_init();
-void power_manager_notify_activity();
+bool power_manager_notify_activity();
 void power_manager_check_inactivity();
+bool power_manager_is_dimmed();
 
 void power_manager_set_dim_timeout_sec(uint16_t seconds);
 uint16_t power_manager_get_dim_timeout_sec();

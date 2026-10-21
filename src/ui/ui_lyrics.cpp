@@ -12,27 +12,39 @@ static lv_obj_t* cont_lyrics_scroll = nullptr;
 static lv_obj_t* lbl_lyrics_body = nullptr;
 
 static TrackMeta s_current_track_meta;
+static bool s_lyrics_resolved = false;
+static bool s_lyrics_loading = false;
 
 static void fetch_lyrics_if_needed() {
     if (strlen(s_current_track_meta.title) == 0) {
         if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, "Lyrics");
         if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, "");
         if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "Play a track to view lyrics.");
+        s_lyrics_resolved = false;
+        s_lyrics_loading = false;
         return;
     }
 
     const char* lyr_title = lbl_lyrics_title ? lv_label_get_text(lbl_lyrics_title) : "";
     const char* lyr_artist = lbl_lyrics_artist ? lv_label_get_text(lbl_lyrics_artist) : "";
+    bool trackChanged = (strcmp(s_current_track_meta.title, lyr_title) != 0 ||
+                         strcmp(s_current_track_meta.artist, lyr_artist) != 0);
 
-    if (strcmp(s_current_track_meta.title, lyr_title) != 0 || strcmp(s_current_track_meta.artist, lyr_artist) != 0) {
+    if (trackChanged || (!s_lyrics_resolved && !s_lyrics_loading)) {
         if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, s_current_track_meta.title);
         if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, s_current_track_meta.artist);
         if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "Fetching lyrics from LRCLIB...");
         if (cont_lyrics_scroll) lv_obj_scroll_to_y(cont_lyrics_scroll, 0, LV_ANIM_OFF);
 
         UiCommand cmd;
+        memset(&cmd, 0, sizeof(cmd));
         cmd.type = CMD_FETCH_LYRICS;
-        xQueueSend(xQueueUiCmd, &cmd, 0);
+        strncpy(cmd.data.lyrics_req.title, s_current_track_meta.title, sizeof(cmd.data.lyrics_req.title) - 1);
+        strncpy(cmd.data.lyrics_req.artist, s_current_track_meta.artist, sizeof(cmd.data.lyrics_req.artist) - 1);
+        if (xQueueSend(xQueueUiCmd, &cmd, 0) == pdTRUE) {
+            s_lyrics_loading = true;
+            s_lyrics_resolved = false;
+        }
     }
 }
 
@@ -91,28 +103,37 @@ void ui_lyrics_init(lv_obj_t* parent) {
 
 void ui_lyrics_set_content(const LyricsInfo& info) {
     // If lyrics arrived for a track that is no longer playing, discard them
-    if (strlen(s_current_track_meta.title) > 0 && strcmp(info.title, s_current_track_meta.title) != 0) {
+    if (strlen(s_current_track_meta.title) > 0 && strlen(info.title) > 0 &&
+        strcmp(info.title, s_current_track_meta.title) != 0) {
         log_w("Discarding stale lyrics for '%s' (currently playing: '%s')", info.title, s_current_track_meta.title);
         return;
     }
 
+    s_lyrics_loading = info.is_loading;
+
     if (lbl_lyrics_title) {
         if (strlen(info.title) > 0) {
             lv_label_set_text(lbl_lyrics_title, info.title);
+        } else if (strlen(s_current_track_meta.title) > 0) {
+            lv_label_set_text(lbl_lyrics_title, s_current_track_meta.title);
         } else {
             lv_label_set_text(lbl_lyrics_title, "Lyrics");
         }
     }
     if (lbl_lyrics_artist) {
-        lv_label_set_text(lbl_lyrics_artist, info.artist);
+        lv_label_set_text(lbl_lyrics_artist, strlen(info.artist) > 0 ? info.artist : s_current_track_meta.artist);
     }
     if (lbl_lyrics_body) {
         if (info.text && strlen(info.text) > 0) {
             lv_label_set_text(lbl_lyrics_body, info.text);
+            // Allow retry on re-entering tab if the fetch failed due to network error
+            s_lyrics_resolved = (strncmp(info.text, "Failed to retrieve", 18) != 0);
         } else if (info.is_loading) {
             lv_label_set_text(lbl_lyrics_body, "Fetching lyrics from LRCLIB...");
+            s_lyrics_resolved = false;
         } else {
             lv_label_set_text(lbl_lyrics_body, "No lyrics found for this track.");
+            s_lyrics_resolved = true;
         }
     }
     if (cont_lyrics_scroll) {
@@ -121,6 +142,11 @@ void ui_lyrics_set_content(const LyricsInfo& info) {
 }
 
 void ui_lyrics_on_track_changed(const TrackMeta& meta, bool is_lyrics_tab_active) {
+    if (strcmp(s_current_track_meta.title, meta.title) != 0 ||
+        strcmp(s_current_track_meta.artist, meta.artist) != 0) {
+        s_lyrics_resolved = false;
+        s_lyrics_loading = false;
+    }
     s_current_track_meta = meta;
     if (is_lyrics_tab_active) {
         fetch_lyrics_if_needed();
@@ -133,6 +159,8 @@ void ui_lyrics_on_tab_activated() {
 
 void ui_lyrics_clear() {
     memset(&s_current_track_meta, 0, sizeof(s_current_track_meta));
+    s_lyrics_resolved = false;
+    s_lyrics_loading = false;
     if (lbl_lyrics_title) lv_label_set_text(lbl_lyrics_title, "Lyrics");
     if (lbl_lyrics_artist) lv_label_set_text(lbl_lyrics_artist, "");
     if (lbl_lyrics_body) lv_label_set_text(lbl_lyrics_body, "Play a track to view lyrics.");
