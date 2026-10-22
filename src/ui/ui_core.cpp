@@ -126,9 +126,10 @@ void ui_apply_theme() {
             lv_obj_set_style_bg_color(tab_btns, COLOR_SURFACE, 0);
             lv_obj_set_style_border_color(tab_btns, COLOR_SURFACE_LIGHT, 0);
             lv_obj_set_style_text_color(tab_btns, COLOR_TEXT_MUTED, LV_PART_ITEMS);
-            lv_obj_set_style_text_color(tab_btns, COLOR_ACCENT, LV_PART_ITEMS | LV_STATE_CHECKED);
-            lv_obj_set_style_bg_color(tab_btns, COLOR_SURFACE_LIGHT, LV_PART_ITEMS | LV_STATE_CHECKED);
-            lv_obj_set_style_border_color(tab_btns, COLOR_ACCENT, LV_PART_ITEMS | LV_STATE_CHECKED);
+            const lv_style_selector_t sel_checked = (lv_style_selector_t)LV_PART_ITEMS | (lv_style_selector_t)LV_STATE_CHECKED;
+            lv_obj_set_style_text_color(tab_btns, COLOR_ACCENT, sel_checked);
+            lv_obj_set_style_bg_color(tab_btns, COLOR_SURFACE_LIGHT, sel_checked);
+            lv_obj_set_style_border_color(tab_btns, COLOR_ACCENT, sel_checked);
         }
     }
 
@@ -166,9 +167,10 @@ void ui_init() {
     lv_obj_set_style_border_side(tab_btns, LV_BORDER_SIDE_NONE, LV_PART_ITEMS);
 
     // Active/Checked Tab border geometry
-    lv_obj_set_style_bg_opa(tab_btns, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_border_side(tab_btns, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_border_width(tab_btns, 2, LV_PART_ITEMS | LV_STATE_CHECKED);
+    const lv_style_selector_t sel_checked = (lv_style_selector_t)LV_PART_ITEMS | (lv_style_selector_t)LV_STATE_CHECKED;
+    lv_obj_set_style_bg_opa(tab_btns, LV_OPA_COVER, sel_checked);
+    lv_obj_set_style_border_side(tab_btns, LV_BORDER_SIDE_BOTTOM, sel_checked);
+    lv_obj_set_style_border_width(tab_btns, 2, sel_checked);
 
     // Add Tabs: Lyrics, Player (Default), Presets, UPnP
     tab_lyrics = lv_tabview_add_tab(tabview, LV_SYMBOL_FILE " Lyrics");
@@ -207,9 +209,7 @@ void ui_init() {
         ui_header_set_active_device(dev.name);
         ui_player_clear();
         ui_lyrics_clear();
-        if (dev.is_fixed_volume) {
-            ui_player_set_fixed_volume_mode(true);
-        }
+        ui_player_set_fixed_volume_mode(dev.is_fixed_volume);
     });
 
     modal_wifi_init(lv_scr_act());
@@ -237,15 +237,14 @@ void ui_set_devices(const DeviceList& list) {
     for (uint8_t i = 0; i < list.count; ++i) {
         if (list.devices[i].is_active) {
             ui_header_set_active_device(list.devices[i].name);
-            if (list.devices[i].is_fixed_volume) {
-                ui_player_set_fixed_volume_mode(true);
-            }
+            ui_player_set_fixed_volume_mode(list.devices[i].is_fixed_volume);
             activeFound = true;
             break;
         }
     }
     if (!activeFound && list.count > 0) {
         ui_header_set_active_device(list.devices[0].name);
+        ui_player_set_fixed_volume_mode(list.devices[0].is_fixed_volume);
     } else if (list.count == 0) {
         ui_header_set_active_device(nullptr);
     }

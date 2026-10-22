@@ -56,7 +56,7 @@ static void load_saved_device_list() {
     if (count > MAX_DISCOVERED_DEVICES) count = MAX_DISCOVERED_DEVICES;
 
     for (uint8_t i = 0; i < count; ++i) {
-        char keyIp[16], keyUuid[16], keyName[16], keyFixed[16];
+        char keyIp[24], keyUuid[24], keyName[24], keyFixed[24];
         snprintf(keyIp, sizeof(keyIp), "dev_ip_%u", i);
         snprintf(keyUuid, sizeof(keyUuid), "dev_uuid_%u", i);
         snprintf(keyName, sizeof(keyName), "dev_name_%u", i);
@@ -87,8 +87,8 @@ static void save_saved_device_list() {
     portEXIT_CRITICAL(&s_device_mux);
 
     s_dev_prefs.putUChar("dev_count", snapshot.count);
-    for (uint8_t i = 0; i < snapshot.count; ++i) {
-        char keyIp[16], keyUuid[16], keyName[16], keyFixed[16];
+    for (uint8_t i = 0; i < snapshot.count && i < MAX_DISCOVERED_DEVICES; ++i) {
+        char keyIp[24], keyUuid[24], keyName[24], keyFixed[24];
         snprintf(keyIp, sizeof(keyIp), "dev_ip_%u", i);
         snprintf(keyUuid, sizeof(keyUuid), "dev_uuid_%u", i);
         snprintf(keyName, sizeof(keyName), "dev_name_%u", i);
@@ -100,7 +100,7 @@ static void save_saved_device_list() {
     }
     // Clean up only stale keys beyond current count up to previously saved count
     for (uint8_t i = snapshot.count; i < s_prev_saved_count && i < MAX_DISCOVERED_DEVICES; ++i) {
-        char keyIp[16], keyUuid[16], keyName[16], keyFixed[16];
+        char keyIp[24], keyUuid[24], keyName[24], keyFixed[24];
         snprintf(keyIp, sizeof(keyIp), "dev_ip_%u", i);
         snprintf(keyUuid, sizeof(keyUuid), "dev_uuid_%u", i);
         snprintf(keyName, sizeof(keyName), "dev_name_%u", i);
@@ -202,13 +202,13 @@ static void add_or_update_device(const WiiMDevice& dev) {
     bool changed = false;
     bool preservedFixed = dev.is_fixed_volume;
 
+    // 1. Primary identity lookup: match by stable hardware UUID
     for (uint8_t i = 0; i < s_device_list.count; ++i) {
-        if (strcmp(s_device_list.devices[i].uuid, dev.uuid) == 0 ||
-            strcmp(s_device_list.devices[i].ip, dev.ip) == 0) {
+        if (strlen(dev.uuid) > 0 && strcmp(s_device_list.devices[i].uuid, dev.uuid) == 0) {
             exists = true;
             preservedFixed = s_device_list.devices[i].is_fixed_volume;
             if (strcmp(s_device_list.devices[i].name, dev.name) != 0 ||
-                 strcmp(s_device_list.devices[i].ip, dev.ip) != 0) {
+                strcmp(s_device_list.devices[i].ip, dev.ip) != 0) {
                 strncpy(s_device_list.devices[i].name, dev.name, sizeof(s_device_list.devices[i].name) - 1);
                 strncpy(s_device_list.devices[i].ip, dev.ip, sizeof(s_device_list.devices[i].ip) - 1);
                 changed = true;
@@ -217,13 +217,43 @@ static void add_or_update_device(const WiiMDevice& dev) {
         }
     }
 
-    if (!exists && s_device_list.count < MAX_DISCOVERED_DEVICES) {
+    // 2. Secondary reconciliation: if IP matches a different UUID (DHCP reassigned IP to another WiiM),
+    //    replace the stale entry's UUID, name, and fixed-volume state with the new device's identity.
+    if (!exists) {
+        for (uint8_t i = 0; i < s_device_list.count; ++i) {
+            if (strcmp(s_device_list.devices[i].ip, dev.ip) == 0) {
+                exists = true;
+                preservedFixed = dev.is_fixed_volume;
+                s_device_list.devices[i] = dev;
+                changed = true;
+                break;
+            }
+        }
+    }
+
+    // 3. New device insertion (with FIFO eviction of oldest non-active entry if table is full)
+    if (!exists) {
+        if (s_device_list.count >= MAX_DISCOVERED_DEVICES) {
+            uint8_t evictIdx = 0;
+            for (uint8_t i = 0; i < s_device_list.count; ++i) {
+                if (!s_device_list.devices[i].is_active) {
+                    evictIdx = i;
+                    break;
+                }
+            }
+            if (evictIdx + 1 < s_device_list.count) {
+                memmove(&s_device_list.devices[evictIdx],
+                        &s_device_list.devices[evictIdx + 1],
+                        sizeof(WiiMDevice) * (s_device_list.count - evictIdx - 1));
+            }
+            s_device_list.count--;
+        }
         s_device_list.devices[s_device_list.count] = dev;
         s_device_list.count++;
         changed = true;
     }
 
-    // Auto-select if no active device, or if this matches saved device
+    // Auto-select if no active device, or reconcile if this matches active UUID or reassigned active IP
     bool newActive = false;
     bool activeUpdated = false;
     if (!s_has_active_device) {
@@ -242,11 +272,17 @@ static void add_or_update_device(const WiiMDevice& dev) {
             activeUpdated = true;
             changed = true;
         }
+    } else if (strcmp(s_active_device.ip, dev.ip) == 0 && strcmp(s_active_device.uuid, dev.uuid) != 0) {
+        // Active IP was reassigned by DHCP to a different WiiM unit
+        s_active_device = dev;
+        s_active_device.is_active = true;
+        newActive = true;
+        changed = true;
     }
 
     // Update is_active flag in list
     for (uint8_t i = 0; i < s_device_list.count; ++i) {
-        s_device_list.devices[i].is_active = (strcmp(s_device_list.devices[i].ip, s_active_device.ip) == 0);
+        s_device_list.devices[i].is_active = (s_has_active_device && strcmp(s_device_list.devices[i].ip, s_active_device.ip) == 0);
     }
 
     portEXIT_CRITICAL(&s_device_mux);
@@ -453,18 +489,43 @@ void discovery_service_trigger_rescan() {
     evt.data.scan.is_scanning = true;
     xQueueSend(xQueueUiState, &evt, 0);
 
-    // 1. Probe previously-discovered IPs from NVS (fast path)
+    // 1. Probe previously-discovered IPs from NVS and prune stale/unreachable entries
     portENTER_CRITICAL(&s_device_mux);
     DeviceList savedSnapshot = s_device_list;
+    s_device_list.count = 0;
     portEXIT_CRITICAL(&s_device_mux);
+
+    bool activeVerified = false;
     for (uint8_t i = 0; i < savedSnapshot.count; ++i) {
         esp_task_wdt_reset();
         WiiMDevice dev;
         if (query_device_status(savedSnapshot.devices[i].ip, &dev)) {
+            dev.is_fixed_volume = savedSnapshot.devices[i].is_fixed_volume;
             add_or_update_device(dev);
+            if (s_has_active_device &&
+                (strcmp(dev.uuid, s_active_device.uuid) == 0 || strcmp(dev.ip, s_active_device.ip) == 0)) {
+                activeVerified = true;
+            }
+        } else {
+            log_w("Pruning unreachable NVS streamer: %s (%s)", savedSnapshot.devices[i].name, savedSnapshot.devices[i].ip);
         }
         vTaskDelay(pdMS_TO_TICKS(15)); // Yield to prevent WDT timeout
     }
+
+    if (s_has_active_device && !activeVerified) {
+        portENTER_CRITICAL(&s_device_mux);
+        if (s_device_list.count > 0) {
+            s_active_device = s_device_list.devices[0];
+            s_active_device.is_active = true;
+            s_device_list.devices[0].is_active = true;
+        } else {
+            s_has_active_device = false;
+            memset(&s_active_device, 0, sizeof(s_active_device));
+        }
+        portEXIT_CRITICAL(&s_device_mux);
+    }
+
+    save_saved_device_list();
 
     // 2. Broadcast SSDP discovery
     discovery_service_send_ssdp_query();

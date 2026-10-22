@@ -147,6 +147,20 @@ static String extract_tag_content(const String& xml, const char* tagName) {
     return xml_unescape(xml.substring(start, end));
 }
 
+static UpnpBrowseList* alloc_browse_list() {
+    UpnpBrowseList* p = (UpnpBrowseList*)heap_caps_malloc(
+        sizeof(UpnpBrowseList),
+        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT
+    );
+    if (!p) {
+        p = (UpnpBrowseList*)malloc(sizeof(UpnpBrowseList));
+    }
+    if (p) {
+        memset(p, 0, sizeof(UpnpBrowseList));
+    }
+    return p;
+}
+
 void upnp_client_init() {
     s_upnp_prefs.begin("wiim_upnp", false);
     memset(&s_server_list, 0, sizeof(s_server_list));
@@ -174,6 +188,12 @@ void upnp_client_init() {
 
 void upnp_client_reset_ignored() {
     s_ignored_loc_count = 0;
+}
+
+void upnp_client_clear_servers() {
+    s_ignored_loc_count = 0;
+    memset(&s_server_list, 0, sizeof(s_server_list));
+    save_saved_servers();
 }
 
 void upnp_client_broadcast_servers() {
@@ -252,7 +272,7 @@ void upnp_client_on_ssdp_location(const char* locationUrl) {
     }
 
     String fullControlUrl;
-    if (controlPath.startsWith("http://")) {
+    if (controlPath.startsWith("http://") || controlPath.startsWith("https://")) {
         fullControlUrl = controlPath;
     } else if (controlPath.startsWith("/")) {
         fullControlUrl = String(baseUrl) + controlPath;
@@ -270,6 +290,7 @@ void upnp_client_on_ssdp_location(const char* locationUrl) {
         bool nameMatch = (strcmp(s_server_list.servers[i].name, friendlyName.c_str()) == 0);
         if (udnMatch || nameMatch) {
             UpnpServerInfo& srv = s_server_list.servers[i];
+            memset(&srv, 0, sizeof(srv));
             strncpy(srv.name, friendlyName.c_str(), sizeof(srv.name) - 1);
             strncpy(srv.base_url, baseUrl, sizeof(srv.base_url) - 1);
             strncpy(srv.control_url, fullControlUrl.c_str(), sizeof(srv.control_url) - 1);
@@ -280,24 +301,29 @@ void upnp_client_on_ssdp_location(const char* locationUrl) {
         }
     }
 
-    if (s_server_list.count < MAX_UPNP_SERVERS) {
-        UpnpServerInfo& srv = s_server_list.servers[s_server_list.count++];
-        memset(&srv, 0, sizeof(srv));
-        strncpy(srv.name, friendlyName.c_str(), sizeof(srv.name) - 1);
-        strncpy(srv.base_url, baseUrl, sizeof(srv.base_url) - 1);
-        strncpy(srv.control_url, fullControlUrl.c_str(), sizeof(srv.control_url) - 1);
-        strncpy(srv.udn, udn.c_str(), sizeof(srv.udn) - 1);
-
-        Serial.printf("[UPnP] Discovered MediaServer: '%s' at %s\n", srv.name, srv.control_url);
-        save_saved_servers();
-        upnp_client_broadcast_servers();
+    // If table is full, evict oldest server entry so newly discovered servers are never blocked
+    if (s_server_list.count >= MAX_UPNP_SERVERS) {
+        memmove(&s_server_list.servers[0],
+                &s_server_list.servers[1],
+                sizeof(UpnpServerInfo) * (MAX_UPNP_SERVERS - 1));
+        s_server_list.count = MAX_UPNP_SERVERS - 1;
     }
+
+    UpnpServerInfo& srv = s_server_list.servers[s_server_list.count++];
+    memset(&srv, 0, sizeof(srv));
+    strncpy(srv.name, friendlyName.c_str(), sizeof(srv.name) - 1);
+    strncpy(srv.base_url, baseUrl, sizeof(srv.base_url) - 1);
+    strncpy(srv.control_url, fullControlUrl.c_str(), sizeof(srv.control_url) - 1);
+    strncpy(srv.udn, udn.c_str(), sizeof(srv.udn) - 1);
+
+    log_i("[UPnP] Discovered MediaServer: '%s' at %s", srv.name, srv.control_url);
+    save_saved_servers();
+    upnp_client_broadcast_servers();
 }
 
 void upnp_client_browse(uint8_t serverIdx, const char* objectId, const char* folderTitle) {
-    UpnpBrowseList* pBrowse = (UpnpBrowseList*)malloc(sizeof(UpnpBrowseList));
+    UpnpBrowseList* pBrowse = alloc_browse_list();
     if (!pBrowse) return;
-    memset(pBrowse, 0, sizeof(UpnpBrowseList));
     strncpy(pBrowse->title, (folderTitle && strlen(folderTitle) > 0) ? folderTitle : "Folder", sizeof(pBrowse->title) - 1);
 
     if (serverIdx >= s_server_list.count) {
@@ -320,15 +346,15 @@ void upnp_client_browse(uint8_t serverIdx, const char* objectId, const char* fol
         "<BrowseFlag>BrowseDirectChildren</BrowseFlag>"
         "<Filter>*</Filter>"
         "<StartingIndex>0</StartingIndex>"
-        "<RequestedCount>64</RequestedCount>"
+        "<RequestedCount>" + String(MAX_UPNP_ITEMS) + "</RequestedCount>"
         "<SortCriteria></SortCriteria>"
         "</u:Browse></s:Body></s:Envelope>";
 
     esp_task_wdt_reset();
 
     HTTPClient http;
-    http.setConnectTimeout(2500);
-    http.setTimeout(8000);
+    http.setConnectTimeout(2000);
+    http.setTimeout(4000);
     if (!http.begin(String(srv.control_url))) {
         pBrowse->is_error = true;
         UiEvent evt;
@@ -345,7 +371,7 @@ void upnp_client_browse(uint8_t serverIdx, const char* objectId, const char* fol
     esp_task_wdt_reset();
 
     if (code != HTTP_CODE_OK) {
-        Serial.printf("[UPnP] Browse failed (HTTP %d) for ObjectID='%s'\n", code, objIdStr.c_str());
+        log_w("[UPnP] Browse failed (HTTP %d) for ObjectID='%s'", code, objIdStr.c_str());
         http.end();
         pBrowse->is_error = true;
         UiEvent evt;
@@ -410,7 +436,7 @@ void upnp_client_browse(uint8_t serverIdx, const char* objectId, const char* fol
             String streamUrl = xml_unescape(body.substring(resHeaderEnd + 1, resEnd));
             streamUrl.trim();
 
-            if (streamUrl.startsWith("http://")) {
+            if (streamUrl.startsWith("http://") || streamUrl.startsWith("https://")) {
                 String id = extract_attr(header, "id");
                 String title = net_to_valid_utf8(extract_tag_content(body, "dc:title"));
                 String artist = net_to_valid_utf8(xml_unescape(net_extract_xml_tag(body, "upnp:artist")));
@@ -447,8 +473,8 @@ void upnp_client_browse(uint8_t serverIdx, const char* objectId, const char* fol
         pos = iEnd + 7;
     }
 
-    Serial.printf("[UPnP] Browse '%s' -> %u items (%u tracks)\n",
-                  pBrowse->title, pBrowse->count, s_folder_track_count);
+    log_i("[UPnP] Browse '%s' -> %u items (%u tracks)",
+          pBrowse->title, pBrowse->count, s_folder_track_count);
 
     UiEvent evt;
     evt.type = UI_EVT_UPNP_BROWSE_RESULT;
@@ -472,8 +498,8 @@ bool upnp_client_play_track(const char* wiimIp, uint8_t trackIdx, bool isFixedVo
         WiFiClient metaClient;
         HTTPClient metaHttp;
         metaHttp.setReuse(true);
-        metaHttp.setConnectTimeout(1000);
-        metaHttp.setTimeout(1500);
+        metaHttp.setConnectTimeout(800);
+        metaHttp.setTimeout(1200);
         bool firstChecked = false;
 
         for (uint8_t i = 0; i < totalTracks; ++i) {
@@ -493,35 +519,39 @@ bool upnp_client_play_track(const char* wiimIp, uint8_t trackIdx, bool isFixedVo
                 "<SortCriteria></SortCriteria>"
                 "</u:Browse></s:Body></s:Envelope>";
 
-            if (metaHttp.begin(metaClient, String(s_active_control_url))) {
-                metaHttp.addHeader("Content-Type", "text/xml; charset=\"utf-8\"");
-                metaHttp.addHeader("SOAPAction", "\"urn:schemas-upnp-org:service:ContentDirectory:1#Browse\"");
-                int code = metaHttp.POST(soapBody);
-                if (code == HTTP_CODE_OK) {
-                    String resp = metaHttp.getString();
-                    String itemDidl = xml_unescape(net_extract_xml_tag(resp, "Result"));
-                    String realTitle = net_to_valid_utf8(extract_tag_content(itemDidl, "dc:title"));
-                    bool titleMatches = (realTitle.length() > 0 && strcmp(realTitle.c_str(), t.title) == 0);
-                    if (realTitle.length() > 0) {
-                        memset(t.title, 0, sizeof(t.title));
-                        strncpy(t.title, realTitle.c_str(), sizeof(t.title) - 1);
-                    }
-                    t.meta_resolved = true;
-
-                    // If the first track's BrowseDirectChildren title already equals BrowseMetadata,
-                    // this container is already serving embedded titles—skip remaining HTTP round-trips.
-                    if (!firstChecked) {
-                        firstChecked = true;
-                        if (titleMatches) {
-                            for (uint8_t j = i + 1; j < totalTracks; ++j) {
-                                s_folder_tracks[j].meta_resolved = true;
-                            }
-                            metaHttp.end();
-                            break;
-                        }
-                    }
-                }
+            if (!metaHttp.begin(metaClient, String(s_active_control_url))) {
+                break;
+            }
+            metaHttp.addHeader("Content-Type", "text/xml; charset=\"utf-8\"");
+            metaHttp.addHeader("SOAPAction", "\"urn:schemas-upnp-org:service:ContentDirectory:1#Browse\"");
+            int code = metaHttp.POST(soapBody);
+            if (code != HTTP_CODE_OK) {
                 metaHttp.end();
+                break; // Abort remaining BrowseMetadata calls immediately if UPnP server is unreachable/slow
+            }
+
+            String resp = metaHttp.getString();
+            metaHttp.end();
+
+            String itemDidl = xml_unescape(net_extract_xml_tag(resp, "Result"));
+            String realTitle = net_to_valid_utf8(extract_tag_content(itemDidl, "dc:title"));
+            bool titleMatches = (realTitle.length() > 0 && strcmp(realTitle.c_str(), t.title) == 0);
+            if (realTitle.length() > 0) {
+                memset(t.title, 0, sizeof(t.title));
+                strncpy(t.title, realTitle.c_str(), sizeof(t.title) - 1);
+            }
+            t.meta_resolved = true;
+
+            // If the first track's BrowseDirectChildren title already equals BrowseMetadata,
+            // this container is already serving embedded titles—skip remaining HTTP round-trips.
+            if (!firstChecked) {
+                firstChecked = true;
+                if (titleMatches) {
+                    for (uint8_t j = i + 1; j < totalTracks; ++j) {
+                        s_folder_tracks[j].meta_resolved = true;
+                    }
+                    break;
+                }
             }
         }
     }
@@ -634,8 +664,8 @@ bool upnp_client_play_track(const char* wiimIp, uint8_t trackIdx, bool isFixedVo
         }
     }
 
-    Serial.printf("[UPnP] PlayQueue Create=%d, PlayWithIndex(%u/%u)=%d\n",
-                  createCode, startIdx1Based, totalTracks, playCode);
+    log_i("[UPnP] PlayQueue Create=%d, PlayWithIndex(%u/%u)=%d",
+          createCode, startIdx1Based, totalTracks, playCode);
 
     return (playCode == HTTP_CODE_OK);
 }

@@ -122,9 +122,10 @@ String net_strip_lrc_timestamps(const char* lrc) {
     out.reserve(strlen(lrc));
     const char* p = lrc;
     while (*p) {
-        if (*p == '[') {
+        if (*p == '[' && isdigit((unsigned char)p[1])) {
             const char* closeBracket = strchr(p, ']');
-            if (closeBracket && (closeBracket - p) <= 12) {
+            const char* colonPtr = strchr(p, ':');
+            if (closeBracket && colonPtr && colonPtr < closeBracket && (closeBracket - p) <= 12) {
                 p = closeBracket + 1;
                 while (*p == ' ' || *p == '\t') p++;
                 continue;

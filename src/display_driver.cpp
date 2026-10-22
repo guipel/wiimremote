@@ -163,6 +163,11 @@ void display_driver_init() {
         disp_draw_buf2 = (lv_color_t *)heap_caps_malloc(sizeof(lv_color_t) * DRAW_BUF_PIXELS, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
     }
 
+    if (!disp_draw_buf1) {
+        log_e("CRITICAL: Failed to allocate LVGL display buffer!");
+        while (1) delay(1000);
+    }
+
     lv_disp_draw_buf_init(&disp_buf, disp_draw_buf1, disp_draw_buf2, DRAW_BUF_PIXELS);
 
     // 4. Register LVGL Display Driver

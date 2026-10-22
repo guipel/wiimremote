@@ -66,10 +66,10 @@ The system runs on **FreeRTOS** leveraging the ESP32-S3 dual cores to achieve co
          +------------+------------+                    +------------+------------+
          |                         |                    |                         |
     [ LovyanGFX ]             [ LVGL 8.4 ]        [ WiFi & SSDP ]            [ HTTP / UPnP ]
-   • ILI9341V DMA            • 4 Tabs             • UDP 239.255.255.250     • getPlayerStatusEx
+   • ILI9341V DMA            • 4 Tabs             • UDP 239.255.255.250     • getPlayerStatus
    • FT6336G (66 Hz)         • 3 Full-Screen      • NVS Fast-Path Verify    • getMetaInfo
    • Backlight PWM             Views (32px Hdr)   • MediaRenderer:1 &       • MCUKeyShortClick
-   • Internal DMA Buffs      • 6 Live Themes        MediaServer:1 SSDP      • appendTracksInQueueEx
+   • Internal DMA Buffs      • 6 Live Themes        MediaServer:1 SSDP      • CreateQueue & PlayQueue
    • ADC Battery Telemetry   • PSRAM LVGL Heap    • Sync Network Scan       • UPnP ContentDirectory
                              • Extended UTF-8     • Auto Reconnect          • LRCLIB REST API
                                    ^                                              |
@@ -89,12 +89,12 @@ The system runs on **FreeRTOS** leveraging the ESP32-S3 dual cores to achieve co
 - **Zero network requests** in this thread ensures zero UI lag or dropped frames.
 
 ### 2. Network Task (Core 0)
-- Wi-Fi connection manager with automatic non-blocking reconnect and asynchronous background SSID scanning.
+- Wi-Fi connection manager with automatic non-blocking reconnect and synchronous Core 0 SSID scanning.
 - Dual-phase discovery engine:
-  - **Fast-path NVS verification**: Immediately probes previously saved streamer IPs on boot for sub-second reconnection.
+  - **Fast-path NVS verification**: Immediately probes previously saved streamer IPs on boot for sub-second reconnection and prunes unreachable entries on manual rescan.
   - **SSDP M-SEARCH** broadcast to `239.255.255.250:1900` discovering both WiiM/LinkPlay `MediaRenderer:1` streamers and UPnP/DLNA `MediaServer:1` servers (e.g., Asset UPnP, MinimServer, Plex, Synology).
-- Fast LinkPlay HTTP/HTTPS API polling (`command=getPlayerStatusEx`) at 1000ms intervals with persistent connection reuse and UPnP SOAP fallback.
-- UPnP `ContentDirectory:1` SOAP client for browsing local media server hierarchies, resolving embedded track metadata via `BrowseMetadata`, and dispatching multi-track `<PlayList>` XML queues directly to the WiiM streamer (`appendTracksInQueueEx`).
+- Fast LinkPlay HTTP/HTTPS API polling (`command=getPlayerStatus`) at 1000ms intervals with persistent connection reuse and UPnP SOAP fallback.
+- UPnP `ContentDirectory:1` SOAP client for browsing local media server hierarchies, resolving embedded track metadata via `BrowseMetadata`, and dispatching multi-track `<PlayList>` XML queues directly to the WiiM streamer (`CreateQueue` & `PlayQueueWithIndex`).
 - LRCLIB REST client for on-demand lyrics retrieval with synced tag stripping.
 - Volume throttling (150ms) to prevent HTTP request flooding while dragging the volume slider.
 - NVS persistence via ESP32 `Preferences` for retaining saved streamers, fixed-volume lock states, Wi-Fi credentials, brightness, sleep timeouts, and selected UI color theme.
@@ -144,7 +144,7 @@ The network subsystem is decoupled into single-responsibility services:
 ```
 include/net/
 ├── net_utils.h         # Stateless string transcoding (UTF-8, hex, URL, XML, LRC)
-├── wifi_service.h      # Wi-Fi station lifecycle, reconnect loop, async scan
+├── wifi_service.h      # Wi-Fi station lifecycle, reconnect loop, Core 0 scan
 ├── discovery_service.h # SSDP M-SEARCH broadcast (MediaRenderer & MediaServer), device storage
 ├── linkplay_client.h   # TLS socket session, player polling, buffering state, presets, UPnP
 ├── upnp_client.h       # UPnP ContentDirectory SOAP browser & LinkPlay PlayList queue builder
@@ -155,7 +155,7 @@ src/net/
 ├── wifi_service.cpp    # ESP32 Wi-Fi station management & non-blocking reconnect/scan
 ├── discovery_service.cpp # SSDP UDP listener, MediaRenderer/MediaServer verification, device lists
 ├── linkplay_client.cpp # LinkPlay HTTP/HTTPS client & UPnP SOAP transport control
-├── upnp_client.cpp     # UPnP BrowseDirectChildren, BrowseMetadata, and appendTracksInQueueEx
+├── upnp_client.cpp     # UPnP BrowseDirectChildren, BrowseMetadata, CreateQueue & PlayQueueWithIndex
 └── lyrics_client.cpp   # LRCLIB API client with timing tag sanitation
 ```
 
@@ -206,12 +206,12 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View**, a
 4. **UPnP / DLNA Media Browser Tab**:
    - Automatically discovers local UPnP `MediaServer:1` servers (Asset UPnP, MinimServer, Plex, Synology, etc.) via SSDP.
    - Navigates arbitrary folder hierarchies via UPnP `ContentDirectory:1` (`BrowseDirectChildren`) with a persistent 32px breadcrumb/back header and server refresh button.
-   - Tapping any track builds a native LinkPlay `<PlayList>` queue (`appendTracksInQueueEx`) containing the full album/folder starting at the selected track—enabling gapless album playback, accurate `X/Y` track counters, Next/Previous track skipping, and true embedded `TITLE` metadata lookup via UPnP `BrowseMetadata`.
+   - Tapping any track builds a native LinkPlay `<PlayList>` queue (`CreateQueue` & `PlayQueueWithIndex`) containing the full album/folder starting at the selected track—enabling gapless album playback, accurate `X/Y` track counters, Next/Previous track skipping, and true embedded `TITLE` metadata lookup via UPnP `BrowseMetadata`.
 
 ### Full-Screen Settings Views (32px Unified Header)
 1. **Select WiiM Device** (Tap Streamer Name):
    - Lists all WiiM streamers discovered via NVS cache and SSDP broadcast.
-   - Shows device name, IP address, and per-device Fixed Volume lock icon.
+   - Shows device name and IP address, with active streamer indicator.
    - Dedicated refresh button in the right header to trigger SSDP discovery on demand.
 2. **Wi-Fi Networks** (Tap Wi-Fi Icon):
    - Non-blocking touchscreen network scanner displaying available SSIDs with RSSI-colored signal icons and a top `"Forget <SSID>"` action when connected.
@@ -220,7 +220,7 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View**, a
 3. **Power & Display** (Tap Battery Icon):
    - Live battery voltage readout (`V`) inside the 32px top header bar.
    - **Live 180° Orientation Selector (`Rotation: Standard (0°) / Flipped (180°)`)**: Flips both the ILI9341V display and FT6336G touch coordinates immediately and persists the orientation in NVS.
-   - Configurable auto-dimming timeout (dims to 1% brightness on inactivity; first tap wakes display without triggering accidental UI actions).
+   - Configurable auto-dimming timeout (dims to ~10% brightness (`PWM 25/255`) on inactivity; first tap wakes display without triggering accidental UI actions).
    - Configurable auto-sleep timeout and manual **Deep Sleep Now** action.
    - **Live Color Theme Selector (`Theme: <Name>`)**: Cycles instantaneously across 6 RGB565-tuned hi-fi color palettes isolated in [`include/ui/themes_config.h`](include/ui/themes_config.h) (`Cyber Cyan`, `Tube Amber`, `Naim Emerald`, `McIntosh Blue`, `Velvet Rose`, `Studio Crimson`) and persists the selection in NVS.
    - ESP32-S3 deep sleep with capacitive touch-to-wake interrupt support (`FT6336G` monitor mode + `PA_EN` GPIO hold).
@@ -233,21 +233,21 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View**, a
 | Operation | Endpoint / Action | Description |
 | :--- | :--- | :--- |
 | **Device Identification** | `GET /httpapi.asp?command=getStatusEx` | Discovers device name, UUID, and MAC |
-| **Playback Telemetry** | `GET /httpapi.asp?command=getPlayerStatusEx` | Polls play state, position, duration, mode, and volume |
+| **Playback Telemetry** | `GET /httpapi.asp?command=getPlayerStatus` | Polls play state, position, duration, mode, and volume |
 | **Track Metadata** | `GET /httpapi.asp?command=getMetaInfo` | Retrieves title, artist, album, sample rate, and bit depth |
 | **Presets List** | `GET /httpapi.asp?command=getPresetInfo` | Retrieves 12 preset names and mappings |
-| **Play / Pause Toggle** | `GET /httpapi.asp?command=setPlayerCmd:onepause` | Toggles playback state |
-| **Resume Playback** | `GET /httpapi.asp?command=setPlayerCmd:resume` | Resumes playback from pause without restarting track |
+| **Pause Playback** | `GET /httpapi.asp?command=setPlayerCmd:pause` | Pauses active playback |
+| **Resume / Start Playback** | `GET /httpapi.asp?command=setPlayerCmd:resume` / `play` | Resumes playback from pause or starts stopped queue |
 | **Next Track** | `GET /httpapi.asp?command=setPlayerCmd:next` | Skips to next track in queue |
 | **Previous Track** | `GET /httpapi.asp?command=setPlayerCmd:prev` | Skips to previous track |
-| **Seek Position** | `GET /httpapi.asp?command=setPlayerCmd:seek:<SECS>` | Seeks to timestamp in seconds |
+| **Seek Position** | `POST AVTransport:1#Seek (REL_TIME)` | Seeks to target `HH:MM:SS` timestamp via UPnP AVTransport |
 | **Set Volume** | `GET /httpapi.asp?command=setPlayerCmd:vol:<VAL>` | Adjusts volume (0..100) |
 | **Set Mute** | `GET /httpapi.asp?command=setPlayerCmd:mute:<1\|0>` | Toggles mute state |
 | **Input Source Switch** | `GET /httpapi.asp?command=setPlayerCmd:switchmode:<MODE>` | Switches input (`wifi`, `bluetooth`, `line-in`, `optical`) |
 | **Trigger Preset** | `GET /httpapi.asp?command=MCUKeyShortClick:<INDEX>` | Recalls preset slot (1..12) |
 | **UPnP Browse Folder** | `POST ContentDirectory:1#Browse (BrowseDirectChildren)` | Lists containers and audio items on a DLNA/UPnP MediaServer |
 | **UPnP Track Metadata** | `POST ContentDirectory:1#Browse (BrowseMetadata)` | Resolves embedded track title/artist/album tags by `ObjectID` |
-| **Load Album Queue** | `POST PlayQueue:1#AppendTracksInQueueEx` | Pushes multi-track `<PlayList>` XML queue and starts playback |
+| **Load Album Queue** | `POST PlayQueue:1#CreateQueue` & `PlayQueueWithIndex` | Pushes multi-track `<PlayList>` XML queue and starts playback |
 
 ### External Lyrics API (LRCLIB)
 | Operation | Endpoint | Description |

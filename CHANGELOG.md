@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.1] - 2026-10-22
+
+### Fixed
+- **Clean-Checkout Platform Compatibility & Cross-SDK Reproducibility (`80f2e2c`)**:
+  - Pinned `platform = espressif32 @ 7.1.2` in `platformio.ini` for deterministic clean checkouts across Windows, macOS, and Linux.
+  - Renamed `class NetworkManager` to `class WiiMNetworkManager` (`include/network_manager.h`, `src/network_manager.cpp`) to eliminate symbol collisions with Arduino-ESP32 3.x's global `NetworkManager`.
+  - Added `#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)` compatibility around `esp_task_wdt_reconfigure(&wdt_cfg)` / `esp_task_wdt_init(15, true)` in `src/main.cpp` so the firmware compiles cleanly under both ESP-IDF 4.x (`espressif32 @ 7.1.2`) and ESP-IDF 5.x (`espressif32 @ 8.0.0`).
+  - Added `-UCORE_DEBUG_LEVEL` before `-DCORE_DEBUG_LEVEL=3` in `platformio.ini` so serial error/warning/info diagnostics (`log_e`, `log_w`, `log_i`) work out of the box without macro redefinition warnings.
+- **Task Watchdog (WDT) Margin & UPnP Offline Server Abort (`80f2e2c`)**:
+  - Added immediate failure abort in `upnp_client_play_track()` (`src/net/upnp_client.cpp`) when a `BrowseMetadata` query fails (`code != HTTP_CODE_OK` or `!metaHttp.begin(...)`), reducing worst-case offline UPnP server delay from 96s down to ~1s and preventing 15s WDT resets on `NetTask`.
+  - Reduced LRCLIB HTTP connect/read timeouts (`src/net/lyrics_client.cpp`) to `3500ms`/`4000ms` and UPnP `BrowseDirectChildren` timeout (`src/net/upnp_client.cpp`) to `4000ms`.
+- **Inter-Task Command Queue (`xQueueUiCmd`) Backpressure & UI State Guards (`80f2e2c`)**:
+  - Added 60ms UI-side volume command throttling in `src/ui/ui_player.cpp` (`event_slider_vol`) while always dispatching the final volume on release, preventing volume slider dragging from flooding the 16-slot `xQueueUiCmd` queue.
+  - Guarded UPnP folder navigation (`s_nav_depth++`) and track playback tab-switching in `src/ui/ui_browser.cpp` on `xQueueSend(..., pdMS_TO_TICKS(50)) == pdTRUE` so UI state never advances if a command fails to enqueue.
+- **SSDP Device & UPnP Server Lifecycle Management (`80f2e2c`)**:
+  - Enabled periodic 60s background SSDP re-discovery in `src/network_manager.cpp` when awake even after initial devices are found.
+  - Updated `discovery_service_trigger_rescan()` (`src/net/discovery_service.cpp`) to prune unreachable NVS-cached streamers that fail verification, updated `add_or_update_device()` to refresh `uuid`, `name`, and `is_fixed_volume` when a DHCP IP is reassigned to a different device, and added FIFO eviction when `MAX_DISCOVERED_DEVICES` is full.
+  - Added `upnp_client_clear_servers()` (`include/net/upnp_client.h`, `src/net/upnp_client.cpp`) invoked on `CMD_UPNP_SCAN_SERVERS` so manual UPnP server refreshes purge stale servers, plus FIFO eviction when `MAX_UPNP_SERVERS` is full.
+- **Track Change Detection, Lyrics Validation, LRC Section Headers & UI Edge Cases (`80f2e2c`)**:
+  - Added `album` (`rawAlbum`) and queue index (`rawPlicurr`) to track-change detection in `linkplay_client_poll_active()` (`src/net/linkplay_client.cpp`) so tracks with identical titles trigger metadata and duration updates.
+  - Checked both `title` and `artist` in `ui_lyrics_set_content()` (`src/ui/ui_lyrics.cpp`) before accepting asynchronous lyrics responses.
+  - Restricted `net_strip_lrc_timestamps()` (`src/net/net_utils.cpp`) to only strip `[...]` tags starting with a digit and containing `:`, preserving `[Chorus]` and `[Verse 1]` section headers.
+  - Handled `LV_EVENT_PRESS_LOST` on the progress bar (`src/ui/ui_player.cpp`), restored variable-volume slider state in `ui_player_set_fixed_volume_mode(false)`, and applied `dev.is_fixed_volume` immediately on device selection in `src/ui/ui_core.cpp`.
+- **PSRAM UPnP Browse Allocation, HTTPS Stream URLs & Boot Safety Checks (`80f2e2c`)**:
+  - Allocated `UpnpBrowseList` in PSRAM (`alloc_browse_list()` in `src/net/upnp_client.cpp`), raised `MAX_UPNP_ITEMS` from `64` to `128` (`include/model.h`), and accepted both `http://` and `https://` UPnP stream URLs.
+  - Added null/return-value checks for `disp_draw_buf1` (`src/display_driver.cpp`) and `xTaskCreatePinnedToCore` (`src/main.cpp`), and eliminated all C++20 enum bitwise-OR and `snprintf` truncation warnings across `src/`.
+- **Documentation Alignment (`80f2e2c`)**:
+  - Aligned `README.md` architecture diagrams and API reference tables with the exact implementation (`getPlayerStatus`, `setPlayerCmd:pause`/`resume`/`play`, `AVTransport:1#Seek`, `PlayQueue:1#CreateQueue` & `PlayQueueWithIndex`, synchronous Core 0 Wi-Fi scanning, and ~10% `PWM 25/255` auto-dim brightness).
+
+---
+
 ## [1.0.0] - 2026-10-22
 
 ### Added

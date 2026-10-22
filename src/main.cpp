@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <esp_heap_caps.h>
 #include <esp_task_wdt.h>
+#include <esp_idf_version.h>
 #include <driver/gpio.h>
 #include "config.h"
 #include "model.h"
@@ -75,7 +76,16 @@ void setup() {
     hardware_pins_init();
 
     // 2. Initialize Task Watchdog Timer (15s timeout, panic on hang)
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0)
+    esp_task_wdt_config_t wdt_cfg = {
+        .timeout_ms = 15000,
+        .idle_core_mask = (1 << portNUM_PROCESSORS) - 1,
+        .trigger_panic = true
+    };
+    esp_task_wdt_reconfigure(&wdt_cfg);
+#else
     esp_task_wdt_init(15, true);
+#endif
 
     // 3. PSRAM & Memory Diagnostics
     log_i("Total Heap:  %u bytes", ESP.getHeapSize());
@@ -101,7 +111,7 @@ void setup() {
     power_manager_init();
 
     // 6. Spawn Network & Polling Task on Core 0
-    xTaskCreatePinnedToCore(
+    BaseType_t netTaskOk = xTaskCreatePinnedToCore(
         network_task_entry,
         "NetTask",
         NET_TASK_STACK_SIZE,
@@ -112,7 +122,7 @@ void setup() {
     );
 
     // 7. Spawn UI & Display Task on Core 1
-    xTaskCreatePinnedToCore(
+    BaseType_t uiTaskOk = xTaskCreatePinnedToCore(
         ui_task_entry,
         "UiTask",
         UI_TASK_STACK_SIZE,
@@ -121,6 +131,11 @@ void setup() {
         nullptr,
         UI_TASK_CORE
     );
+
+    if (netTaskOk != pdPASS || uiTaskOk != pdPASS) {
+        log_e("CRITICAL: Failed to start FreeRTOS tasks (NetTask=%d, UiTask=%d)!", (int)netTaskOk, (int)uiTaskOk);
+        while (1) delay(1000);
+    }
 
     log_i("FreeRTOS dual-core tasks started successfully");
 }

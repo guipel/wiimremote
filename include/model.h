@@ -11,7 +11,7 @@
 #define MAX_DISCOVERED_DEVICES  12
 #define MAX_PRESETS             12
 #define MAX_UPNP_SERVERS        6
-#define MAX_UPNP_ITEMS          64
+#define MAX_UPNP_ITEMS          128
 
 enum PlayState {
     PLAY_STATE_UNKNOWN = 0,

@@ -108,10 +108,14 @@ void ui_lyrics_apply_theme() {
 }
 
 void ui_lyrics_set_content(const LyricsInfo& info) {
-    // If lyrics arrived for a track that is no longer playing, discard them
-    if (strlen(s_current_track_meta.title) > 0 && strlen(info.title) > 0 &&
-        strcmp(info.title, s_current_track_meta.title) != 0) {
-        log_w("Discarding stale lyrics for '%s' (currently playing: '%s')", info.title, s_current_track_meta.title);
+    // If lyrics arrived for a track or artist that is no longer playing, discard them
+    bool titleMismatch = (strlen(s_current_track_meta.title) > 0 && strlen(info.title) > 0 &&
+                          strcmp(info.title, s_current_track_meta.title) != 0);
+    bool artistMismatch = (strlen(s_current_track_meta.artist) > 0 && strlen(info.artist) > 0 &&
+                           strcmp(info.artist, s_current_track_meta.artist) != 0);
+    if (titleMismatch || artistMismatch) {
+        log_w("Discarding stale lyrics for '%s - %s' (currently playing: '%s - %s')",
+              info.title, info.artist, s_current_track_meta.title, s_current_track_meta.artist);
         return;
     }
 
