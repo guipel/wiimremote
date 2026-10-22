@@ -139,10 +139,7 @@ void ui_header_update_battery(uint32_t bat_mv) {
     const char* symbol = LV_SYMBOL_BATTERY_FULL;
     lv_color_t color = COLOR_TEXT_PRIMARY;
 
-    if (bat_mv >= BAT_VOLT_CHARGE_MV) {
-        symbol = LV_SYMBOL_CHARGE;
-        color = COLOR_ACCENT;
-    } else if (bat_mv >= BAT_VOLT_FULL_MV) {
+    if (bat_mv >= BAT_VOLT_FULL_MV) {
         symbol = LV_SYMBOL_BATTERY_FULL;
         color = COLOR_TEXT_PRIMARY;
     } else if (bat_mv >= BAT_VOLT_HIGH_MV) {

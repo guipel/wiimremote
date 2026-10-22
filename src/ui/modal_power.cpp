@@ -12,6 +12,7 @@ static lv_obj_t* s_lbl_title = nullptr;
 static lv_obj_t* list_power = nullptr;
 static lv_obj_t* s_btn_volt = nullptr;
 static lv_obj_t* s_btn_theme = nullptr;
+static lv_obj_t* s_btn_rotate = nullptr;
 static lv_obj_t* s_btn_bright = nullptr;
 static lv_obj_t* s_btn_dim = nullptr;
 static lv_obj_t* s_btn_sleep = nullptr;
@@ -19,6 +20,7 @@ static lv_obj_t* s_btn_sleep_now = nullptr;
 
 static lv_obj_t* lbl_row_voltage = nullptr;
 static lv_obj_t* lbl_row_theme = nullptr;
+static lv_obj_t* lbl_row_rotate = nullptr;
 static lv_obj_t* lbl_row_brightness = nullptr;
 static lv_obj_t* lbl_row_dim = nullptr;
 static lv_obj_t* lbl_row_sleep = nullptr;
@@ -42,6 +44,11 @@ static void refresh_row_labels() {
         char buf[48];
         snprintf(buf, sizeof(buf), "Theme: %s", ui_theme_get().name);
         lv_label_set_text(lbl_row_theme, buf);
+    }
+    if (lbl_row_rotate) {
+        lv_label_set_text(lbl_row_rotate, power_manager_get_rotation_180()
+            ? "Rotation: Flipped (180\xC2\xB0)"
+            : "Rotation: Standard (0\xC2\xB0)");
     }
     if (lbl_row_brightness) {
         char buf[32];
@@ -69,6 +76,11 @@ static void event_row_theme(lv_event_t* e) {
     ui_theme_set_idx(next_idx);
     power_manager_set_theme_idx(next_idx);
     ui_apply_theme();
+    refresh_row_labels();
+}
+
+static void event_row_rotate(lv_event_t* e) {
+    power_manager_set_rotation_180(!power_manager_get_rotation_180());
     refresh_row_labels();
 }
 
@@ -146,22 +158,27 @@ void modal_power_init(lv_obj_t* parent) {
     lbl_row_theme = lv_obj_get_child(s_btn_theme, 1);
     lv_obj_add_event_cb(s_btn_theme, event_row_theme, LV_EVENT_CLICKED, nullptr);
 
-    // Row 3: Screen Brightness (tap to cycle 20%..100%)
+    // Row 3: Screen Orientation (tap to toggle 0° / 180°)
+    s_btn_rotate = lv_list_add_btn(list_power, LV_SYMBOL_REFRESH, "Rotation: Standard (0\xC2\xB0)");
+    lbl_row_rotate = lv_obj_get_child(s_btn_rotate, 1);
+    lv_obj_add_event_cb(s_btn_rotate, event_row_rotate, LV_EVENT_CLICKED, nullptr);
+
+    // Row 4: Screen Brightness (tap to cycle 20%..100%)
     s_btn_bright = lv_list_add_btn(list_power, LV_SYMBOL_SETTINGS, "Brightness: 80%");
     lbl_row_brightness = lv_obj_get_child(s_btn_bright, 1);
     lv_obj_add_event_cb(s_btn_bright, event_row_brightness, LV_EVENT_CLICKED, nullptr);
 
-    // Row 4: Screen Auto-Dim (tap to cycle timeout)
+    // Row 5: Screen Auto-Dim (tap to cycle timeout)
     s_btn_dim = lv_list_add_btn(list_power, LV_SYMBOL_EYE_CLOSE, "Auto-Dim: 30 seconds");
     lbl_row_dim = lv_obj_get_child(s_btn_dim, 1);
     lv_obj_add_event_cb(s_btn_dim, event_row_dim, LV_EVENT_CLICKED, nullptr);
 
-    // Row 5: Auto Deep Sleep (tap to cycle timeout)
+    // Row 6: Auto Deep Sleep (tap to cycle timeout)
     s_btn_sleep = lv_list_add_btn(list_power, LV_SYMBOL_LOOP, "Auto-Sleep: 1 minute");
     lbl_row_sleep = lv_obj_get_child(s_btn_sleep, 1);
     lv_obj_add_event_cb(s_btn_sleep, event_row_sleep, LV_EVENT_CLICKED, nullptr);
 
-    // Row 6: Enter Deep Sleep Now
+    // Row 7: Enter Deep Sleep Now
     s_btn_sleep_now = lv_list_add_btn(list_power, LV_SYMBOL_POWER, "Enter Deep Sleep Now");
     lv_obj_add_event_cb(s_btn_sleep_now, event_row_sleep_now, LV_EVENT_RELEASED, nullptr);
 
@@ -181,6 +198,7 @@ void modal_power_apply_theme() {
 
     if (s_btn_volt) ui_style_flat_list_btn(s_btn_volt, COLOR_ACCENT);
     if (s_btn_theme) ui_style_flat_list_btn(s_btn_theme, COLOR_ACCENT);
+    if (s_btn_rotate) ui_style_flat_list_btn(s_btn_rotate, COLOR_ACCENT);
     if (s_btn_bright) ui_style_flat_list_btn(s_btn_bright, COLOR_ACCENT);
     if (s_btn_dim) ui_style_flat_list_btn(s_btn_dim, COLOR_ACCENT);
     if (s_btn_sleep) ui_style_flat_list_btn(s_btn_sleep, COLOR_ACCENT);

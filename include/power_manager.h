@@ -19,4 +19,7 @@ uint8_t power_manager_get_brightness_pct();
 void power_manager_set_theme_idx(uint8_t idx);
 uint8_t power_manager_get_theme_idx();
 
+void power_manager_set_rotation_180(bool flipped);
+bool power_manager_get_rotation_180();
+
 void power_manager_enter_deep_sleep();

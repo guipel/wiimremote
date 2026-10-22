@@ -14,7 +14,6 @@ void wifi_service_forget();
 void wifi_service_reconnect();
 
 bool wifi_service_is_connected();
-bool wifi_service_is_scanning();
 int8_t wifi_service_get_rssi();
 String wifi_service_get_ip();
 String wifi_service_get_ssid();
