@@ -54,6 +54,45 @@ Built for **ESP32-S3 (N16R8: 16MB Flash, 8MB Octal OPI PSRAM)** with an **ILI934
 
 ---
 
+## 🚀 Installation & Getting Started
+
+> 📖 **First time building this remote?** Follow the step-by-step **[Beginner's Installation & Setup Guide (`INSTALL.md`)](INSTALL.md)**—no soldering, no coding, and no software installation required!
+
+### 1. Recommended Hardware
+- **Touchscreen Board**: [Hosyond 2.8" ESP32-S3 Capacitive Touch Display (ILI9341V 240x320 + FT6336G, N16R8)](https://www.amazon.com/dp/B0FKG7WRWV)
+- **Rechargeable Battery**: [3.7V 3000mAh Li-Po Battery (JST 1.25mm 2-Pin)](https://www.amazon.com/dp/B0DK5BBKM5) *(Always verify `+` Red / `-` Black polarity before plugging in—see [`INSTALL.md`](INSTALL.md))*
+
+### 2. Option A: Zero-Install Web Browser Flasher (Recommended for All Users)
+You can flash the pre-built release firmware directly from **Google Chrome** or **Microsoft Edge** without installing any development tools:
+1. Download **`wiimremote-factory.bin`** from the **[Latest GitHub Release](https://github.com/guipel/wiimremote/releases/latest)** (or directly from [`firmware/wiimremote-factory.bin`](firmware/wiimremote-factory.bin)).
+2. Connect the ESP32-S3 display board to your computer via a **USB-C data cable**.
+3. Open **[Espressif Web Flasher (`esptool-js`)](https://espressif.github.io/esptool-js/)** in Chrome or Edge and click **`Connect`** (under *Program*).
+4. Set **Flash Address** to **`0x0`**, choose **`wiimremote-factory.bin`**, and click **`Program`**.
+5. Press the **`RST`** button on the board once programming completes—then connect to Wi-Fi and select your WiiM device right on the touchscreen!
+
+### 3. Option B: Building from Source (Developers)
+If you want to customize the code or build from source using [PlatformIO](https://platformio.org/):
+
+```bash
+# Build firmware (also generates firmware/wiimremote-factory.bin)
+pio run
+
+# Flash directly to the connected ESP32-S3
+pio run --target upload
+
+# Monitor serial output
+pio run --target monitor
+```
+
+*(Optional)* Wi-Fi is configured directly on the touchscreen on first boot, or you can pre-populate fallback credentials in `include/secrets.h`:
+```cpp
+#pragma once
+#define WIFI_SSID       "YourWiFiNetworkName"
+#define WIFI_PASSWORD   "YourWiFiPassword"
+```
+
+---
+
 ## 🏗 Architecture & Multitasking Design
 
 The system runs on **FreeRTOS** leveraging the ESP32-S3 dual cores to achieve complete decoupling between network operations and the UI:
@@ -258,40 +297,6 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View**, a
 | Operation | Endpoint | Description |
 | :--- | :--- | :--- |
 | **Fetch Lyrics** | `GET https://lrclib.net/api/get?track_name=...&artist_name=...` | Retrieves plain and synced LRC lyrics on demand |
-
----
-
-## 🚀 Getting Started
-
-> 📖 **New to ESP32 or PlatformIO?** Read the step-by-step **[Beginner's Installation & Setup Guide (`INSTALL.md`)](INSTALL.md)**—no soldering or coding skills required!
-
-### 1. Prerequisites
-- [PlatformIO IDE](https://platformio.org/) (VSCode extension or CLI).
-- **Touchscreen Board**: [Hosyond 2.8" ESP32-S3 Capacitive Touch Display (ILI9341V 240x320 + FT6336G, N16R8)](https://www.amazon.com/dp/B0FKG7WRWV)
-- **Battery**: [3.7V 3000mAh Li-Po Rechargeable Battery (JST 1.25mm 2-Pin)](https://www.amazon.com/dp/B0DK5BBKM5)
-
-### 2. Wi-Fi Configuration
-You can configure Wi-Fi directly on the device using the touchscreen keyboard on first boot!
-
-Alternatively, create an `include/secrets.h` file (or edit `include/config.h`) for fallback credentials:
-```cpp
-#pragma once
-#define WIFI_SSID       "YourWiFiNetworkName"
-#define WIFI_PASSWORD   "YourWiFiPassword"
-```
-
-### 3. Build & Flash
-Open a terminal in the project directory and run:
-```bash
-# Build the project
-pio run
-
-# Flash to the ESP32-S3
-pio run --target upload
-
-# Monitor serial output
-pio run --target monitor
-```
 
 ---
 

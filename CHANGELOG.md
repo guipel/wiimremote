@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.0.0] - 2026-10-22
 
 ### Added
 - **UPnP / DLNA Media Server Browser & Native LinkPlay Album Queue (`505394c`)**:
@@ -34,8 +34,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Critical Low-Battery Protection & Task Watchdog Timer**:
   - Added a 3-sample consecutive `<= 3350 mV` (`BAT_VOLT_CRIT_MV`) cutoff in `src/ui/ui_core.cpp` that automatically enters deep sleep to protect the Li-Po cell.
   - Subscribed both `UiTask` (Core 1) and `NetTask` (Core 0) to the 15-second ESP32 Task Watchdog Timer (`esp_task_wdt`).
-- **Beginner's Installation & Setup Guide (`INSTALL.md`)**:
-  - Added a jargon-free, step-by-step hardware assembly and software installation manual (`INSTALL.md`) with exact links to the Hosyond 2.8" ESP32-S3 touchscreen board and 3000mAh Li-Po battery, battery polarity safety check, VS Code + PlatformIO upload walkthrough, and touchscreen setup instructions.
+- **Beginner's Installation & Setup Guide (`INSTALL.md`) & Merged Factory Firmware (`scripts/merge_factory_bin.py`)**:
+  - Added a jargon-free, step-by-step hardware assembly and software installation manual (`INSTALL.md`) with exact links to the Hosyond 2.8" ESP32-S3 touchscreen board and 3000mAh Li-Po battery, battery polarity safety check, Zero-Install Web Browser Flasher walkthrough (`esptool-js`), and touchscreen setup instructions.
+  - Added a post-build PlatformIO script (`scripts/merge_factory_bin.py`) that merges `bootloader.bin` (`0x0`), `partitions.bin` (`0x8000`), `boot_app0.bin` (`0xe000`), and `firmware.bin` (`0x10000`) into a single `firmware/wiimremote-factory.bin` image flashable at offset `0x0`.
 - **UI/UX Refinements**:
   - Swallowed the initial wake-from-dim touch gesture in `src/display_driver.cpp` until finger release so waking the screen does not trigger underlying buttons or sliders.
   - Added backdrop tap-to-close on all three modals (`modal_device.cpp`, `modal_wifi.cpp`, `modal_power.cpp`).
@@ -93,7 +94,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.4.0] - 2026-09-19
+## [0.7.0] - 2026-09-19
 
 ### Changed & Refactored
 - **Modular Network Architecture Decomposition**:
@@ -111,7 +112,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.3.0] - 2026-09-19
+## [0.6.0] - 2026-09-19
 
 ### Added
 - **Transient Buffering State (`PLAY_STATE_BUFFERING`)**:
@@ -143,7 +144,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Formatted volume percentage label with `COLOR_TEXT_MUTED`, harmonizing it with the track counter (`a6c131f`).
   - Moved active tab cyan accent line on the bottom navigation bar from the top of the tab to the bottom edge (`LV_BORDER_SIDE_BOTTOM`) (`a6c131f`).
 - **Documentation Overhaul**:
-  - Brought `README.md` fully up to date with the v1.3.0 release, documenting hardware telemetry (GPIO 9 battery ADC, touch-to-wake interrupt), 3-tab and 3-modal navigation hierarchy, modular UI decomposition, and API endpoints.
+  - Brought `README.md` fully up to date with the v0.6.0 milestone, documenting hardware telemetry (GPIO 9 battery ADC, touch-to-wake interrupt), 3-tab and 3-modal navigation hierarchy, modular UI decomposition, and API endpoints.
 
 ### Fixed
 - **Mute & Input Button Touch Interception**:
@@ -152,7 +153,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.2.0] - 2026-09-18
+## [0.5.0] - 2026-09-18
 
 ### Added
 - **Synced Lyrics Fallback**: Added regular expression parsing to automatically strip `[mm:ss.xx]` timing tags from synced LRC lyrics fetched from LRCLIB, providing full lyrics display when plain text variants are unavailable (`9f2a72a`).
@@ -186,7 +187,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.1.0] - 2026-09-15
+## [0.4.0] - 2026-09-15
 
 ### Added
 - **Power Management Subsystem (`power_manager.cpp`, `power_manager.h`)**:
@@ -212,7 +213,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.0.0] - 2026-09-14
+## [0.3.0] - 2026-09-14
 
 ### Added
 - **Three-Tab User Interface Layout**:
@@ -226,7 +227,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.9.0] - 2026-09-13
+## [0.2.0] - 2026-09-13
 
 ### Added
 - **Dynamic Fixed vs. Variable Volume Detection**:

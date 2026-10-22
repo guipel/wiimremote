@@ -11,7 +11,7 @@ Welcome! This guide walks you step-by-step through assembling and installing the
 1. **Touchscreen Board**: [Hosyond 2.8" ESP32-S3 Capacitive Touch Display (`240x320` IPS)](https://www.amazon.com/dp/B0FKG7WRWV)
 2. **Rechargeable Battery**: [3.7V 3000mAh Li-Po Battery with JST 1.25mm 2-Pin Plug](https://www.amazon.com/dp/B0DK5BBKM5)
 3. **USB-C Data Cable**: Any standard USB-C cable that supports **data transfer** (note: some cheap cables that come with power banks or lamps are "charge-only" and won't let your computer talk to the board).
-4. **A Computer**: Windows, Mac, or Linux.
+4. **A Computer with Google Chrome or Microsoft Edge**: Windows, Mac, or Linux (no software installation required!).
 
 ---
 
@@ -33,32 +33,28 @@ Before plugging the battery into the back of the display board, **always check t
 
 ---
 
-## 3. Installing the Remote Software on the Board
+## 3. Installing the Remote Software on the Board (No Software Install Required!)
 
-You only need to do this once!
+You only need to do this once, and it works right inside your web browser (**Google Chrome** or **Microsoft Edge**)!
 
-### Step 1: Install Visual Studio Code (Free)
-1. Download and install **[Visual Studio Code](https://code.visualstudio.com/)** for your computer (Windows, Mac, or Linux).
-2. Open Visual Studio Code once it finishes installing.
+### Step 1: Download the Ready-to-Flash Firmware File
+1. Go to the **[Latest GitHub Release page](https://github.com/guipel/wiimremote/releases/latest)** (or open the **[`firmware/wiimremote-factory.bin`](firmware/wiimremote-factory.bin)** file directly in this repository).
+2. Click on **`wiimremote-factory.bin`** to download it to your computer (it will save to your `Downloads` folder).
 
-### Step 2: Add the "PlatformIO" Helper Extension
-1. Look at the vertical bar on the far-left side of Visual Studio Code and click the **Extensions** icon (it looks like **4 little squares**).
-2. In the search box at the top, type **`PlatformIO IDE`**.
-3. Click the blue **Install** button next to **PlatformIO IDE** (by PlatformIO).
-4. **Wait 1 to 2 minutes** while it installs in the background. When it is finished, you will see a tiny **Alien Ant head icon** appear on the left sidebar and a row of small icons (a house, a checkmark, and a right-pointing arrow `→`) along the **bottom blue bar** of the window.
-
-### Step 3: Download & Open This Project
-1. On the main GitHub page for this project, click the green **`<> Code`** button and choose **Download ZIP** (or clone it if you use Git).
-2. **Unzip (Extract)** the downloaded `.zip` file to a normal folder on your computer (for example, your `Documents` or `Desktop` folder).
-3. In Visual Studio Code, click **`File` → `Open Folder...`** in the top menu and select the unzipped **`wiimremote`** folder.
-   - *(If a prompt asks "Do you trust the authors of the files in this folder?", click **Yes, I trust the authors**).*
-
-### Step 4: Plug In & Click Upload!
+### Step 2: Plug In Your Board & Open the Web Flasher
 1. Plug your ESP32-S3 display board into your computer using your **USB-C data cable**.
-2. Wait about 30 seconds for PlatformIO to finish loading the project (you will see status messages in the bottom bar).
-3. Look at the **bottom blue status bar** of Visual Studio Code and click the **Right Arrow (`→`)** icon (if you hover your mouse over it, it says **`PlatformIO: Upload`**).
-4. PlatformIO will automatically download all required display libraries, build the software, and send it to your screen. This takes about **1 to 2 minutes** the first time.
-5. When you see **`[SUCCESS]`** in the terminal panel at the bottom, your WiiM Remote will restart automatically and light up!
+2. Open **Google Chrome** or **Microsoft Edge** on your computer and go to the official Espressif Web Flasher:
+   👉 **[https://espressif.github.io/esptool-js/](https://espressif.github.io/esptool-js/)**
+3. Under the **Program** section at the top of the page, click the **`Connect`** button.
+4. A small browser pop-up will appear listing your computer's USB ports. Select the port that says **`USB JTAG/serial debug unit`** (or `USB Serial` / `COM...` / `cu.usbmodem...`) and click **Connect**.
+
+### Step 3: Select the File & Click Program!
+1. In the table under **Program**:
+   - Change the **Flash Address** box on the left from `0x1000` to **`0x0`** *(make sure it is **`0x0`**, not `0x1000`!)*.
+   - Click **`Choose File`** on the right and select the **`wiimremote-factory.bin`** file you downloaded in Step 1.
+2. Click the **`Program`** button!
+3. You will see a progress bar (`Writing at 0x000...`) for about **15 to 20 seconds**.
+4. Once the console box at the bottom says **`Leaving... Hard resetting via RTS pin...`**, press the tiny **`RST`** (Reset) button on the back edge of your display board (or simply unplug and replug the USB-C cable). Your WiiM Remote will immediately light up!
 
 ---
 
@@ -103,8 +99,11 @@ Along the bottom of the screen, you have 4 tabs:
 
 - **My Wi-Fi network doesn't show up in the scan list!**
   - Like most smart home devices, the ESP32-S3 chip connects to **2.4 GHz Wi-Fi networks** (not 5 GHz-only networks). Make sure your router has 2.4 GHz enabled.
-- **Clicking Upload (`→`) in VS Code says "Could not open port" or "No serial port found".**
+- **No USB port shows up when I click `Connect` in the Web Flasher!**
+  - **Use Chrome or Edge**: Make sure you are using **Google Chrome** or **Microsoft Edge** (Safari and Firefox do not support USB WebSerial).
   - **Check your USB-C cable**: Try a different USB-C cable—many cables included with small gadgets only have power wires inside and no data wires.
-  - **Manual Boot Mode (if needed)**: On the back/side of the board, there are two tiny buttons labeled **`BOOT`** and **`RST`** (Reset). Hold down **`BOOT`**, press and release **`RST`** once, then let go of **`BOOT`**. Now click the **Upload (`→`)** arrow in VS Code again.
+  - **Manual Boot Mode (if needed)**: On the back/side of the board, there are two tiny buttons labeled **`BOOT`** and **`RST`** (Reset). Hold down **`BOOT`**, press and release **`RST`** once, then let go of **`BOOT`**. Now click **`Connect`** in the Web Flasher again.
+- **I flashed the file, pressed `RST`, and the screen didn't turn on!**
+  - Double-check that the **Flash Address** in the Web Flasher was set to **`0x0`** (the page defaults to `0x1000`, which will not boot). Set Flash Address to **`0x0`** and click **`Program`** again.
 - **The screen Doesn't Turn On When Unplugged from USB-C.**
   - Check that the tiny slide switch next to the white battery plug on the board is switched to **`ON`**, and give the battery 30–60 minutes on USB-C power to charge up.
