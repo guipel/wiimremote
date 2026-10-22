@@ -14,6 +14,34 @@
 // External Queue handles
 extern QueueHandle_t xQueueUiState;
 
+// 10x12 Pixel Alpha Bitmap for clean Padlock Icon
+static const uint8_t lock_alpha_map[120] = {
+    0, 0, 255, 255, 255, 255, 255, 255, 0, 0,
+    0, 255, 255, 0, 0, 0, 0, 255, 255, 0,
+    0, 255, 255, 0, 0, 0, 0, 255, 255, 0,
+    0, 255, 255, 0, 0, 0, 0, 255, 255, 0,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 0, 0, 255, 255, 255, 255,
+    255, 255, 255, 255, 0, 0, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+    0, 255, 255, 255, 255, 255, 255, 255, 255, 0
+};
+
+const lv_img_dsc_t img_lock_dsc = {
+    .header = {
+        .cf = LV_IMG_CF_ALPHA_8BIT,
+        .always_zero = 0,
+        .reserved = 0,
+        .w = 10,
+        .h = 12,
+    },
+    .data_size = sizeof(lock_alpha_map),
+    .data = lock_alpha_map,
+};
+
 static uint8_t s_active_theme_idx = 0;
 
 uint8_t ui_theme_get_idx() {
@@ -117,8 +145,6 @@ void ui_apply_theme() {
 void ui_init() {
     ui_theme_set_idx(power_manager_get_theme_idx());
 
-    lv_obj_set_style_bg_color(lv_scr_act(), COLOR_BG, 0);
-
     // 1. Build top persistent header
     ui_header_init(lv_scr_act());
 
@@ -126,29 +152,22 @@ void ui_init() {
     tabview = lv_tabview_create(lv_scr_act(), LV_DIR_BOTTOM, 28);
     lv_obj_set_size(tabview, 240, 288);
     lv_obj_align(tabview, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_bg_color(tabview, COLOR_BG, 0);
 
-    // Style the Tabview Navigation Bar
+    // Style the Tabview Navigation Bar layout & geometry
     lv_obj_t* tab_btns = lv_tabview_get_tab_btns(tabview);
-    lv_obj_set_style_bg_color(tab_btns, COLOR_SURFACE, 0);
     lv_obj_set_style_pad_all(tab_btns, 0, 0);
     lv_obj_set_style_pad_gap(tab_btns, 0, 0);
     lv_obj_set_style_border_side(tab_btns, LV_BORDER_SIDE_TOP, 0);
-    lv_obj_set_style_border_color(tab_btns, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_width(tab_btns, 1, 0);
 
-    // Tab buttons (LV_PART_ITEMS) styling
+    // Tab buttons (LV_PART_ITEMS) layout & typography
     lv_obj_set_style_text_font(tab_btns, &lv_font_montserrat_10, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(tab_btns, COLOR_TEXT_MUTED, LV_PART_ITEMS);
     lv_obj_set_style_bg_opa(tab_btns, LV_OPA_TRANSP, LV_PART_ITEMS);
     lv_obj_set_style_border_side(tab_btns, LV_BORDER_SIDE_NONE, LV_PART_ITEMS);
 
-    // Active/Checked Tab styling
-    lv_obj_set_style_text_color(tab_btns, COLOR_ACCENT, LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(tab_btns, COLOR_SURFACE_LIGHT, LV_PART_ITEMS | LV_STATE_CHECKED);
+    // Active/Checked Tab border geometry
     lv_obj_set_style_bg_opa(tab_btns, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_border_side(tab_btns, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_border_color(tab_btns, COLOR_ACCENT, LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_border_width(tab_btns, 2, LV_PART_ITEMS | LV_STATE_CHECKED);
 
     // Add Tabs: Lyrics, Player (Default), Presets, UPnP
@@ -196,10 +215,13 @@ void ui_init() {
     modal_wifi_init(lv_scr_act());
     modal_power_init(lv_scr_act());
 
-    // 4. Progress Interpolation Timer (50ms = 20 FPS updates)
+    // 4. Apply initial theme colors across all screens & modals (single source of truth)
+    ui_apply_theme();
+
+    // 5. Progress Interpolation Timer (50ms = 20 FPS updates)
     lv_timer_create(timer_progress_cb, 50, nullptr);
 
-    // 5. Battery Monitoring Timer (5000ms period, immediate initial sample)
+    // 6. Battery Monitoring Timer (5000ms period, immediate initial sample)
     lv_timer_t* timer_bat = lv_timer_create(timer_battery_cb, BAT_SAMPLE_INTERVAL_MS, nullptr);
     timer_battery_cb(timer_bat);
 }

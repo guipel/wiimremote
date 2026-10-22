@@ -37,32 +37,6 @@ static uint8_t s_bright_idx = 3; // Default 80%
 static uint8_t s_dim_idx = 1;    // Default 30s
 static uint8_t s_sleep_idx = 1;  // Default 1m
 
-static lv_obj_t* style_flat_list_btn(lv_obj_t* btn, lv_color_t icon_color, lv_color_t text_color = COLOR_TEXT_PRIMARY) {
-    lv_obj_set_style_bg_color(btn, COLOR_BG, 0);
-    lv_obj_set_style_bg_color(btn, COLOR_SURFACE_LIGHT, LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(btn, COLOR_SURFACE_LIGHT, 0);
-    lv_obj_set_style_border_side(btn, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_border_width(btn, 1, 0);
-    lv_obj_set_style_radius(btn, 0, 0);
-    lv_obj_set_style_pad_ver(btn, 9, 0);
-    lv_obj_set_style_pad_hor(btn, 8, 0);
-    lv_obj_set_style_pad_column(btn, 8, 0);
-    lv_obj_set_style_transform_width(btn, 0, LV_STATE_PRESSED);
-    lv_obj_set_style_flex_cross_place(btn, LV_FLEX_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(btn, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(btn, text_color, 0);
-
-    lv_obj_t* text_lbl = nullptr;
-    if (lv_obj_get_child_cnt(btn) >= 2) {
-        lv_obj_t* icon_obj = lv_obj_get_child(btn, 0);
-        if (icon_obj) {
-            lv_obj_set_style_text_color(icon_obj, icon_color, 0);
-        }
-        text_lbl = lv_obj_get_child(btn, 1);
-    }
-    return text_lbl;
-}
-
 static void refresh_row_labels() {
     if (lbl_row_theme) {
         char buf[48];
@@ -124,7 +98,6 @@ void modal_power_init(lv_obj_t* parent) {
     modal_power_manager = lv_obj_create(parent ? parent : lv_scr_act());
     lv_obj_set_size(modal_power_manager, 240, 320);
     lv_obj_align(modal_power_manager, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(modal_power_manager, COLOR_BG, 0);
     lv_obj_set_style_bg_opa(modal_power_manager, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(modal_power_manager, 0, 0);
     lv_obj_set_style_border_side(modal_power_manager, LV_BORDER_SIDE_NONE, 0);
@@ -136,9 +109,6 @@ void modal_power_init(lv_obj_t* parent) {
     s_cont_header = lv_obj_create(modal_power_manager);
     lv_obj_set_size(s_cont_header, 240, 32);
     lv_obj_align(s_cont_header, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(s_cont_header, COLOR_SURFACE, 0);
-    lv_obj_set_style_bg_color(s_cont_header, COLOR_SURFACE_LIGHT, LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(s_cont_header, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_side(s_cont_header, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_width(s_cont_header, 1, 0);
     lv_obj_set_style_radius(s_cont_header, 0, 0);
@@ -150,20 +120,17 @@ void modal_power_init(lv_obj_t* parent) {
     s_lbl_back_icon = lv_label_create(s_cont_header);
     lv_label_set_text(s_lbl_back_icon, LV_SYMBOL_LEFT);
     lv_obj_set_style_text_font(s_lbl_back_icon, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(s_lbl_back_icon, COLOR_ACCENT, 0);
     lv_obj_align(s_lbl_back_icon, LV_ALIGN_LEFT_MID, 10, 0);
 
     s_lbl_title = lv_label_create(s_cont_header);
     lv_label_set_text(s_lbl_title, "Power & Display");
     lv_obj_set_style_text_font(s_lbl_title, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(s_lbl_title, COLOR_ACCENT, 0);
     lv_obj_align(s_lbl_title, LV_ALIGN_LEFT_MID, 32, 0);
 
     // Flat Edge-to-Edge List Container (240 x 288 px)
     list_power = lv_list_create(modal_power_manager);
     lv_obj_set_size(list_power, 240, 288);
     lv_obj_align(list_power, LV_ALIGN_TOP_MID, 0, 32);
-    lv_obj_set_style_bg_color(list_power, COLOR_BG, 0);
     lv_obj_set_style_border_side(list_power, LV_BORDER_SIDE_NONE, 0);
     lv_obj_set_style_radius(list_power, 0, 0);
     lv_obj_set_style_pad_all(list_power, 0, 0);
@@ -171,32 +138,31 @@ void modal_power_init(lv_obj_t* parent) {
 
     // Row 1: Battery Voltage (status row)
     s_btn_volt = lv_list_add_btn(list_power, LV_SYMBOL_BATTERY_FULL, "Battery Voltage: -- V");
-    lbl_row_voltage = style_flat_list_btn(s_btn_volt, COLOR_ACCENT);
+    lbl_row_voltage = lv_obj_get_child(s_btn_volt, 1);
     lv_obj_clear_flag(s_btn_volt, LV_OBJ_FLAG_CLICKABLE);
 
     // Row 2: Color Theme (tap to cycle across kThemes[])
     s_btn_theme = lv_list_add_btn(list_power, LV_SYMBOL_IMAGE, "Theme: Cyber Cyan");
-    lbl_row_theme = style_flat_list_btn(s_btn_theme, COLOR_ACCENT);
+    lbl_row_theme = lv_obj_get_child(s_btn_theme, 1);
     lv_obj_add_event_cb(s_btn_theme, event_row_theme, LV_EVENT_CLICKED, nullptr);
 
     // Row 3: Screen Brightness (tap to cycle 20%..100%)
     s_btn_bright = lv_list_add_btn(list_power, LV_SYMBOL_SETTINGS, "Brightness: 80%");
-    lbl_row_brightness = style_flat_list_btn(s_btn_bright, COLOR_ACCENT);
+    lbl_row_brightness = lv_obj_get_child(s_btn_bright, 1);
     lv_obj_add_event_cb(s_btn_bright, event_row_brightness, LV_EVENT_CLICKED, nullptr);
 
     // Row 4: Screen Auto-Dim (tap to cycle timeout)
     s_btn_dim = lv_list_add_btn(list_power, LV_SYMBOL_EYE_CLOSE, "Auto-Dim: 30 seconds");
-    lbl_row_dim = style_flat_list_btn(s_btn_dim, COLOR_ACCENT);
+    lbl_row_dim = lv_obj_get_child(s_btn_dim, 1);
     lv_obj_add_event_cb(s_btn_dim, event_row_dim, LV_EVENT_CLICKED, nullptr);
 
     // Row 5: Auto Deep Sleep (tap to cycle timeout)
     s_btn_sleep = lv_list_add_btn(list_power, LV_SYMBOL_LOOP, "Auto-Sleep: 1 minute");
-    lbl_row_sleep = style_flat_list_btn(s_btn_sleep, COLOR_ACCENT);
+    lbl_row_sleep = lv_obj_get_child(s_btn_sleep, 1);
     lv_obj_add_event_cb(s_btn_sleep, event_row_sleep, LV_EVENT_CLICKED, nullptr);
 
     // Row 6: Enter Deep Sleep Now
     s_btn_sleep_now = lv_list_add_btn(list_power, LV_SYMBOL_POWER, "Enter Deep Sleep Now");
-    style_flat_list_btn(s_btn_sleep_now, lv_color_hex(0xFF6B6B), lv_color_hex(0xFF6B6B));
     lv_obj_add_event_cb(s_btn_sleep_now, event_row_sleep_now, LV_EVENT_RELEASED, nullptr);
 
     refresh_row_labels();
@@ -213,12 +179,12 @@ void modal_power_apply_theme() {
     if (s_lbl_title) lv_obj_set_style_text_color(s_lbl_title, COLOR_ACCENT, 0);
     if (list_power) lv_obj_set_style_bg_color(list_power, COLOR_BG, 0);
 
-    if (s_btn_volt) style_flat_list_btn(s_btn_volt, COLOR_ACCENT);
-    if (s_btn_theme) style_flat_list_btn(s_btn_theme, COLOR_ACCENT);
-    if (s_btn_bright) style_flat_list_btn(s_btn_bright, COLOR_ACCENT);
-    if (s_btn_dim) style_flat_list_btn(s_btn_dim, COLOR_ACCENT);
-    if (s_btn_sleep) style_flat_list_btn(s_btn_sleep, COLOR_ACCENT);
-    if (s_btn_sleep_now) style_flat_list_btn(s_btn_sleep_now, lv_color_hex(0xFF6B6B), lv_color_hex(0xFF6B6B));
+    if (s_btn_volt) ui_style_flat_list_btn(s_btn_volt, COLOR_ACCENT);
+    if (s_btn_theme) ui_style_flat_list_btn(s_btn_theme, COLOR_ACCENT);
+    if (s_btn_bright) ui_style_flat_list_btn(s_btn_bright, COLOR_ACCENT);
+    if (s_btn_dim) ui_style_flat_list_btn(s_btn_dim, COLOR_ACCENT);
+    if (s_btn_sleep) ui_style_flat_list_btn(s_btn_sleep, COLOR_ACCENT);
+    if (s_btn_sleep_now) ui_style_flat_list_btn(s_btn_sleep_now, lv_color_hex(0xFF6B6B), lv_color_hex(0xFF6B6B));
 }
 
 void modal_power_open(uint32_t bat_mv) {

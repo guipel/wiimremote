@@ -34,9 +34,7 @@ void ui_header_init(lv_obj_t* parent) {
     header_cont = lv_obj_create(parent);
     lv_obj_set_size(header_cont, 240, 32);
     lv_obj_align(header_cont, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(header_cont, COLOR_SURFACE, 0);
     lv_obj_set_style_border_side(header_cont, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_border_color(header_cont, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_width(header_cont, 1, 0);
     lv_obj_set_style_radius(header_cont, 0, 0);
     lv_obj_set_style_pad_all(header_cont, 0, 0);
@@ -55,7 +53,6 @@ void ui_header_init(lv_obj_t* parent) {
 
     lbl_wifi = lv_label_create(btn_wifi_select);
     lv_label_set_text(lbl_wifi, LV_SYMBOL_WIFI " " LV_SYMBOL_DOWN);
-    lv_obj_set_style_text_color(lbl_wifi, COLOR_TEXT_MUTED, 0);
     lv_obj_set_style_text_font(lbl_wifi, &lv_font_montserrat_12, 0);
     lv_obj_align(lbl_wifi, LV_ALIGN_LEFT_MID, 2, 0);
 
@@ -73,7 +70,6 @@ void ui_header_init(lv_obj_t* parent) {
     lbl_bat_icon = lv_label_create(btn_battery);
     lv_label_set_text(lbl_bat_icon, LV_SYMBOL_BATTERY_FULL " " LV_SYMBOL_DOWN);
     lv_obj_set_style_text_font(lbl_bat_icon, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_bat_icon, COLOR_TEXT_PRIMARY, 0);
     lv_obj_align(lbl_bat_icon, LV_ALIGN_RIGHT_MID, 0, 0);
 
     // 3. Active Device Button (Center, ~156px)
@@ -91,7 +87,6 @@ void ui_header_init(lv_obj_t* parent) {
     lv_label_set_text(lbl_active_device, "Searching... " LV_SYMBOL_DOWN);
     lv_label_set_long_mode(lbl_active_device, LV_LABEL_LONG_DOT);
     lv_obj_set_width(lbl_active_device, 150);
-    lv_obj_set_style_text_color(lbl_active_device, COLOR_ACCENT, 0);
     lv_obj_set_style_text_font(lbl_active_device, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_align(lbl_active_device, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(lbl_active_device, LV_ALIGN_CENTER, 0, 0);
