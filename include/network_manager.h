@@ -4,10 +4,10 @@
 #include "config.h"
 #include "model.h"
 
-class NetworkManager {
+class WiiMNetworkManager {
 public:
-    static NetworkManager& getInstance() {
-        static NetworkManager instance;
+    static WiiMNetworkManager& getInstance() {
+        static WiiMNetworkManager instance;
         return instance;
     }
 
@@ -27,10 +27,10 @@ public:
     void markActiveDevicePolled();
 
 private:
-    NetworkManager();
-    ~NetworkManager() = default;
-    NetworkManager(const NetworkManager&) = delete;
-    NetworkManager& operator=(const NetworkManager&) = delete;
+    WiiMNetworkManager();
+    ~WiiMNetworkManager() = default;
+    WiiMNetworkManager(const WiiMNetworkManager&) = delete;
+    WiiMNetworkManager& operator=(const WiiMNetworkManager&) = delete;
 
     void processIncomingCommands();
 

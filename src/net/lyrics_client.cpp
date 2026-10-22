@@ -20,15 +20,15 @@ void lyrics_client_fetch(const char* title, const char* artist) {
     esp_task_wdt_reset();
 
     HTTPClient http;
-    http.setConnectTimeout(8000);
-    http.setTimeout(10000);
+    http.setConnectTimeout(3500);
+    http.setTimeout(4000);
     http.setUserAgent("WiiMRemote/1.0 (ESP32-S3)");
 
     int code = -1;
     String lyricsText;
 
     for (uint8_t attempt = 0; attempt < 2; ++attempt) {
-        Serial.printf("[LRCLIB] GET %s\n", url.c_str());
+        log_i("[LRCLIB] GET %s", url.c_str());
 
         if (http.begin(url)) {
             code = http.GET();
@@ -52,7 +52,7 @@ void lyrics_client_fetch(const char* title, const char* artist) {
             http.end();
         }
 
-        Serial.printf("[LRCLIB] Response code=%d, lyricsLen=%u\n", code, (unsigned int)lyricsText.length());
+        log_i("[LRCLIB] Response code=%d, lyricsLen=%u", code, (unsigned int)lyricsText.length());
 
         // LRCLIB returns HTTP 503 with 'retry-after: 1' when momentarily busy
         if (code == HTTP_CODE_SERVICE_UNAVAILABLE && attempt == 0) {

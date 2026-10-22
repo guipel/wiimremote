@@ -31,6 +31,8 @@ static lv_obj_t* lbl_var_input = nullptr;
 static bool current_is_fixed = false;
 static bool is_user_adjusting_volume = false;
 static uint8_t current_volume = 0;
+static uint8_t s_last_enqueued_vol = 0xFF;
+static unsigned long s_last_vol_enqueue_ms = 0;
 static bool is_user_seeking = false;
 static bool current_mute_state = false;
 static PlayState current_play_state = PLAY_STATE_UNKNOWN;
@@ -198,6 +200,12 @@ static void event_slider_seek(lv_event_t* e) {
                 xQueueSend(xQueueUiCmd, &cmd, 0);
             }
         }
+    } else if (code == LV_EVENT_PRESS_LOST) {
+        is_user_seeking = false;
+        if (!has_pending_seek && obj_seek_target) {
+            lv_obj_add_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
+        }
+        set_bar_and_time(current_actual_curpos_ms, current_totlen_ms, true);
     }
 }
 
@@ -215,17 +223,32 @@ static void event_slider_vol(lv_event_t* e) {
         current_volume = (uint8_t)val;
 
         if (lbl_vol_percent) {
-            char buf[8];
+            char buf[16];
             snprintf(buf, sizeof(buf), "%d%%", (int)val);
             lv_label_set_text(lbl_vol_percent, buf);
         }
 
-        UiCommand cmd;
-        cmd.type = CMD_SET_VOL;
-        cmd.data.volume = (uint8_t)val;
-        xQueueSend(xQueueUiCmd, &cmd, 0);
+        unsigned long now = millis();
+        if (current_volume != s_last_enqueued_vol && (now - s_last_vol_enqueue_ms >= 60)) {
+            UiCommand cmd;
+            cmd.type = CMD_SET_VOL;
+            cmd.data.volume = current_volume;
+            if (xQueueSend(xQueueUiCmd, &cmd, 0) == pdTRUE) {
+                s_last_enqueued_vol = current_volume;
+                s_last_vol_enqueue_ms = now;
+            }
+        }
     } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
         is_user_adjusting_volume = false;
+        if (current_volume != s_last_enqueued_vol) {
+            UiCommand cmd;
+            cmd.type = CMD_SET_VOL;
+            cmd.data.volume = current_volume;
+            if (xQueueSend(xQueueUiCmd, &cmd, 0) == pdTRUE) {
+                s_last_enqueued_vol = current_volume;
+                s_last_vol_enqueue_ms = millis();
+            }
+        }
     }
 }
 
@@ -340,6 +363,7 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_add_event_cb(bar_progress, event_slider_seek, LV_EVENT_PRESSED, nullptr);
     lv_obj_add_event_cb(bar_progress, event_slider_seek, LV_EVENT_PRESSING, nullptr);
     lv_obj_add_event_cb(bar_progress, event_slider_seek, LV_EVENT_RELEASED, nullptr);
+    lv_obj_add_event_cb(bar_progress, event_slider_seek, LV_EVENT_PRESS_LOST, nullptr);
 
     // Ghost/Secondary Seek Target Indicator
     obj_seek_target = lv_obj_create(parent);
@@ -486,7 +510,7 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_pad_all(slider_vol, 0, LV_PART_KNOB);
 
     // Disabled state opacity (Fixed volume mode)
-    lv_obj_set_style_bg_opa(slider_vol, LV_OPA_60, LV_PART_INDICATOR | LV_STATE_DISABLED);
+    lv_obj_set_style_bg_opa(slider_vol, LV_OPA_60, (lv_style_selector_t)LV_PART_INDICATOR | (lv_style_selector_t)LV_STATE_DISABLED);
 
     lv_obj_add_flag(slider_vol, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(slider_vol, 6);
@@ -667,10 +691,11 @@ void ui_player_set_volume(uint8_t volume, bool is_fixed, bool mute) {
         }
         if (!is_user_adjusting_volume) {
             current_volume = volume;
+            s_last_enqueued_vol = volume;
             if (slider_vol) lv_slider_set_value(slider_vol, volume, LV_ANIM_OFF);
             if (lbl_vol_percent) {
-                char buf[8];
-                snprintf(buf, sizeof(buf), "%d%%", volume);
+                char buf[16];
+                snprintf(buf, sizeof(buf), "%u%%", (unsigned int)volume);
                 lv_label_set_text(lbl_vol_percent, buf);
             }
         }
@@ -693,6 +718,12 @@ void ui_player_set_fixed_volume_mode(bool is_fixed) {
         if (slider_vol) {
             lv_obj_clear_state(slider_vol, LV_STATE_DISABLED);
             lv_obj_add_flag(slider_vol, LV_OBJ_FLAG_CLICKABLE);
+            lv_slider_set_value(slider_vol, current_volume, LV_ANIM_OFF);
+        }
+        if (lbl_vol_percent) {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%u%%", (unsigned int)current_volume);
+            lv_label_set_text(lbl_vol_percent, buf);
         }
     }
 }
@@ -733,6 +764,7 @@ void ui_player_clear() {
     if (lbl_artist) lv_label_set_text(lbl_artist, "");
     current_totlen_ms = 0;
     current_actual_curpos_ms = 0;
+    is_user_seeking = false;
     set_bar_and_time(0, 0, true);
     if (lbl_time_total) lv_label_set_text(lbl_time_total, "--:--");
     has_pending_seek = false;

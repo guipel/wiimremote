@@ -14,8 +14,11 @@ static bool s_persistent_http_configured = false;
 
 static String s_last_raw_title = "";
 static String s_last_raw_artist = "";
+static String s_last_raw_album = "";
+static String s_last_raw_plicurr = "";
 static String s_last_known_track_title = "";
 static String s_last_known_artist = "";
+static String s_last_known_album = "";
 static bool s_meta_resolved = false;
 static uint32_t s_cached_track_duration_ms = 0;
 static uint8_t s_active_mode = 0;
@@ -29,8 +32,11 @@ void linkplay_client_init() {
     memset(&s_last_player_state, 0, sizeof(s_last_player_state));
     s_last_raw_title = "";
     s_last_raw_artist = "";
+    s_last_raw_album = "";
+    s_last_raw_plicurr = "";
     s_last_known_track_title = "";
     s_last_known_artist = "";
+    s_last_known_album = "";
     s_meta_resolved = false;
     s_cached_upnp_track_num = 0;
     s_cached_upnp_track_total = 0;
@@ -50,8 +56,11 @@ void linkplay_client_reset_session() {
 void linkplay_client_reset_track_cache() {
     s_last_raw_title = "";
     s_last_raw_artist = "";
+    s_last_raw_album = "";
+    s_last_raw_plicurr = "";
     s_last_known_track_title = "";
     s_last_known_artist = "";
+    s_last_known_album = "";
     s_cached_track_duration_ms = 0;
     s_meta_resolved = false;
     s_cached_upnp_track_num = 0;
@@ -221,9 +230,11 @@ bool linkplay_client_fetch_meta(const char* targetIp) {
     if (decTitle.length() > 0) {
         s_last_known_track_title = decTitle;
         s_last_known_artist = decArtist;
+        s_last_known_album = decAlbum;
     } else if (s_last_known_track_title.length() > 0) {
         decTitle = s_last_known_track_title;
         decArtist = s_last_known_artist;
+        decAlbum = s_last_known_album;
     }
 
     strncpy(pMeta->title, decTitle.c_str(), sizeof(pMeta->title) - 1);
@@ -284,6 +295,8 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
     const char* statusStr = doc["status"] | "";
     const char* rawTitle = doc["Title"] | doc["title"] | "";
     const char* rawArtist = doc["Artist"] | doc["artist"] | "";
+    const char* rawAlbum = doc["Album"] | doc["album"] | "";
+    const char* rawPlicurr = doc["plicurr"] | "0";
     bool hasTitle = (strlen(rawTitle) > 0 || s_last_known_track_title.length() > 0);
 
     if (strcmp(statusStr, "play") == 0) {
@@ -312,30 +325,38 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
     if (evt.data.player.state == PLAY_STATE_NONE) {
         s_last_raw_title = "";
         s_last_raw_artist = "";
+        s_last_raw_album = "";
+        s_last_raw_plicurr = "";
         s_last_known_track_title = "";
         s_last_known_artist = "";
+        s_last_known_album = "";
         s_cached_track_duration_ms = 0;
         s_meta_resolved = false;
         s_cached_upnp_track_num = 0;
         s_cached_upnp_track_total = 0;
     } else {
         if (strlen(rawTitle) > 0) {
-            if (strcmp(s_last_raw_title.c_str(), rawTitle) != 0 || strcmp(s_last_raw_artist.c_str(), rawArtist) != 0) {
+            if (strcmp(s_last_raw_title.c_str(), rawTitle) != 0 ||
+                strcmp(s_last_raw_artist.c_str(), rawArtist) != 0 ||
+                strcmp(s_last_raw_album.c_str(), rawAlbum) != 0 ||
+                strcmp(s_last_raw_plicurr.c_str(), rawPlicurr) != 0) {
                 s_last_raw_title = rawTitle;
                 s_last_raw_artist = rawArtist;
+                s_last_raw_album = rawAlbum;
+                s_last_raw_plicurr = rawPlicurr;
                 String decTitle = net_decode_hex_string(rawTitle);
                 String decArtist = net_decode_hex_string(rawArtist);
-                if (s_last_known_track_title != decTitle || s_last_known_artist != decArtist) {
-                    s_last_known_track_title = decTitle;
-                    s_last_known_artist = decArtist;
-                    s_cached_track_duration_ms = 0;
-                    s_meta_resolved = false;
-                    s_cached_upnp_track_num = 0;
-                    s_cached_upnp_track_total = 0;
-                    isNewTrack = true;
-                    if (linkplay_client_fetch_meta(targetIp)) {
-                        s_meta_resolved = true;
-                    }
+                String decAlbum = net_decode_hex_string(rawAlbum);
+                s_last_known_track_title = decTitle;
+                s_last_known_artist = decArtist;
+                s_last_known_album = decAlbum;
+                s_cached_track_duration_ms = 0;
+                s_meta_resolved = false;
+                s_cached_upnp_track_num = 0;
+                s_cached_upnp_track_total = 0;
+                isNewTrack = true;
+                if (linkplay_client_fetch_meta(targetIp)) {
+                    s_meta_resolved = true;
                 }
             } else if (!s_meta_resolved && evt.data.player.state == PLAY_STATE_PLAYING) {
                 if (linkplay_client_fetch_meta(targetIp)) {
@@ -345,8 +366,11 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
         } else if (s_last_known_track_title.length() > 0) {
             s_last_raw_title = "";
             s_last_raw_artist = "";
+            s_last_raw_album = "";
+            s_last_raw_plicurr = "";
             s_last_known_track_title = "";
             s_last_known_artist = "";
+            s_last_known_album = "";
             s_cached_track_duration_ms = 0;
             s_meta_resolved = false;
             s_cached_upnp_track_num = 0;
@@ -417,9 +441,8 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
     } else {
         s_cached_upnp_track_num = 0;
         s_cached_upnp_track_total = 0;
-        const char* plicurrStr = doc["plicurr"] | "0";
         const char* plicountStr = doc["plicount"] | "0";
-        s_active_plicurr = (uint16_t)atoi(plicurrStr);
+        s_active_plicurr = (uint16_t)atoi(rawPlicurr);
         s_active_plicount = (uint16_t)atoi(plicountStr);
     }
     evt.data.player.track_num = s_active_plicurr;

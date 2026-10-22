@@ -25,7 +25,7 @@ static lv_obj_t* lbl_header_title = nullptr;
 static lv_obj_t* list_browser = nullptr;
 
 static void render_server_list();
-static void request_browse(uint8_t serverIdx, const char* objectId, const char* title);
+static bool request_browse(uint8_t serverIdx, const char* objectId, const char* title);
 
 static void show_status_message(const char* msg) {
     if (!list_browser) return;
@@ -53,33 +53,40 @@ static void update_header() {
     }
 }
 
-static void request_browse(uint8_t serverIdx, const char* objectId, const char* title) {
-    update_header();
-    show_status_message("Loading folder...");
-
+static bool request_browse(uint8_t serverIdx, const char* objectId, const char* title) {
     UiCommand cmd;
     memset(&cmd, 0, sizeof(cmd));
     cmd.type = CMD_UPNP_BROWSE;
     cmd.data.upnp_browse.server_index = serverIdx;
     strncpy(cmd.data.upnp_browse.object_id, objectId, sizeof(cmd.data.upnp_browse.object_id) - 1);
     strncpy(cmd.data.upnp_browse.title, title, sizeof(cmd.data.upnp_browse.title) - 1);
-    xQueueSend(xQueueUiCmd, &cmd, 0);
+    if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
+        log_w("[UPnP] Command queue busy, browse request dropped");
+        return false;
+    }
+
+    update_header();
+    show_status_message("Loading folder...");
+    return true;
 }
 
 static void event_btn_nav(lv_event_t* e) {
     if (s_nav_depth == 0) {
-        show_status_message("Scanning for UPnP servers...");
         UiCommand cmd;
         memset(&cmd, 0, sizeof(cmd));
         cmd.type = CMD_UPNP_SCAN_SERVERS;
-        xQueueSend(xQueueUiCmd, &cmd, 0);
+        if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(50)) == pdTRUE) {
+            show_status_message("Scanning for UPnP servers...");
+        }
     } else {
         s_nav_depth--;
         if (s_nav_depth == 0) {
             render_server_list();
         } else {
             const NavEntry& prev = s_nav_stack[s_nav_depth - 1];
-            request_browse(s_active_server_idx, prev.object_id, prev.title);
+            if (!request_browse(s_active_server_idx, prev.object_id, prev.title)) {
+                s_nav_depth++;
+            }
         }
     }
 }
@@ -93,7 +100,9 @@ static void event_btn_server(lv_event_t* e) {
     strncpy(s_nav_stack[0].object_id, "0", sizeof(s_nav_stack[0].object_id) - 1);
     strncpy(s_nav_stack[0].title, s_servers.servers[srvIdx].name, sizeof(s_nav_stack[0].title) - 1);
 
-    request_browse(srvIdx, "0", s_servers.servers[srvIdx].name);
+    if (!request_browse(srvIdx, "0", s_servers.servers[srvIdx].name)) {
+        s_nav_depth = 0;
+    }
 }
 
 static void event_btn_item(lv_event_t* e) {
@@ -102,6 +111,7 @@ static void event_btn_item(lv_event_t* e) {
 
     const UpnpItem& item = s_current_browse.items[itemIdx];
     if (item.is_folder) {
+        uint8_t prevDepth = s_nav_depth;
         if (s_nav_depth < MAX_NAV_DEPTH) {
             NavEntry& next = s_nav_stack[s_nav_depth++];
             memset(&next, 0, sizeof(next));
@@ -112,16 +122,20 @@ static void event_btn_item(lv_event_t* e) {
             strncpy(top.object_id, item.id, sizeof(top.object_id) - 1);
             strncpy(top.title, item.title, sizeof(top.title) - 1);
         }
-        request_browse(s_active_server_idx, item.id, item.title);
+        if (!request_browse(s_active_server_idx, item.id, item.title)) {
+            s_nav_depth = prevDepth;
+        }
     } else {
         UiCommand cmd;
         memset(&cmd, 0, sizeof(cmd));
         cmd.type = CMD_UPNP_PLAY_TRACK;
         cmd.data.upnp_play.track_index = item.track_index;
-        xQueueSend(xQueueUiCmd, &cmd, 0);
-
-        if (s_on_track_played) {
-            s_on_track_played();
+        if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(50)) == pdTRUE) {
+            if (s_on_track_played) {
+                s_on_track_played();
+            }
+        } else {
+            log_w("[UPnP] Command queue full, play track request dropped");
         }
     }
 }
@@ -206,10 +220,8 @@ void ui_browser_apply_theme() {
 }
 
 void ui_browser_on_tab_activated() {
-    if (s_nav_depth == 0) {
-        if (s_servers.count == 0) {
-            show_status_message("Scanning for UPnP servers...");
-        }
+    if (s_nav_depth == 0 && s_servers.count == 0) {
+        show_status_message("Scanning for UPnP servers...");
         UiCommand cmd;
         memset(&cmd, 0, sizeof(cmd));
         cmd.type = CMD_UPNP_SCAN_SERVERS;

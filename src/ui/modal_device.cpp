@@ -180,7 +180,7 @@ void modal_device_set_list(const DeviceList& list) {
     }
 
     for (uint8_t i = 0; i < list.count; ++i) {
-        char item_text[96];
+        char item_text[104];
         snprintf(item_text, sizeof(item_text), "%s (%s)", list.devices[i].name, list.devices[i].ip);
         bool active = list.devices[i].is_active;
 

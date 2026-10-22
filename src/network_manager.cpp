@@ -26,7 +26,7 @@ static void on_active_device_changed(const WiiMDevice& dev) {
     linkplay_client_fetch_presets(dev.ip);
 
     // 3. Synchronize poll timers so runTaskLoop() doesn't immediately re-poll
-    NetworkManager::getInstance().markActiveDevicePolled();
+    WiiMNetworkManager::getInstance().markActiveDevicePolled();
 }
 
 static void on_wifi_connected() {
@@ -39,7 +39,7 @@ static void on_wifi_disconnected() {
     linkplay_client_reset_session();
 }
 
-NetworkManager::NetworkManager()
+WiiMNetworkManager::WiiMNetworkManager()
     : _lastStatusPoll(0),
       _lastConfigPoll(0),
       _lastSSDPBroadcast(0),
@@ -50,8 +50,8 @@ NetworkManager::NetworkManager()
 {
 }
 
-void NetworkManager::init() {
-    log_i("Initializing NetworkManager...");
+void WiiMNetworkManager::init() {
+    log_i("Initializing WiiMNetworkManager...");
 
     linkplay_client_init();
     upnp_client_init();
@@ -59,26 +59,26 @@ void NetworkManager::init() {
     wifi_service_init(on_wifi_connected, on_wifi_disconnected);
 }
 
-void NetworkManager::triggerRescan() {
+void WiiMNetworkManager::triggerRescan() {
     discovery_service_trigger_rescan();
 }
 
-void NetworkManager::selectDevice(const char* ip) {
+void WiiMNetworkManager::selectDevice(const char* ip) {
     discovery_service_select_device(ip);
 }
 
-bool NetworkManager::getActiveDevice(WiiMDevice* dev) {
+bool WiiMNetworkManager::getActiveDevice(WiiMDevice* dev) {
     return discovery_service_get_active_device(dev);
 }
 
-void NetworkManager::markActiveDevicePolled() {
+void WiiMNetworkManager::markActiveDevicePolled() {
     unsigned long now = millis();
     _lastStatusPoll = now;
     _lastConfigPoll = now;
     _initialPresetsFetched = true;
 }
 
-void NetworkManager::processIncomingCommands() {
+void WiiMNetworkManager::processIncomingCommands() {
     UiCommand cmd;
     WiiMDevice activeDev;
     bool hasActive = discovery_service_get_active_device(&activeDev);
@@ -158,6 +158,7 @@ void NetworkManager::processIncomingCommands() {
 
             case CMD_TRIGGER_RESCAN:
                 triggerRescan();
+                hasActive = discovery_service_get_active_device(&activeDev);
                 break;
 
             case CMD_SEEK_POSITION:
@@ -210,7 +211,7 @@ void NetworkManager::processIncomingCommands() {
                 break;
 
             case CMD_UPNP_SCAN_SERVERS:
-                upnp_client_reset_ignored();
+                upnp_client_clear_servers();
                 discovery_service_send_upnp_server_query();
                 upnp_client_broadcast_servers();
                 break;
@@ -224,7 +225,9 @@ void NetworkManager::processIncomingCommands() {
             case CMD_UPNP_PLAY_TRACK:
                 if (hasActive) {
                     linkplay_client_reset_track_cache();
-                    upnp_client_play_track(activeDev.ip, cmd.data.upnp_play.track_index, activeDev.is_fixed_volume);
+                    if (!upnp_client_play_track(activeDev.ip, cmd.data.upnp_play.track_index, activeDev.is_fixed_volume)) {
+                        log_w("UPnP play_track failed for track index %u on %s", cmd.data.upnp_play.track_index, activeDev.ip);
+                    }
                     _lastStatusPoll = millis() - (STATUS_POLL_INTERVAL_MS - 200);
                 }
                 break;
@@ -248,7 +251,7 @@ void NetworkManager::processIncomingCommands() {
     }
 }
 
-void NetworkManager::runTaskLoop() {
+void WiiMNetworkManager::runTaskLoop() {
     // 1. Process incoming UI commands FIRST (works even when Wi-Fi is disconnected)
     processIncomingCommands();
 
@@ -302,8 +305,9 @@ void NetworkManager::runTaskLoop() {
             }
         }
 
-        // 6. Periodic SSDP refresh only if no devices found yet and screen is awake
-        if (!dimmed && discovery_service_get_count() == 0 && (now - _lastSSDPBroadcast >= SSDP_DISCOVERY_INTERVAL_MS)) {
+        // 6. Periodic SSDP refresh when awake (every 10s if 0 devices, or every 60s to catch newly added/re-IP'd devices)
+        unsigned long ssdpInterval = (discovery_service_get_count() == 0) ? SSDP_DISCOVERY_INTERVAL_MS : 60000UL;
+        if (!dimmed && (now - _lastSSDPBroadcast >= ssdpInterval)) {
             _lastSSDPBroadcast = now;
             discovery_service_send_ssdp_query();
         }
@@ -316,7 +320,7 @@ void NetworkManager::runTaskLoop() {
 
 void network_task_entry(void* param) {
     esp_task_wdt_add(NULL);
-    NetworkManager& net = NetworkManager::getInstance();
+    WiiMNetworkManager& net = WiiMNetworkManager::getInstance();
     net.init();
 
     for (;;) {
