@@ -27,31 +27,41 @@ void lyrics_client_fetch(const char* title, const char* artist) {
     int code = -1;
     String lyricsText;
 
-    Serial.printf("[LRCLIB] GET %s\n", url.c_str());
+    for (uint8_t attempt = 0; attempt < 2; ++attempt) {
+        Serial.printf("[LRCLIB] GET %s\n", url.c_str());
 
-    if (http.begin(url)) {
-        code = http.GET();
-        esp_task_wdt_reset();
+        if (http.begin(url)) {
+            code = http.GET();
+            esp_task_wdt_reset();
 
-        if (code == HTTP_CODE_OK) {
-            String payload = http.getString();
-            JsonDocument doc;
-            if (!deserializeJson(doc, payload)) {
-                const char* plain = doc["plainLyrics"];
-                if (plain && strlen(plain) > 0) {
-                    lyricsText = plain;
-                } else {
-                    const char* synced = doc["syncedLyrics"];
-                    if (synced && strlen(synced) > 0) {
-                        lyricsText = net_strip_lrc_timestamps(synced);
+            if (code == HTTP_CODE_OK) {
+                String payload = http.getString();
+                JsonDocument doc;
+                if (!deserializeJson(doc, payload)) {
+                    const char* plain = doc["plainLyrics"];
+                    if (plain && strlen(plain) > 0) {
+                        lyricsText = plain;
+                    } else {
+                        const char* synced = doc["syncedLyrics"];
+                        if (synced && strlen(synced) > 0) {
+                            lyricsText = net_strip_lrc_timestamps(synced);
+                        }
                     }
                 }
             }
+            http.end();
         }
-        http.end();
-    }
 
-    Serial.printf("[LRCLIB] Response code=%d, lyricsLen=%u\n", code, (unsigned int)lyricsText.length());
+        Serial.printf("[LRCLIB] Response code=%d, lyricsLen=%u\n", code, (unsigned int)lyricsText.length());
+
+        // LRCLIB returns HTTP 503 with 'retry-after: 1' when momentarily busy
+        if (code == HTTP_CODE_SERVICE_UNAVAILABLE && attempt == 0) {
+            vTaskDelay(pdMS_TO_TICKS(1200));
+            esp_task_wdt_reset();
+            continue;
+        }
+        break;
+    }
 
     LyricsInfo* pResult = (LyricsInfo*)malloc(sizeof(LyricsInfo));
     if (pResult) {
@@ -63,6 +73,8 @@ void lyrics_client_fetch(const char* title, const char* artist) {
             pResult->text = strdup(lyricsText.c_str());
         } else if (code == HTTP_CODE_NOT_FOUND || code == HTTP_CODE_OK) {
             pResult->text = strdup("Lyrics not found\nfor this track.");
+        } else if (code >= 500) {
+            pResult->text = strdup("LRCLIB server is busy.\nPlease try again shortly.");
         } else {
             pResult->text = strdup("Connection error.\nPlease check your Wi-Fi.");
         }

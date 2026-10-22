@@ -260,7 +260,7 @@ bool linkplay_client_fetch_meta(const char* targetIp) {
         free(pMeta);
     }
 
-    return (sampleRate > 0);
+    return (decTitle.length() > 0 || sampleRate > 0);
 }
 
 void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, PlayerState& outState) {
@@ -316,8 +316,8 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
         s_last_known_artist = "";
         s_cached_track_duration_ms = 0;
         s_meta_resolved = false;
-    s_cached_upnp_track_num = 0;
-    s_cached_upnp_track_total = 0;
+        s_cached_upnp_track_num = 0;
+        s_cached_upnp_track_total = 0;
     } else {
         if (strlen(rawTitle) > 0) {
             if (strcmp(s_last_raw_title.c_str(), rawTitle) != 0 || strcmp(s_last_raw_artist.c_str(), rawArtist) != 0) {
@@ -330,8 +330,8 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
                     s_last_known_artist = decArtist;
                     s_cached_track_duration_ms = 0;
                     s_meta_resolved = false;
-    s_cached_upnp_track_num = 0;
-    s_cached_upnp_track_total = 0;
+                    s_cached_upnp_track_num = 0;
+                    s_cached_upnp_track_total = 0;
                     isNewTrack = true;
                     if (linkplay_client_fetch_meta(targetIp)) {
                         s_meta_resolved = true;
@@ -349,8 +349,8 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
             s_last_known_artist = "";
             s_cached_track_duration_ms = 0;
             s_meta_resolved = false;
-    s_cached_upnp_track_num = 0;
-    s_cached_upnp_track_total = 0;
+            s_cached_upnp_track_num = 0;
+            s_cached_upnp_track_total = 0;
 
             TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
             if (pMeta) {
@@ -548,8 +548,7 @@ void linkplay_client_seek(const char* targetIp, uint32_t seek_ms) {
                              "<Target>") + targetStr + String("</Target>"
                              "</u:Seek></s:Body></s:Envelope>");
 
-    int httpCode = http.POST(soapBody);
-    log_i("UPnP Seek to %s returned HTTP %d", targetStr, httpCode);
+    (void)http.POST(soapBody);
     http.end();
 }
 

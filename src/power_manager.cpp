@@ -18,6 +18,7 @@ static uint32_t s_sleep_timeout_ms = 120000;
 
 static uint8_t s_brightness_pct = 80; // Default 80% (20% to 100% in 10% steps)
 static uint8_t s_theme_idx = 0;       // Default 0 (Cyber Cyan)
+static bool s_rot_180 = false;        // Default false (0 deg portrait)
 
 static bool s_prefs_loaded = false;
 
@@ -37,16 +38,18 @@ static void load_power_preferences() {
         if (s_brightness_pct > 100) s_brightness_pct = 100;
 
         s_theme_idx = prefs.getUChar("theme_idx", 0);
+        s_rot_180 = prefs.getBool("rot_180", false);
 
         prefs.end();
-        log_i("Power Manager loaded: dim=%u s, sleep=%u s, bright=%u%%, theme=%u",
-              s_dim_timeout_sec, s_sleep_timeout_sec, s_brightness_pct, s_theme_idx);
+        log_i("Power Manager loaded: dim=%u s, sleep=%u s, bright=%u%%, theme=%u, rot180=%d",
+              s_dim_timeout_sec, s_sleep_timeout_sec, s_brightness_pct, s_theme_idx, s_rot_180 ? 1 : 0);
     }
 }
 
 void power_manager_init() {
     load_power_preferences();
     s_last_activity_ms = millis();
+    display_set_rotation(s_rot_180);
     display_set_backlight((uint8_t)(s_brightness_pct * 255 / 100));
 }
 
@@ -141,6 +144,22 @@ void power_manager_set_theme_idx(uint8_t idx) {
 uint8_t power_manager_get_theme_idx() {
     load_power_preferences();
     return s_theme_idx;
+}
+
+void power_manager_set_rotation_180(bool flipped) {
+    s_rot_180 = flipped;
+    Preferences prefs;
+    if (prefs.begin("wiimremote", false)) {
+        prefs.putBool("rot_180", flipped);
+        prefs.end();
+        log_i("Saved display 180 rotation: %d", flipped ? 1 : 0);
+    }
+    display_set_rotation(flipped);
+}
+
+bool power_manager_get_rotation_180() {
+    load_power_preferences();
+    return s_rot_180;
 }
 
 void power_manager_set_sleep_timeout_sec(uint16_t seconds) {

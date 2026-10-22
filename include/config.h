@@ -48,7 +48,6 @@
 #define BAT_SAMPLE_INTERVAL_MS 5000 // Sample every 5 seconds
 
 // Battery Voltage Thresholds (in millivolts)
-#define BAT_VOLT_CHARGE_MV  4100 // Float voltage when powered by USB (tested ~4.12V)
 #define BAT_VOLT_FULL_MV    3950 // ~75% - 100%
 #define BAT_VOLT_HIGH_MV    3800 // ~50% - 75%
 #define BAT_VOLT_MED_MV     3650 // ~25% - 50%

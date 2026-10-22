@@ -287,15 +287,14 @@ void NetworkManager::runTaskLoop() {
         //    - 2500ms when awake but paused/stopped
         //    - 1000ms when awake and actively playing/buffering
         unsigned long pollInterval = dimmed ? 5000UL : (isPlayingOrBuffering ? STATUS_POLL_INTERVAL_MS : 2500UL);
-        bool wifiScanning = wifi_service_is_scanning();
-        if (hasActive && !wifiScanning && (now - _lastStatusPoll >= pollInterval)) {
+        if (hasActive && (now - _lastStatusPoll >= pollInterval)) {
             _lastStatusPoll = now;
             PlayerState st;
             linkplay_client_poll_active(activeDev.ip, activeDev.is_fixed_volume, st);
         }
 
         // 5. Poll device configuration (volume_control / fixed mode) every 30000ms (skip while dimmed)
-        if (hasActive && !dimmed && !wifiScanning && (now - _lastConfigPoll >= 30000)) {
+        if (hasActive && !dimmed && (now - _lastConfigPoll >= 30000)) {
             _lastConfigPoll = now;
             bool isFixed = false;
             if (linkplay_client_fetch_config(activeDev.ip, isFixed) && isFixed != activeDev.is_fixed_volume) {
@@ -304,7 +303,7 @@ void NetworkManager::runTaskLoop() {
         }
 
         // 6. Periodic SSDP refresh only if no devices found yet and screen is awake
-        if (!dimmed && !wifiScanning && discovery_service_get_count() == 0 && (now - _lastSSDPBroadcast >= SSDP_DISCOVERY_INTERVAL_MS)) {
+        if (!dimmed && discovery_service_get_count() == 0 && (now - _lastSSDPBroadcast >= SSDP_DISCOVERY_INTERVAL_MS)) {
             _lastSSDPBroadcast = now;
             discovery_service_send_ssdp_query();
         }

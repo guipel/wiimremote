@@ -138,7 +138,7 @@ static void touchpad_read_cb(lv_indev_drv_t *indev_driver, lv_indev_data_t *data
 }
 
 void display_driver_init() {
-    // 1. Initialize LovyanGFX (backlight brightness is applied immediately after by power_manager_init)
+    // 1. Initialize LovyanGFX (backlight brightness & rotation are applied immediately after by power_manager_init)
     gfx.init();
     gfx.setRotation(SCREEN_ROTATION);
     gfx.setColorDepth(16);
@@ -187,6 +187,14 @@ void display_driver_init() {
 
 void display_set_backlight(uint8_t brightness) {
     gfx.setBrightness(brightness);
+}
+
+void display_set_rotation(bool flipped_180) {
+    gfx.waitDMA();
+    gfx.setRotation(flipped_180 ? 2 : 0);
+    if (lv_disp_get_default() && lv_scr_act()) {
+        lv_obj_invalidate(lv_scr_act());
+    }
 }
 
 void display_prepare_deep_sleep() {

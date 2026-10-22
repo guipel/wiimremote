@@ -1,6 +1,7 @@
 #include "net/wifi_service.h"
 #include "power_manager.h"
 #include <Preferences.h>
+#include <esp_task_wdt.h>
 #include "config.h"
 #include "model.h"
 
@@ -12,9 +13,6 @@ static WiFiDisconnectedCb s_on_disconnected_cb = nullptr;
 
 static bool s_wifi_connected = false;
 static unsigned long s_last_wifi_check = 0;
-static bool s_wifi_scanning = false;
-static bool s_wifi_scan_retried = false;
-static unsigned long s_wifi_scan_start = 0;
 static bool s_wifi_connecting = false;
 static unsigned long s_wifi_connect_start = 0;
 static String s_pending_connect_ssid = "";
@@ -23,8 +21,6 @@ static String s_cached_saved_ssid = "";
 static String s_cached_saved_pass = "";
 
 static void collect_wifi_scan_results(int16_t n) {
-    s_wifi_scanning = false;
-
     WiFiScanList* pScan = (WiFiScanList*)malloc(sizeof(WiFiScanList));
     if (pScan) {
         pScan->count = 0;
@@ -95,34 +91,22 @@ void wifi_service_init(WiFiConnectedCb onConnected, WiFiDisconnectedCb onDisconn
 }
 
 void wifi_service_start_scan() {
-    if (s_wifi_scanning) return;
-    s_wifi_scan_retried = false;
-    log_i("Starting async Wi-Fi network scan on Core 0 (current status: %d)...", WiFi.status());
+    log_i("Starting synchronous Wi-Fi network scan on Core 0 (current status: %d)...", WiFi.status());
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(WIFI_PS_NONE);
     WiFi.scanDelete();
 
-    int16_t res = WiFi.scanNetworks(true, false, false, 150);
-    if (res == WIFI_SCAN_RUNNING || res >= 0) {
-        s_wifi_scanning = true;
-        s_wifi_scan_start = millis();
-        if (res >= 0) {
-            collect_wifi_scan_results(res);
-        }
-    } else {
-        log_w("Async scan start failed (%d), falling back to sync scan...", res);
-        int16_t n = WiFi.scanNetworks(false, false, false, 150);
-        collect_wifi_scan_results(n);
-    }
+    esp_task_wdt_reset();
+    int16_t n = WiFi.scanNetworks(false, false, false, 300);
+    esp_task_wdt_reset();
+
+    log_i("Wi-Fi scan completed: %d networks found", n);
+    collect_wifi_scan_results(n);
 }
 
 void wifi_service_connect(const char* ssid, const char* pass) {
     if (!ssid || strlen(ssid) == 0) return;
     log_i("Connecting to user-selected Wi-Fi: %s", ssid);
-    if (s_wifi_scanning) {
-        WiFi.scanDelete();
-        s_wifi_scanning = false;
-    }
     s_wifi_connecting = true;
     s_wifi_connect_start = millis();
     s_pending_connect_ssid = ssid;
@@ -174,25 +158,6 @@ void wifi_service_reconnect() {
 
 void wifi_service_handle() {
     unsigned long now = millis();
-
-    // Check asynchronous Wi-Fi scan completion
-    if (s_wifi_scanning) {
-        int16_t scanRes = WiFi.scanComplete();
-        if (scanRes >= 0) {
-            log_i("Async WiFi scan completed: %d networks found", scanRes);
-            collect_wifi_scan_results(scanRes);
-        } else if (scanRes == WIFI_SCAN_FAILED || (now - s_wifi_scan_start > 8000)) {
-            if (scanRes == WIFI_SCAN_FAILED && !s_wifi_scan_retried) {
-                s_wifi_scan_retried = true;
-                s_wifi_scan_start = now;
-                WiFi.scanNetworks(true, false, false, 120);
-                return;
-            }
-            log_w("Async WiFi scan failed or timed out (%d)", scanRes);
-            collect_wifi_scan_results(0);
-        }
-    }
-
     wl_status_t status = WiFi.status();
 
     if (status == WL_CONNECTED) {
@@ -284,7 +249,7 @@ void wifi_service_handle() {
                 xQueueSend(xQueueUiState, &evt, 0);
                 wifi_service_start_scan();
             }
-        } else if (!s_wifi_scanning) {
+        } else {
             if (s_cached_saved_ssid.length() > 0 && now - s_last_wifi_check >= WIFI_RECONNECT_INTERVAL_MS) {
                 s_last_wifi_check = now;
                 log_i("Reconnecting to Wi-Fi...");
@@ -292,10 +257,6 @@ void wifi_service_handle() {
             }
         }
     }
-}
-
-bool wifi_service_is_scanning() {
-    return s_wifi_scanning;
 }
 
 bool wifi_service_is_connected() {

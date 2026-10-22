@@ -132,8 +132,9 @@ void ui_lyrics_set_content(const LyricsInfo& info) {
     if (lbl_lyrics_body) {
         if (info.text && strlen(info.text) > 0) {
             lv_label_set_text(lbl_lyrics_body, info.text);
-            // Allow retry on re-entering tab if the fetch failed due to network error
-            s_lyrics_resolved = (strncmp(info.text, "Connection error", 16) != 0);
+            // Allow manual retry on re-entering tab if the fetch failed due to network or 5xx error
+            s_lyrics_resolved = (strncmp(info.text, "Connection error", 16) != 0 &&
+                                 strncmp(info.text, "LRCLIB server", 13) != 0);
         } else if (info.is_loading) {
             lv_label_set_text(lbl_lyrics_body, "Fetching lyrics from LRCLIB...");
             s_lyrics_resolved = false;
@@ -148,13 +149,14 @@ void ui_lyrics_set_content(const LyricsInfo& info) {
 }
 
 void ui_lyrics_on_track_changed(const TrackMeta& meta, bool is_lyrics_tab_active) {
-    if (strcmp(s_current_track_meta.title, meta.title) != 0 ||
-        strcmp(s_current_track_meta.artist, meta.artist) != 0) {
+    bool trackChanged = (strcmp(s_current_track_meta.title, meta.title) != 0 ||
+                         strcmp(s_current_track_meta.artist, meta.artist) != 0);
+    if (trackChanged) {
         s_lyrics_resolved = false;
         s_lyrics_loading = false;
     }
     s_current_track_meta = meta;
-    if (is_lyrics_tab_active) {
+    if (is_lyrics_tab_active && trackChanged) {
         fetch_lyrics_if_needed();
     }
 }
