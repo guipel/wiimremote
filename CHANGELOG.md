@@ -10,6 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **UPnP / DLNA Media Server Browser & Native LinkPlay Album Queue (`505394c`)**:
+  - Added a 4th navigation tab (`Browser` / `LV_SYMBOL_DIRECTORY`) implemented in `include/ui/ui_browser.h`, `src/ui/ui_browser.cpp`, `include/net/upnp_client.h`, and `src/net/upnp_client.cpp`.
+  - Extended SSDP discovery (`src/net/discovery_service.cpp`) to discover local UPnP `urn:schemas-upnp-org:device:MediaServer:1` servers (e.g., Asset UPnP, MinimServer, Plex, Synology) and extract their `ContentDirectory:1` control URLs.
+  - Implemented recursive folder navigation (`BrowseDirectChildren`) with PSRAM-backed item lists (`UpnpItemList`) and a persistent 32px breadcrumb/back header with a dedicated server refresh button.
+  - Implemented native LinkPlay `<PlayList>` queue construction (`PlayQueue:1#AppendTracksInQueueEx` on port `49152`) when tapping any track in a folder, loading the entire album/folder queue onto the WiiM streamer starting at the selected track index so `X/Y` track counters, gapless playback, and Next/Previous buttons work natively.
+  - Added standard UPnP `BrowseMetadata` queries per track in `upnp_client_play_track()` so servers using `Folders & Filename Browsing` (such as Asset UPnP) still provide the true embedded `TITLE`, `ARTIST`, and `ALBUM` tags during playback on the WiiM.
+- **Declarative 6-Theme Color System (`505394c`)**:
+  - Created `include/ui/themes_config.h` isolating 6 RGB565-tuned hi-fi color palettes (`Cyber Cyan`, `Tube Amber`, `Naim Emerald`, `McIntosh Blue`, `Velvet Rose`, `Studio Crimson`) away from UI logic.
+  - Renamed the **Power & Battery** screen to **Power & Display** (`src/ui/modal_power.cpp`) and added a **`Theme: <Name>`** row that cycles live across all 6 themes (`ui_apply_theme()`) and persists `theme_idx` in NVS (`"wiimremote"`).
+- **Ghost Seek Target Indicator (`505394c`)**:
+  - Added a translucent seek target indicator (`obj_seek_target`) on the Player progress bar (`src/ui/ui_player.cpp`) that marks the requested seek position while the streamer buffers and automatically hides once `curpos` catches up within 3 seconds.
 - **Input Source Cycling & Dynamic Source Icon**:
   - Repurposed `btn_var_input` on the Player volume row (`src/ui/ui_player.cpp`) to cycle through WiiM input modes (`wifi` &rarr; `bluetooth` &rarr; `line-in` &rarr; `optical`) via `setPlayerCmd:switchmode:<mode>` (`CMD_SWITCH_MODE`).
   - Added dynamic icon updates (`LV_SYMBOL_WIFI`, `LV_SYMBOL_BLUETOOTH`, `"AUX"`, `"OPT"`) synchronized with the active LinkPlay `mode` telemetry (`10/31/32` Wi-Fi, `41` Bluetooth, `40` Line-In, `43` Optical).
@@ -30,6 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Replaced `(-XX dBm)` text suffixes in the Wi-Fi scan list with RSSI color-coded signal icons.
 
 ### Changed
+- **Unified Full-Screen Settings Views & 32px Header Bars (`505394c`)**:
+  - Redesigned the Device Selector (`src/ui/modal_device.cpp`), Wi-Fi Manager (`src/ui/modal_wifi.cpp`), Power & Display (`src/ui/modal_power.cpp`), Presets (`src/ui/ui_presets.cpp`), and UPnP Browser (`src/ui/ui_browser.cpp`) into edge-to-edge flat lists with a standardized `32px` top header bar matching the main status header (`src/ui/ui_header.cpp`).
+  - Added a `"Forget <SSID>"` top row in the Wi-Fi list (`CMD_WIFI_FORGET`) and displayed `"Fixed"` beneath the disabled volume slider when a streamer is in fixed line-out mode.
+  - Extended `CMD_PREV` (`src/net/linkplay_client.cpp`) to restart the current song (`seek:0`) if playback is past 5 seconds, or skip to the previous track otherwise.
 - **Asynchronous Wi-Fi Scanning & Zero-Allocation SSDP Parsing**:
   - Switched `wifi_service_start_scan()` to non-blocking async scanning (`WiFi.scanNetworks(true, ...)`) harvested in `wifi_service_handle()`, keeping `NetTask` responsive to transport/volume commands during scans.
   - Replaced per-packet `String` heap allocations in `discovery_service.cpp` (`ssdp_listen_window`) with zero-allocation `strstr()` parsing and added a 350ms LAN connect timeout for fast-path NVS verification.
