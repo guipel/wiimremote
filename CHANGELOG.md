@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Critical Low-Battery Protection & Task Watchdog Timer**:
   - Added a 3-sample consecutive `<= 3350 mV` (`BAT_VOLT_CRIT_MV`) cutoff in `src/ui/ui_core.cpp` that automatically enters deep sleep to protect the Li-Po cell.
   - Subscribed both `UiTask` (Core 1) and `NetTask` (Core 0) to the 15-second ESP32 Task Watchdog Timer (`esp_task_wdt`).
+- **Beginner's Installation & Setup Guide (`INSTALL.md`)**:
+  - Added a jargon-free, step-by-step hardware assembly and software installation manual (`INSTALL.md`) with exact links to the Hosyond 2.8" ESP32-S3 touchscreen board and 3000mAh Li-Po battery, battery polarity safety check, VS Code + PlatformIO upload walkthrough, and touchscreen setup instructions.
 - **UI/UX Refinements**:
   - Swallowed the initial wake-from-dim touch gesture in `src/display_driver.cpp` until finger release so waking the screen does not trigger underlying buttons or sliders.
   - Added backdrop tap-to-close on all three modals (`modal_device.cpp`, `modal_wifi.cpp`, `modal_power.cpp`).

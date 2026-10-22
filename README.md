@@ -263,10 +263,12 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View**, a
 
 ## 🚀 Getting Started
 
+> 📖 **New to ESP32 or PlatformIO?** Read the step-by-step **[Beginner's Installation & Setup Guide (`INSTALL.md`)](INSTALL.md)**—no soldering or coding skills required!
+
 ### 1. Prerequisites
 - [PlatformIO IDE](https://platformio.org/) (VSCode extension or CLI).
-- ESP32-S3 board with 16MB Flash and 8MB Octal PSRAM (N16R8).
-- ILI9341V 2.8" SPI TFT (240x320) + FT6336G capacitive touch screen.
+- **Touchscreen Board**: [Hosyond 2.8" ESP32-S3 Capacitive Touch Display (ILI9341V 240x320 + FT6336G, N16R8)](https://www.amazon.com/dp/B0FKG7WRWV)
+- **Battery**: [3.7V 3000mAh Li-Po Rechargeable Battery (JST 1.25mm 2-Pin)](https://www.amazon.com/dp/B0DK5BBKM5)
 
 ### 2. Wi-Fi Configuration
 You can configure Wi-Fi directly on the device using the touchscreen keyboard on first boot!
