@@ -117,7 +117,7 @@ The user interface is organized into single-responsibility modules:
 ```
 include/ui/
 ├── themes_config.h    # Declarative 6-theme color palette config (RGB565-tuned)
-├── ui_theme.h         # Dynamic theme getters, color macros, padlock bitmap, format_time()
+├── ui_theme.h         # Dynamic theme getters, color macros, ui_style_flat_list_btn(), format_time()
 ├── ui_header.h        # Top 32px status bar (Wi-Fi RSSI, active device, battery meter)
 ├── ui_player.h        # Now Playing view, transport controls, ghost seek target, adaptive volume
 ├── ui_lyrics.h        # LRCLIB lyrics view container and on-demand activation
@@ -128,7 +128,7 @@ include/ui/
 └── modal_power.h      # Full-screen Power & Display view (brightness, auto-dim, sleep, theme)
 
 src/ui/
-├── ui_core.cpp        # ui_init(), live theme dispatcher (ui_apply_theme), event loop router
+├── ui_core.cpp        # ui_init(), single-source theme dispatcher (ui_apply_theme), padlock asset, event router
 ├── ui_header.cpp      # 32px header layout & event dispatching
 ├── ui_player.cpp      # Player tab, ghost seek indicator, adaptive volume, input mode cycling
 ├── ui_lyrics.cpp      # Lyrics container, auto-scroll, formatted error handling

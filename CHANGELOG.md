@@ -16,8 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Implemented recursive folder navigation (`BrowseDirectChildren`) with PSRAM-backed item lists (`UpnpItemList`) and a persistent 32px breadcrumb/back header with a dedicated server refresh button.
   - Implemented native LinkPlay `<PlayList>` queue construction (`PlayQueue:1#AppendTracksInQueueEx` on port `49152`) when tapping any track in a folder, loading the entire album/folder queue onto the WiiM streamer starting at the selected track index so `X/Y` track counters, gapless playback, and Next/Previous buttons work natively.
   - Added standard UPnP `BrowseMetadata` queries per track in `upnp_client_play_track()` so servers using `Folders & Filename Browsing` (such as Asset UPnP) still provide the true embedded `TITLE`, `ARTIST`, and `ALBUM` tags during playback on the WiiM.
-- **Declarative 6-Theme Color System (`505394c`)**:
-  - Created `include/ui/themes_config.h` isolating 6 RGB565-tuned hi-fi color palettes (`Cyber Cyan`, `Tube Amber`, `Naim Emerald`, `McIntosh Blue`, `Velvet Rose`, `Studio Crimson`) away from UI logic.
+- **Declarative 6-Theme Color System (`505394c`, `da59fd3`)**:
+  - Created `include/ui/themes_config.h` isolating 6 RGB565-tuned hi-fi color palettes (`Cyber Cyan`, `Tube Amber`, `Naim Emerald`, `McIntosh Blue`, `Velvet Rose`, `Studio Crimson`) away from UI logic, calibrated for the 16-bit RGB565 TFT gamma curve (`da59fd3`).
   - Renamed the **Power & Battery** screen to **Power & Display** (`src/ui/modal_power.cpp`) and added a **`Theme: <Name>`** row that cycles live across all 6 themes (`ui_apply_theme()`) and persists `theme_idx` in NVS (`"wiimremote"`).
 - **Ghost Seek Target Indicator (`505394c`)**:
   - Added a translucent seek target indicator (`obj_seek_target`) on the Player progress bar (`src/ui/ui_player.cpp`) that marks the requested seek position while the streamer buffers and automatically hides once `curpos` catches up within 3 seconds.
@@ -41,6 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Replaced `(-XX dBm)` text suffixes in the Wi-Fi scan list with RSSI color-coded signal icons.
 
 ### Changed
+- **UPnP SOAP Heap Elimination, Persistent `BrowseMetadata` Socket & UI Theme Deduplication (`21a59d9`)**:
+  - Replaced `xml_escape()` in `src/net/upnp_client.cpp` with direct-append `append_xml_escaped(String& out, const char* s)` and pre-reserved SOAP `<PlayList>` buffer capacity, eliminating ~35 KB of peak temporary heap allocations in internal SRAM during album queue generation.
+  - Passed a persistent `WiFiClient` to `metaHttp.begin(metaClient, ...)` in `upnp_client_play_track()` so `metaHttp.setReuse(true)` reuses a single TCP socket across `BrowseMetadata` queries, and added a 1-track early exit when `BrowseDirectChildren` already supplied real track titles.
+  - Consolidated initial and live theme color assignments across all UI views (`ui_header`, `ui_player`, `ui_lyrics`, `ui_presets`, `ui_browser`, `modal_device`, `modal_wifi`, `modal_power`) into `*_apply_theme()` invoked at the end of `ui_init()`.
+  - Added shared `ui_style_flat_list_btn()` in `include/ui/ui_theme.h` and moved `lock_alpha_map[120]` / `img_lock_dsc` into `src/ui/ui_core.cpp`, reducing UI code by 154 lines and saving ~4.2 KB of Flash.
 - **Unified Full-Screen Settings Views & 32px Header Bars (`505394c`)**:
   - Redesigned the Device Selector (`src/ui/modal_device.cpp`), Wi-Fi Manager (`src/ui/modal_wifi.cpp`), Power & Display (`src/ui/modal_power.cpp`), Presets (`src/ui/ui_presets.cpp`), and UPnP Browser (`src/ui/ui_browser.cpp`) into edge-to-edge flat lists with a standardized `32px` top header bar matching the main status header (`src/ui/ui_header.cpp`).
   - Added a `"Forget <SSID>"` top row in the Wi-Fi list (`CMD_WIFI_FORGET`) and displayed `"Fixed"` beneath the disabled volume slider when a streamer is in fixed line-out mode.
