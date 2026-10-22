@@ -1,6 +1,5 @@
 #include "net/lyrics_client.h"
 #include "net/net_utils.h"
-#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <esp_task_wdt.h>
@@ -13,89 +12,59 @@ void lyrics_client_fetch(const char* title, const char* artist) {
         return;
     }
 
-    String cleanTitle = title;
-    String cleanArtist = (artist ? artist : "");
+    String url = "https://lrclib.net/api/get?track_name=" + net_url_encode(title);
+    if (artist && strlen(artist) > 0) {
+        url += "&artist_name=" + net_url_encode(artist);
+    }
 
-    int lastHttpCode = 0;
+    esp_task_wdt_reset();
 
-    auto queryLrclib = [&lastHttpCode](const String& t, const String& a, String& outLyrics) -> bool {
+    HTTPClient http;
+    http.setConnectTimeout(8000);
+    http.setTimeout(10000);
+    http.setUserAgent("WiiMRemote/1.0 (ESP32-S3)");
+
+    int code = -1;
+    String lyricsText;
+
+    Serial.printf("[LRCLIB] GET %s\n", url.c_str());
+
+    if (http.begin(url)) {
+        code = http.GET();
         esp_task_wdt_reset();
 
-        WiFiClientSecure secureClient;
-        secureClient.setInsecure();
-        secureClient.setHandshakeTimeout(5); // 5 seconds TLS handshake timeout
-        secureClient.setTimeout(5);          // 5 seconds socket read/write timeout
-
-        HTTPClient http;
-        http.setConnectTimeout(4000);
-        http.setTimeout(5000);
-
-        String url = "https://lrclib.net/api/get?track_name=" + net_url_encode(t.c_str());
-        if (a.length() > 0) {
-            url += "&artist_name=" + net_url_encode(a.c_str());
-        }
-
-        if (!http.begin(secureClient, url)) {
-            lastHttpCode = -1;
-            return false;
-        }
-        http.setUserAgent("WiiMRemote/1.0 (ESP32-S3)");
-        int code = http.GET();
-        esp_task_wdt_reset();
-        lastHttpCode = code;
-
-        if (code == 200) {
+        if (code == HTTP_CODE_OK) {
             String payload = http.getString();
             JsonDocument doc;
-            DeserializationError err = deserializeJson(doc, payload);
-            if (!err) {
+            if (!deserializeJson(doc, payload)) {
                 const char* plain = doc["plainLyrics"];
                 if (plain && strlen(plain) > 0) {
-                    outLyrics = plain;
-                    http.end();
-                    return true;
-                }
-                const char* synced = doc["syncedLyrics"];
-                if (synced && strlen(synced) > 0) {
-                    outLyrics = net_strip_lrc_timestamps(synced);
-                    http.end();
-                    return (outLyrics.length() > 0);
+                    lyricsText = plain;
+                } else {
+                    const char* synced = doc["syncedLyrics"];
+                    if (synced && strlen(synced) > 0) {
+                        lyricsText = net_strip_lrc_timestamps(synced);
+                    }
                 }
             }
         }
         http.end();
-        return false;
-    };
-
-    String lyricsText;
-    bool found = queryLrclib(cleanTitle, cleanArtist, lyricsText);
-
-    // If not found and title has parenthesized/bracketed additions, e.g. "Song (Remastered 2011)", try stripped title
-    if (!found && (cleanTitle.indexOf('(') >= 0 || cleanTitle.indexOf('-') >= 0)) {
-        String strippedTitle = cleanTitle;
-        int p = strippedTitle.indexOf('(');
-        if (p > 0) strippedTitle = strippedTitle.substring(0, p);
-        p = strippedTitle.indexOf('-');
-        if (p > 0) strippedTitle = strippedTitle.substring(0, p);
-        strippedTitle.trim();
-        if (strippedTitle.length() > 0 && strippedTitle != cleanTitle) {
-            found = queryLrclib(strippedTitle, cleanArtist, lyricsText);
-        }
     }
 
-    // Post result to UI
+    Serial.printf("[LRCLIB] Response code=%d, lyricsLen=%u\n", code, (unsigned int)lyricsText.length());
+
     LyricsInfo* pResult = (LyricsInfo*)malloc(sizeof(LyricsInfo));
     if (pResult) {
         memset(pResult, 0, sizeof(LyricsInfo));
         strncpy(pResult->title, title, sizeof(pResult->title) - 1);
         strncpy(pResult->artist, (artist ? artist : ""), sizeof(pResult->artist) - 1);
         pResult->is_loading = false;
-        if (found && lyricsText.length() > 0) {
+        if (code == HTTP_CODE_OK && lyricsText.length() > 0) {
             pResult->text = strdup(lyricsText.c_str());
-        } else if (lastHttpCode < 0 || lastHttpCode >= 500) {
-            pResult->text = strdup("Failed to retrieve lyrics.\nPlease check your connection.");
+        } else if (code == HTTP_CODE_NOT_FOUND || code == HTTP_CODE_OK) {
+            pResult->text = strdup("Lyrics not found\nfor this track.");
         } else {
-            pResult->text = strdup("No lyrics found for this track.");
+            pResult->text = strdup("Connection error.\nPlease check your Wi-Fi.");
         }
         UiEvent evt;
         evt.type = UI_EVT_LYRICS_UPDATED;

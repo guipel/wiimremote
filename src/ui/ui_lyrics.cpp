@@ -127,12 +127,12 @@ void ui_lyrics_set_content(const LyricsInfo& info) {
         if (info.text && strlen(info.text) > 0) {
             lv_label_set_text(lbl_lyrics_body, info.text);
             // Allow retry on re-entering tab if the fetch failed due to network error
-            s_lyrics_resolved = (strncmp(info.text, "Failed to retrieve", 18) != 0);
+            s_lyrics_resolved = (strncmp(info.text, "Connection error", 16) != 0);
         } else if (info.is_loading) {
             lv_label_set_text(lbl_lyrics_body, "Fetching lyrics from LRCLIB...");
             s_lyrics_resolved = false;
         } else {
-            lv_label_set_text(lbl_lyrics_body, "No lyrics found for this track.");
+            lv_label_set_text(lbl_lyrics_body, "Lyrics not found\nfor this track.");
             s_lyrics_resolved = true;
         }
     }

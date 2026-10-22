@@ -21,6 +21,11 @@ static portMUX_TYPE s_device_mux = portMUX_INITIALIZER_UNLOCKED;
 static WiiMDevice s_active_device;
 static bool s_has_active_device = false;
 
+// Cache of non-WiiM UPnP IPs already probed during passive SSDP listening to prevent repeated TCP/TLS probe storms
+static constexpr uint8_t MAX_IGNORED_IPS = 16;
+static char s_ignored_ips[MAX_IGNORED_IPS][24];
+static uint8_t s_ignored_count = 0;
+
 static void load_saved_device() {
     String savedIp = s_dev_prefs.getString("active_ip", "");
     String savedUuid = s_dev_prefs.getString("active_uuid", "");
@@ -50,7 +55,7 @@ static void load_saved_device_list() {
     if (count > MAX_DISCOVERED_DEVICES) count = MAX_DISCOVERED_DEVICES;
 
     for (uint8_t i = 0; i < count; ++i) {
-        char keyIp[12], keyUuid[14], keyName[14], keyFixed[14];
+        char keyIp[16], keyUuid[16], keyName[16], keyFixed[16];
         snprintf(keyIp, sizeof(keyIp), "dev_ip_%u", i);
         snprintf(keyUuid, sizeof(keyUuid), "dev_uuid_%u", i);
         snprintf(keyName, sizeof(keyName), "dev_name_%u", i);
@@ -82,7 +87,7 @@ static void save_saved_device_list() {
 
     s_dev_prefs.putUChar("dev_count", snapshot.count);
     for (uint8_t i = 0; i < snapshot.count; ++i) {
-        char keyIp[12], keyUuid[14], keyName[14], keyFixed[14];
+        char keyIp[16], keyUuid[16], keyName[16], keyFixed[16];
         snprintf(keyIp, sizeof(keyIp), "dev_ip_%u", i);
         snprintf(keyUuid, sizeof(keyUuid), "dev_uuid_%u", i);
         snprintf(keyName, sizeof(keyName), "dev_name_%u", i);
@@ -94,7 +99,7 @@ static void save_saved_device_list() {
     }
     // Clean up only stale keys beyond current count up to previously saved count
     for (uint8_t i = snapshot.count; i < s_prev_saved_count && i < MAX_DISCOVERED_DEVICES; ++i) {
-        char keyIp[12], keyUuid[14], keyName[14], keyFixed[14];
+        char keyIp[16], keyUuid[16], keyName[16], keyFixed[16];
         snprintf(keyIp, sizeof(keyIp), "dev_ip_%u", i);
         snprintf(keyUuid, sizeof(keyUuid), "dev_uuid_%u", i);
         snprintf(keyName, sizeof(keyName), "dev_name_%u", i);
@@ -202,7 +207,7 @@ static void add_or_update_device(const WiiMDevice& dev) {
             exists = true;
             preservedFixed = s_device_list.devices[i].is_fixed_volume;
             if (strcmp(s_device_list.devices[i].name, dev.name) != 0 ||
-                strcmp(s_device_list.devices[i].ip, dev.ip) != 0) {
+                 strcmp(s_device_list.devices[i].ip, dev.ip) != 0) {
                 strncpy(s_device_list.devices[i].name, dev.name, sizeof(s_device_list.devices[i].name) - 1);
                 strncpy(s_device_list.devices[i].ip, dev.ip, sizeof(s_device_list.devices[i].ip) - 1);
                 changed = true;
@@ -264,6 +269,8 @@ void discovery_service_init(ActiveDeviceChangedCb onActiveChanged) {
 
     memset(&s_active_device, 0, sizeof(s_active_device));
     memset(&s_device_list, 0, sizeof(s_device_list));
+    memset(s_ignored_ips, 0, sizeof(s_ignored_ips));
+    s_ignored_count = 0;
 
     load_saved_device();
     load_saved_device_list();
@@ -355,9 +362,22 @@ void discovery_service_process_ssdp() {
 
         if (alreadyKnown) continue;
 
+        bool alreadyIgnored = false;
+        for (uint8_t i = 0; i < s_ignored_count; ++i) {
+            if (strcmp(s_ignored_ips[i], ipStr.c_str()) == 0) {
+                alreadyIgnored = true;
+                break;
+            }
+        }
+        if (alreadyIgnored) continue;
+
         WiiMDevice dev;
         if (query_device_status(ipStr.c_str(), &dev)) {
             add_or_update_device(dev);
+        } else if (s_ignored_count < MAX_IGNORED_IPS) {
+            strncpy(s_ignored_ips[s_ignored_count], ipStr.c_str(), sizeof(s_ignored_ips[0]) - 1);
+            s_ignored_ips[s_ignored_count][sizeof(s_ignored_ips[0]) - 1] = '\0';
+            s_ignored_count++;
         }
     }
 }
@@ -365,6 +385,9 @@ void discovery_service_process_ssdp() {
 void discovery_service_trigger_rescan() {
     if (!wifi_service_is_connected()) return;
     log_i("Triggering device rescan (NVS IPs + SSDP)...");
+
+    // Clear ignored non-WiiM IP cache on explicit rescan
+    s_ignored_count = 0;
 
     UiEvent evt;
     evt.type = UI_EVT_SCAN_STATUS;
