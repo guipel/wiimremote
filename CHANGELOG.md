@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Configured `include/lv_conf.h` to alias `lv_font_montserrat_*` to the extended UTF-8 fonts so accented characters on the 24px Now Playing song title render properly and persist across `pio run -t clean`.
 - **Deep Sleep & Dimmed Mode Battery Optimizations**:
   - Configured the FT6336G capacitive touch controller to automatically enter low-power Monitor mode (`0x86 = 0x01`, `0x87 = 5s`) when idle and explicitly switch to Monitor mode (`0xA5 = 0x01`) before deep sleep while preserving instant `TOUCH_INT` (`GPIO 17`) wake.
-  - Added full ILI9341V display power-down (`DISPOFF 0x28` + `SLPIN 0x10` + 120ms charge-pump discharge), deep-sleep GPIO hold on `PIN_PA_EN` (`GPIO 1` HIGH) and `TFT_BL` (`GPIO 45` LOW), RTC pull-up on `TOUCH_INT`, and explicit `WiFi.mode(WIFI_OFF)` shutdown.
+  - Configured deep-sleep GPIO hold on `PIN_PA_EN` (`GPIO 1` HIGH) and `TFT_BL` (`GPIO 45` LOW), RTC pull-up on `TOUCH_INT`, and explicit `WiFi.mode(WIFI_OFF)` shutdown without issuing LCD `DISPOFF`/`SLPIN` commands that caused a VCOM border halo (`479d062`).
   - Implemented dynamic CPU frequency scaling (full `240 MHz` while awake, stepping down to `80 MHz` when dimmed) and adaptive HTTPS polling (`1000ms` playing, `2500ms` paused/stopped, `5000ms` dimmed).
 - **Critical Low-Battery Protection & Task Watchdog Timer**:
   - Added a 3-sample consecutive `<= 3350 mV` (`BAT_VOLT_CRIT_MV`) cutoff in `src/ui/ui_core.cpp` that automatically enters deep sleep to protect the Li-Po cell.
@@ -46,9 +46,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Reordered `display_driver_init()` before `power_manager_init()` in `src/main.cpp` and removed the hardcoded `BL_DEFAULT_BRIGHT` (85%) override so NVS-saved brightness is applied on boot and wake from deep sleep.
 - **Deep Sleep Immediate Re-Wake Race**:
   - Added a finger-release wait loop on `PIN_TOUCH_INT` (`GPIO 17`) in `power_manager_enter_deep_sleep()` so tapping the "Sleep" button does not immediately re-wake the ESP32-S3 via `EXT0` while the finger is still lifting.
-- **On-Demand Lyrics Fetch Hang (`"Fetching lyrics from LRCLIB..."`)**:
+- **On-Demand Lyrics Fetch & Single-Request LRCLIB Simplification**:
   - Passed the active track `title` and `artist` directly inside `CMD_FETCH_LYRICS` (`UiCommand::data::lyrics_req`) and synchronized `s_last_known_track_title` in `linkplay_client_fetch_meta()` so metadata from `getMetaInfo` and `getPlayerStatus` never desynchronize or get discarded as stale.
-  - Closed the persistent WiiM TLS session before opening the `lrclib.net` TLS session to free ~40 KB of internal SRAM and configured explicit 4s connect / 5s handshake timeouts in `src/net/lyrics_client.cpp`.
+  - Simplified `lyrics_client_fetch()` in `src/net/lyrics_client.cpp` to a single flat `HTTPClient::GET()` request without multi-request retries or stripped-title fallbacks that previously triggered back-to-back TLS resets and overwrote HTTP 404 responses with connection errors (`479d062`).
+- **Non-WiiM UPnP SSDP Probe Storm Elimination**:
+  - Added an in-RAM ignored IP cache (`s_ignored_ips`) in `src/net/discovery_service.cpp` so non-WiiM UPnP devices broadcasting SSDP `NOTIFY` packets on the LAN are not repeatedly probed over TCP/TLS every 5 seconds (`479d062`).
 - **Hex String Decoder False Positives**:
   - Hardened `net_decode_hex_string()` in `src/net/net_utils.cpp` with strict UTF-8 printability and numeric-only checks so plain ASCII artist/track names composed of hex characters (`"ABBA"`, `"ACDC"`, `"CAFE"`, `"1984"`) are never corrupted.
 - **Fixed-Volume Lock Clobbering on SSDP Refresh**:
