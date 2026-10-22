@@ -10,6 +10,8 @@
 
 #define MAX_DISCOVERED_DEVICES  12
 #define MAX_PRESETS             12
+#define MAX_UPNP_SERVERS        6
+#define MAX_UPNP_ITEMS          64
 
 enum PlayState {
     PLAY_STATE_UNKNOWN = 0,
@@ -93,6 +95,36 @@ struct LyricsInfo {
 };
 
 // =============================================================================
+// UPnP Media Server Browsing Data Structures
+// =============================================================================
+struct UpnpServerInfo {
+    char name[48];
+    char base_url[64];
+    char control_url[128];
+    char udn[64];
+};
+
+struct UpnpServerList {
+    uint8_t count;
+    UpnpServerInfo servers[MAX_UPNP_SERVERS];
+};
+
+struct UpnpItem {
+    char id[64];
+    char title[64];
+    char artist[48];
+    bool is_folder;
+    uint8_t track_index; // 0-based index among audio tracks in this folder
+};
+
+struct UpnpBrowseList {
+    char title[48];
+    bool is_error;
+    uint8_t count;
+    UpnpItem items[MAX_UPNP_ITEMS];
+};
+
+// =============================================================================
 // Inter-Task Communication (FreeRTOS Queues)
 // =============================================================================
 
@@ -108,7 +140,9 @@ enum UiEventType {
     UI_EVT_WIFI_SETUP_REQUIRED,
     UI_EVT_WIFI_CONNECT_SUCCESS,
     UI_EVT_WIFI_CONNECT_FAILED,
-    UI_EVT_LYRICS_UPDATED
+    UI_EVT_LYRICS_UPDATED,
+    UI_EVT_UPNP_SERVERS_UPDATED,
+    UI_EVT_UPNP_BROWSE_RESULT
 };
 
 struct UiEvent {
@@ -129,6 +163,8 @@ struct UiEvent {
         } scan;
         WiFiScanList* wifi_scan;
         LyricsInfo* lyrics;
+        UpnpServerList* upnp_servers;
+        UpnpBrowseList* upnp_browse;
     } data;
 };
 
@@ -153,6 +189,12 @@ inline void ui_event_free(UiEvent* evt) {
         }
         free(evt->data.lyrics);
         evt->data.lyrics = nullptr;
+    } else if (evt->type == UI_EVT_UPNP_SERVERS_UPDATED && evt->data.upnp_servers) {
+        free(evt->data.upnp_servers);
+        evt->data.upnp_servers = nullptr;
+    } else if (evt->type == UI_EVT_UPNP_BROWSE_RESULT && evt->data.upnp_browse) {
+        free(evt->data.upnp_browse);
+        evt->data.upnp_browse = nullptr;
     }
 }
 
@@ -172,7 +214,10 @@ enum CmdType {
     CMD_WIFI_FORGET,
     CMD_WIFI_RECONNECT,
     CMD_FETCH_LYRICS,
-    CMD_SWITCH_MODE
+    CMD_SWITCH_MODE,
+    CMD_UPNP_SCAN_SERVERS,
+    CMD_UPNP_BROWSE,
+    CMD_UPNP_PLAY_TRACK
 };
 
 struct UiCommand {
@@ -192,6 +237,14 @@ struct UiCommand {
             char title[128];
             char artist[96];
         } lyrics_req;               // For CMD_FETCH_LYRICS
+        struct {
+            uint8_t server_index;
+            char object_id[64];
+            char title[48];
+        } upnp_browse;              // For CMD_UPNP_BROWSE
+        struct {
+            uint8_t track_index;
+        } upnp_play;                // For CMD_UPNP_PLAY_TRACK
     } data;
 };
 

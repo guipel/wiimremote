@@ -21,6 +21,8 @@ static uint32_t s_cached_track_duration_ms = 0;
 static uint8_t s_active_mode = 0;
 static uint16_t s_active_plicurr = 0;
 static uint16_t s_active_plicount = 0;
+static uint16_t s_cached_upnp_track_num = 0;
+static uint16_t s_cached_upnp_track_total = 0;
 static PlayerState s_last_player_state;
 
 void linkplay_client_init() {
@@ -30,6 +32,8 @@ void linkplay_client_init() {
     s_last_known_track_title = "";
     s_last_known_artist = "";
     s_meta_resolved = false;
+    s_cached_upnp_track_num = 0;
+    s_cached_upnp_track_total = 0;
     s_cached_track_duration_ms = 0;
     s_active_mode = 0;
     s_active_plicurr = 0;
@@ -50,6 +54,8 @@ void linkplay_client_reset_track_cache() {
     s_last_known_artist = "";
     s_cached_track_duration_ms = 0;
     s_meta_resolved = false;
+    s_cached_upnp_track_num = 0;
+    s_cached_upnp_track_total = 0;
 }
 
 static int execute_api_get(const char* targetIp, const String& cmd, String& outPayload) {
@@ -111,6 +117,40 @@ bool linkplay_client_send_cmd(const char* targetIp, const String& cmd) {
     String payload;
     int httpCode = execute_api_get(targetIp, cmd, payload);
     return (httpCode == HTTP_CODE_OK);
+}
+
+static void fetch_upnp_queue_index(const char* targetIp) {
+    if (!targetIp || strlen(targetIp) == 0) return;
+
+    HTTPClient http;
+    String url = "http://" + String(targetIp) + ":" + String(WIIM_UPNP_PORT) + "/upnp/control/PlayQueue1";
+    http.setConnectTimeout(500);
+    http.setTimeout(1200);
+
+    if (!http.begin(url)) {
+        return;
+    }
+
+    http.addHeader("Content-Type", "text/xml; charset=\"utf-8\"");
+    http.addHeader("SOAPAction", "\"urn:schemas-wiimu-com:service:PlayQueue:1#GetQueueIndex\"");
+
+    const char* soapBody = "<?xml version=\"1.0\"?>"
+                           "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">"
+                           "<s:Body><u:GetQueueIndex xmlns:u=\"urn:schemas-wiimu-com:service:PlayQueue:1\">"
+                           "<QueueName>UPnPQueue</QueueName>"
+                           "</u:GetQueueIndex></s:Body></s:Envelope>";
+
+    int httpCode = http.POST(soapBody);
+    if (httpCode == HTTP_CODE_OK) {
+        String payload = http.getString();
+        String curStr = net_extract_xml_tag(payload, "CurrentIndex");
+        String totStr = net_extract_xml_tag(payload, "TrackNums");
+        if (curStr.length() > 0 && totStr.length() > 0) {
+            s_cached_upnp_track_num = (uint16_t)atoi(curStr.c_str());
+            s_cached_upnp_track_total = (uint16_t)atoi(totStr.c_str());
+        }
+    }
+    http.end();
 }
 
 static void fetch_upnp_track_duration(const char* targetIp) {
@@ -276,6 +316,8 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
         s_last_known_artist = "";
         s_cached_track_duration_ms = 0;
         s_meta_resolved = false;
+    s_cached_upnp_track_num = 0;
+    s_cached_upnp_track_total = 0;
     } else {
         if (strlen(rawTitle) > 0) {
             if (strcmp(s_last_raw_title.c_str(), rawTitle) != 0 || strcmp(s_last_raw_artist.c_str(), rawArtist) != 0) {
@@ -288,6 +330,8 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
                     s_last_known_artist = decArtist;
                     s_cached_track_duration_ms = 0;
                     s_meta_resolved = false;
+    s_cached_upnp_track_num = 0;
+    s_cached_upnp_track_total = 0;
                     isNewTrack = true;
                     if (linkplay_client_fetch_meta(targetIp)) {
                         s_meta_resolved = true;
@@ -305,6 +349,8 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
             s_last_known_artist = "";
             s_cached_track_duration_ms = 0;
             s_meta_resolved = false;
+    s_cached_upnp_track_num = 0;
+    s_cached_upnp_track_total = 0;
 
             TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
             if (pMeta) {
@@ -361,10 +407,21 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
     evt.data.player.mode = s_active_mode;
 
     // Queue / Playlist Track Count
-    const char* plicurrStr = doc["plicurr"] | "0";
-    const char* plicountStr = doc["plicount"] | "0";
-    s_active_plicurr = (uint16_t)atoi(plicurrStr);
-    s_active_plicount = (uint16_t)atoi(plicountStr);
+    const char* vendorStr = doc["vendor"] | "";
+    if (strcmp(vendorStr, "UPnPServer") == 0) {
+        if (isNewTrack || s_cached_upnp_track_total == 0) {
+            fetch_upnp_queue_index(targetIp);
+        }
+        s_active_plicurr = s_cached_upnp_track_num;
+        s_active_plicount = s_cached_upnp_track_total;
+    } else {
+        s_cached_upnp_track_num = 0;
+        s_cached_upnp_track_total = 0;
+        const char* plicurrStr = doc["plicurr"] | "0";
+        const char* plicountStr = doc["plicount"] | "0";
+        s_active_plicurr = (uint16_t)atoi(plicurrStr);
+        s_active_plicount = (uint16_t)atoi(plicountStr);
+    }
     evt.data.player.track_num = s_active_plicurr;
     evt.data.player.track_total = s_active_plicount;
 

@@ -6,8 +6,10 @@
 extern QueueHandle_t xQueueUiCmd;
 
 // UI Widgets - Lyrics Tab
+static lv_obj_t* s_parent = nullptr;
 static lv_obj_t* lbl_lyrics_title = nullptr;
 static lv_obj_t* lbl_lyrics_artist = nullptr;
+static lv_obj_t* sep_lyrics = nullptr;
 static lv_obj_t* cont_lyrics_scroll = nullptr;
 static lv_obj_t* lbl_lyrics_body = nullptr;
 
@@ -49,6 +51,7 @@ static void fetch_lyrics_if_needed() {
 }
 
 void ui_lyrics_init(lv_obj_t* parent) {
+    s_parent = parent;
     lv_obj_set_style_bg_color(parent, COLOR_BG, 0);
     lv_obj_set_style_pad_all(parent, 8, 0);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
@@ -74,12 +77,12 @@ void ui_lyrics_init(lv_obj_t* parent) {
     lv_obj_align(lbl_lyrics_artist, LV_ALIGN_TOP_MID, 0, 26);
 
     // Separator line
-    lv_obj_t* sep = lv_obj_create(parent);
-    lv_obj_set_size(sep, 216, 1);
-    lv_obj_align(sep, LV_ALIGN_TOP_MID, 0, 46);
-    lv_obj_set_style_bg_color(sep, COLOR_SURFACE_LIGHT, 0);
-    lv_obj_set_style_border_opa(sep, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_pad_all(sep, 0, 0);
+    sep_lyrics = lv_obj_create(parent);
+    lv_obj_set_size(sep_lyrics, 216, 1);
+    lv_obj_align(sep_lyrics, LV_ALIGN_TOP_MID, 0, 46);
+    lv_obj_set_style_bg_color(sep_lyrics, COLOR_SURFACE_LIGHT, 0);
+    lv_obj_set_style_border_opa(sep_lyrics, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_pad_all(sep_lyrics, 0, 0);
 
     // Scrollable container for lyrics body
     cont_lyrics_scroll = lv_obj_create(parent);
@@ -99,6 +102,14 @@ void ui_lyrics_init(lv_obj_t* parent) {
     lv_obj_set_style_text_align(lbl_lyrics_body, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(lbl_lyrics_body, 214);
     lv_obj_align(lbl_lyrics_body, LV_ALIGN_TOP_MID, 0, 4);
+}
+
+void ui_lyrics_apply_theme() {
+    if (s_parent) lv_obj_set_style_bg_color(s_parent, COLOR_BG, 0);
+    if (lbl_lyrics_title) lv_obj_set_style_text_color(lbl_lyrics_title, COLOR_ACCENT, 0);
+    if (lbl_lyrics_artist) lv_obj_set_style_text_color(lbl_lyrics_artist, COLOR_TEXT_MUTED, 0);
+    if (sep_lyrics) lv_obj_set_style_bg_color(sep_lyrics, COLOR_SURFACE_LIGHT, 0);
+    if (lbl_lyrics_body) lv_obj_set_style_text_color(lbl_lyrics_body, COLOR_TEXT_PRIMARY, 0);
 }
 
 void ui_lyrics_set_content(const LyricsInfo& info) {

@@ -1,4 +1,5 @@
 #include "net/discovery_service.h"
+#include "net/upnp_client.h"
 #include "net/net_utils.h"
 #include "net/wifi_service.h"
 #include <Preferences.h>
@@ -284,6 +285,22 @@ void discovery_service_start_ssdp_listener() {
     s_udp_ssdp.beginMulticast(IPAddress(239, 255, 255, 250), SSDP_PORT);
 }
 
+void discovery_service_send_upnp_server_query() {
+    if (!wifi_service_is_connected()) return;
+
+    const char* ssdp_msearch_mediaserver =
+        "M-SEARCH * HTTP/1.1\r\n"
+        "HOST: 239.255.255.250:1900\r\n"
+        "MAN: \"ssdp:discover\"\r\n"
+        "MX: 1\r\n"
+        "ST: urn:schemas-upnp-org:device:MediaServer:1\r\n\r\n";
+
+    IPAddress mcastIP(239, 255, 255, 250);
+    s_udp_ssdp.beginPacket(mcastIP, SSDP_PORT);
+    s_udp_ssdp.write((const uint8_t*)ssdp_msearch_mediaserver, strlen(ssdp_msearch_mediaserver));
+    s_udp_ssdp.endPacket();
+}
+
 void discovery_service_send_ssdp_query() {
     if (!wifi_service_is_connected()) return;
 
@@ -303,6 +320,14 @@ void discovery_service_send_ssdp_query() {
         "MX: 2\r\n"
         "ST: urn:schemas-wiimu-com:device:WiFiAudio:1\r\n\r\n";
 
+    // SSDP M-SEARCH for UPnP MediaServer
+    const char* ssdp_msearch_mediaserver =
+        "M-SEARCH * HTTP/1.1\r\n"
+        "HOST: 239.255.255.250:1900\r\n"
+        "MAN: \"ssdp:discover\"\r\n"
+        "MX: 2\r\n"
+        "ST: urn:schemas-upnp-org:device:MediaServer:1\r\n\r\n";
+
     IPAddress mcastIP(239, 255, 255, 250);
     s_udp_ssdp.beginPacket(mcastIP, SSDP_PORT);
     s_udp_ssdp.write((const uint8_t*)ssdp_msearch_renderer, strlen(ssdp_msearch_renderer));
@@ -310,6 +335,10 @@ void discovery_service_send_ssdp_query() {
 
     s_udp_ssdp.beginPacket(mcastIP, SSDP_PORT);
     s_udp_ssdp.write((const uint8_t*)ssdp_msearch_wiimu, strlen(ssdp_msearch_wiimu));
+    s_udp_ssdp.endPacket();
+
+    s_udp_ssdp.beginPacket(mcastIP, SSDP_PORT);
+    s_udp_ssdp.write((const uint8_t*)ssdp_msearch_mediaserver, strlen(ssdp_msearch_mediaserver));
     s_udp_ssdp.endPacket();
 }
 
@@ -320,6 +349,26 @@ void discovery_service_process_ssdp() {
         int len = s_udp_ssdp.read(packetBuffer, sizeof(packetBuffer) - 1);
         if (len <= 0) continue;
         packetBuffer[len] = '\0';
+
+        // Route UPnP MediaServer / ContentDirectory announcements to upnp_client
+        if (strstr(packetBuffer, "MediaServer") != nullptr ||
+            strstr(packetBuffer, "ContentDirectory") != nullptr) {
+            const char* locHdr = strstr(packetBuffer, "LOCATION: http://");
+            if (!locHdr) locHdr = strstr(packetBuffer, "location: http://");
+            if (!locHdr) locHdr = strstr(packetBuffer, "Location: http://");
+            if (locHdr) {
+                const char* urlStart = locHdr + 10;
+                const char* lineEnd = strpbrk(urlStart, "\r\n");
+                if (lineEnd && (lineEnd - urlStart) < 160) {
+                    char locUrl[160];
+                    size_t uLen = (size_t)(lineEnd - urlStart);
+                    memcpy(locUrl, urlStart, uLen);
+                    locUrl[uLen] = '\0';
+                    upnp_client_on_ssdp_location(locUrl);
+                }
+            }
+            continue;
+        }
 
         // Zero-allocation check on stack buffer before constructing String objects
         if (strstr(packetBuffer, "MediaRenderer") == nullptr &&
@@ -336,6 +385,15 @@ void discovery_service_process_ssdp() {
 
         const char* locPtr = strstr(packetBuffer, "LOCATION: http://");
         if (!locPtr) locPtr = strstr(packetBuffer, "location: http://");
+        if (!locPtr) locPtr = strstr(packetBuffer, "Location: http://");
+        if (locPtr && strstr(locPtr, ":49152") == nullptr &&
+            strstr(packetBuffer, "Linkplay") == nullptr &&
+            strstr(packetBuffer, "LinkPlay") == nullptr &&
+            strstr(packetBuffer, "WiFiAudio") == nullptr &&
+            strstr(packetBuffer, "WiiM") == nullptr &&
+            strstr(packetBuffer, "wiim") == nullptr) {
+            continue;
+        }
         if (locPtr) {
             const char* start = locPtr + 17;
             const char* colonPtr = strchr(start, ':');
@@ -388,6 +446,7 @@ void discovery_service_trigger_rescan() {
 
     // Clear ignored non-WiiM IP cache on explicit rescan
     s_ignored_count = 0;
+    upnp_client_reset_ignored();
 
     UiEvent evt;
     evt.type = UI_EVT_SCAN_STATUS;

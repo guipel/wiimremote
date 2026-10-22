@@ -7,6 +7,9 @@
 // Initialize persistent top Header bar
 void ui_header_init(lv_obj_t* parent);
 
+// Refresh Header colors on theme change
+void ui_header_apply_theme();
+
 // Update Wi-Fi signal indicator
 void ui_header_set_wifi_status(bool connected, int8_t rssi);
 
