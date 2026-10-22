@@ -195,11 +195,9 @@ void display_prepare_deep_sleep() {
     lgfx::i2c::writeRegister8(TOUCH_I2C_PORT, TOUCH_ADDR, 0x86, 0x01, 0, TOUCH_I2C_FREQ);
     lgfx::i2c::writeRegister8(TOUCH_I2C_PORT, TOUCH_ADDR, 0xA5, 0x01, 0, TOUCH_I2C_FREQ);
 
-    // 2. Shut down ILI9341V display output (DISPOFF 0x28) and charge pumps (SLPIN 0x10)
+    // 2. Wait for any in-flight SPI DMA transfer to finish and turn off backlight
     gfx.waitDisplay();
-    gfx.writeCommand(0x28); // DISPOFF
-    delay(20);
-    gfx.sleep();            // SLPIN (0x10) + setBrightness(0)
+    gfx.setBrightness(0);
 
     // 3. Drive TFT_BL LOW and lock it in deep sleep so the MOSFET gate cannot float
     pinMode(TFT_BL, OUTPUT);

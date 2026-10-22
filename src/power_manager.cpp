@@ -149,10 +149,10 @@ void power_manager_enter_deep_sleep() {
     unsigned long waitStart = millis();
     uint16_t tx, ty;
     while ((gfx.getTouch(&tx, &ty) || digitalRead(TOUCH_INT) == LOW) && (millis() - waitStart < 1500)) {
-        delay(20);
+        yield();
     }
 
-    // Put FT6336G in low-power Monitor mode, shut down ILI9341V charge pumps, and lock TFT_BL LOW
+    // Put FT6336G in low-power Monitor mode and lock TFT_BL LOW
     display_prepare_deep_sleep();
 
     // Hold Audio Amp Enable (PIN_PA_EN) HIGH during deep sleep to keep speaker muted
@@ -160,10 +160,9 @@ void power_manager_enter_deep_sleep() {
     gpio_hold_en((gpio_num_t)PIN_PA_EN);
     gpio_deep_sleep_hold_en();
 
-    // Cleanly shut down Wi-Fi radio and wait 100ms (also completes 120ms ILI9341V SLPIN blanking period)
+    // Cleanly shut down Wi-Fi radio
     WiFi.disconnect(true);
     WiFi.mode(WIFI_OFF);
-    delay(100);
 
     rtc_gpio_pullup_en((gpio_num_t)TOUCH_INT);
     rtc_gpio_pulldown_dis((gpio_num_t)TOUCH_INT);
