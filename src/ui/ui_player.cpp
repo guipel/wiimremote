@@ -288,7 +288,6 @@ static void event_btn_input(lv_event_t* e) {
 
 void ui_player_init(lv_obj_t* parent) {
     s_parent = parent;
-    lv_obj_set_style_bg_color(parent, COLOR_BG, 0);
     lv_obj_set_style_pad_all(parent, 8, 0);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -296,14 +295,12 @@ void ui_player_init(lv_obj_t* parent) {
     lbl_resolution = lv_label_create(parent);
     lv_label_set_text(lbl_resolution, "");
     lv_obj_set_style_text_font(lbl_resolution, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_resolution, COLOR_TEXT_MUTED, 0);
     lv_obj_set_style_text_align(lbl_resolution, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(lbl_resolution, LV_ALIGN_TOP_MID, 0, 90);
 
     lbl_track_counter = lv_label_create(parent);
     lv_label_set_text(lbl_track_counter, "");
     lv_obj_set_style_text_font(lbl_track_counter, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_track_counter, COLOR_TEXT_MUTED, 0);
     lv_obj_set_style_text_align(lbl_track_counter, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(lbl_track_counter, LV_ALIGN_TOP_MID, 0, 184);
 
@@ -311,7 +308,6 @@ void ui_player_init(lv_obj_t* parent) {
     lbl_title = lv_label_create(parent);
     lv_label_set_text(lbl_title, "");
     lv_obj_set_style_text_font(lbl_title, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(lbl_title, COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_align(lbl_title, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(lbl_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_width(lbl_title, 224);
@@ -321,7 +317,6 @@ void ui_player_init(lv_obj_t* parent) {
     lbl_artist = lv_label_create(parent);
     lv_label_set_text(lbl_artist, "");
     lv_obj_set_style_text_font(lbl_artist, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(lbl_artist, COLOR_TEXT_MUTED, 0);
     lv_obj_set_style_text_align(lbl_artist, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(lbl_artist, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_width(lbl_artist, 224);
@@ -331,12 +326,9 @@ void ui_player_init(lv_obj_t* parent) {
     bar_progress = lv_bar_create(parent);
     lv_obj_set_size(bar_progress, 220, 6);
     lv_obj_align(bar_progress, LV_ALIGN_TOP_MID, 0, 78);
-    lv_obj_set_style_bg_color(bar_progress, COLOR_SURFACE, 0);
     lv_obj_set_style_bg_opa(bar_progress, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(bar_progress, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_width(bar_progress, 1, 0);
     lv_obj_set_style_radius(bar_progress, 3, 0);
-    lv_obj_set_style_bg_color(bar_progress, COLOR_ACCENT, LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(bar_progress, LV_OPA_COVER, LV_PART_INDICATOR);
     lv_obj_set_style_radius(bar_progress, 3, LV_PART_INDICATOR);
 
@@ -353,7 +345,6 @@ void ui_player_init(lv_obj_t* parent) {
     obj_seek_target = lv_obj_create(parent);
     lv_obj_set_size(obj_seek_target, 14, 14);
     lv_obj_set_style_radius(obj_seek_target, 7, 0);
-    lv_obj_set_style_bg_color(obj_seek_target, COLOR_ACCENT, 0);
     lv_obj_set_style_bg_opa(obj_seek_target, LV_OPA_70, 0);
     lv_obj_set_style_border_color(obj_seek_target, lv_color_hex(0xFFFFFF), 0);
     lv_obj_set_style_border_width(obj_seek_target, 1, 0);
@@ -364,13 +355,11 @@ void ui_player_init(lv_obj_t* parent) {
     lbl_time_cur = lv_label_create(parent);
     lv_label_set_text(lbl_time_cur, "00:00");
     lv_obj_set_style_text_font(lbl_time_cur, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_time_cur, COLOR_TEXT_MUTED, 0);
     lv_obj_align(lbl_time_cur, LV_ALIGN_TOP_LEFT, 10, 90);
 
     lbl_time_total = lv_label_create(parent);
     lv_label_set_text(lbl_time_total, "--:--");
     lv_obj_set_style_text_font(lbl_time_total, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_time_total, COLOR_TEXT_MUTED, 0);
     lv_obj_align(lbl_time_total, LV_ALIGN_TOP_RIGHT, -10, 90);
 
     // 5. Transport Controls Row
@@ -386,8 +375,6 @@ void ui_player_init(lv_obj_t* parent) {
     btn_prev = lv_btn_create(trans_cont);
     lv_obj_set_size(btn_prev, 54, 54);
     lv_obj_align(btn_prev, LV_ALIGN_LEFT_MID, 12, 0);
-    lv_obj_set_style_bg_color(btn_prev, COLOR_SURFACE, 0);
-    lv_obj_set_style_border_color(btn_prev, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_width(btn_prev, 1, 0);
     lv_obj_set_style_radius(btn_prev, 27, 0);
     lv_obj_add_event_cb(btn_prev, event_btn_prev, LV_EVENT_CLICKED, nullptr);
@@ -400,7 +387,6 @@ void ui_player_init(lv_obj_t* parent) {
     btn_play_pause = lv_btn_create(trans_cont);
     lv_obj_set_size(btn_play_pause, 54, 54);
     lv_obj_align(btn_play_pause, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_set_style_bg_color(btn_play_pause, COLOR_ACCENT, 0);
     lv_obj_set_style_radius(btn_play_pause, 27, 0);
     lv_obj_add_event_cb(btn_play_pause, event_btn_play_pause, LV_EVENT_CLICKED, nullptr);
     lbl_play_pause = lv_label_create(btn_play_pause);
@@ -413,8 +399,6 @@ void ui_player_init(lv_obj_t* parent) {
     btn_next = lv_btn_create(trans_cont);
     lv_obj_set_size(btn_next, 54, 54);
     lv_obj_align(btn_next, LV_ALIGN_RIGHT_MID, -12, 0);
-    lv_obj_set_style_bg_color(btn_next, COLOR_SURFACE, 0);
-    lv_obj_set_style_border_color(btn_next, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_width(btn_next, 1, 0);
     lv_obj_set_style_radius(btn_next, 27, 0);
     lv_obj_add_event_cb(btn_next, event_btn_next, LV_EVENT_CLICKED, nullptr);
@@ -426,20 +410,15 @@ void ui_player_init(lv_obj_t* parent) {
     // Micro-interactions / pressed feedback
     lv_obj_set_style_transform_width(btn_prev, -3, LV_STATE_PRESSED);
     lv_obj_set_style_transform_height(btn_prev, -3, LV_STATE_PRESSED);
-    lv_obj_set_style_bg_color(btn_prev, COLOR_SURFACE_LIGHT, LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(btn_prev, COLOR_ACCENT, LV_STATE_PRESSED);
     lv_obj_set_style_border_width(btn_prev, 2, LV_STATE_PRESSED);
 
     lv_obj_set_style_transform_width(btn_play_pause, -3, LV_STATE_PRESSED);
     lv_obj_set_style_transform_height(btn_play_pause, -3, LV_STATE_PRESSED);
-    lv_obj_set_style_bg_color(btn_play_pause, COLOR_ACCENT, LV_STATE_PRESSED);
     lv_obj_set_style_border_color(btn_play_pause, lv_color_hex(0xFFFFFF), LV_STATE_PRESSED);
     lv_obj_set_style_border_width(btn_play_pause, 2, LV_STATE_PRESSED);
 
     lv_obj_set_style_transform_width(btn_next, -3, LV_STATE_PRESSED);
     lv_obj_set_style_transform_height(btn_next, -3, LV_STATE_PRESSED);
-    lv_obj_set_style_bg_color(btn_next, COLOR_SURFACE_LIGHT, LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(btn_next, COLOR_ACCENT, LV_STATE_PRESSED);
     lv_obj_set_style_border_width(btn_next, 2, LV_STATE_PRESSED);
 
     // 6. Volume & Aux Row Container (Mute, Slider, Input Source)
@@ -455,9 +434,7 @@ void ui_player_init(lv_obj_t* parent) {
     btn_var_mute = lv_btn_create(obj_vol_var_cont);
     lv_obj_set_size(btn_var_mute, 38, 38);
     lv_obj_align(btn_var_mute, LV_ALIGN_LEFT_MID, 0, 0);
-    lv_obj_set_style_bg_color(btn_var_mute, COLOR_SURFACE, 0);
     lv_obj_set_style_border_width(btn_var_mute, 1, 0);
-    lv_obj_set_style_border_color(btn_var_mute, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_radius(btn_var_mute, 8, 0);
     lv_obj_set_style_pad_all(btn_var_mute, 0, 0);
     lv_obj_clear_flag(btn_var_mute, LV_OBJ_FLAG_SCROLLABLE);
@@ -465,23 +442,18 @@ void ui_player_init(lv_obj_t* parent) {
 
     lv_obj_set_style_transform_width(btn_var_mute, -2, LV_STATE_PRESSED);
     lv_obj_set_style_transform_height(btn_var_mute, -2, LV_STATE_PRESSED);
-    lv_obj_set_style_bg_color(btn_var_mute, COLOR_SURFACE_LIGHT, LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(btn_var_mute, COLOR_ACCENT, LV_STATE_PRESSED);
     lv_obj_set_style_border_width(btn_var_mute, 2, LV_STATE_PRESSED);
 
     lbl_var_mute = lv_label_create(btn_var_mute);
     lv_label_set_text(lbl_var_mute, LV_SYMBOL_VOLUME_MAX);
     lv_obj_set_style_text_font(lbl_var_mute, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(lbl_var_mute, COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(lbl_var_mute);
 
     // Input Source Selector Button (cycles Wi-Fi -> Bluetooth -> Line-In -> Optical)
     btn_var_input = lv_btn_create(obj_vol_var_cont);
     lv_obj_set_size(btn_var_input, 38, 38);
     lv_obj_align(btn_var_input, LV_ALIGN_RIGHT_MID, 0, 0);
-    lv_obj_set_style_bg_color(btn_var_input, COLOR_SURFACE, 0);
     lv_obj_set_style_border_width(btn_var_input, 1, 0);
-    lv_obj_set_style_border_color(btn_var_input, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_radius(btn_var_input, 8, 0);
     lv_obj_set_style_pad_all(btn_var_input, 0, 0);
     lv_obj_clear_flag(btn_var_input, LV_OBJ_FLAG_SCROLLABLE);
@@ -489,14 +461,11 @@ void ui_player_init(lv_obj_t* parent) {
 
     lv_obj_set_style_transform_width(btn_var_input, -2, LV_STATE_PRESSED);
     lv_obj_set_style_transform_height(btn_var_input, -2, LV_STATE_PRESSED);
-    lv_obj_set_style_bg_color(btn_var_input, COLOR_SURFACE_LIGHT, LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(btn_var_input, COLOR_ACCENT, LV_STATE_PRESSED);
     lv_obj_set_style_border_width(btn_var_input, 2, LV_STATE_PRESSED);
 
     lbl_var_input = lv_label_create(btn_var_input);
     lv_label_set_text(lbl_var_input, LV_SYMBOL_WIFI);
     lv_obj_set_style_text_font(lbl_var_input, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(lbl_var_input, COLOR_TEXT_PRIMARY, 0);
     lv_obj_center(lbl_var_input);
 
     // Volume Slider
@@ -505,13 +474,10 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_align(slider_vol, LV_ALIGN_CENTER, 0, 0);
     lv_slider_set_range(slider_vol, 0, 100);
     lv_slider_set_value(slider_vol, 0, LV_ANIM_OFF);
-    lv_obj_set_style_bg_color(slider_vol, COLOR_SURFACE, 0);
     lv_obj_set_style_bg_opa(slider_vol, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(slider_vol, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_width(slider_vol, 1, 0);
     lv_obj_set_style_radius(slider_vol, 3, 0);
 
-    lv_obj_set_style_bg_color(slider_vol, COLOR_ACCENT, LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(slider_vol, LV_OPA_COVER, LV_PART_INDICATOR);
     lv_obj_set_style_radius(slider_vol, 3, LV_PART_INDICATOR);
 
@@ -519,10 +485,7 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_border_opa(slider_vol, LV_OPA_TRANSP, LV_PART_KNOB);
     lv_obj_set_style_pad_all(slider_vol, 0, LV_PART_KNOB);
 
-    // Disabled state styles (Fixed volume mode)
-    lv_obj_set_style_bg_color(slider_vol, COLOR_SURFACE, LV_STATE_DISABLED);
-    lv_obj_set_style_border_color(slider_vol, COLOR_SURFACE_LIGHT, LV_STATE_DISABLED);
-    lv_obj_set_style_bg_color(slider_vol, COLOR_SURFACE_LIGHT, LV_PART_INDICATOR | LV_STATE_DISABLED);
+    // Disabled state opacity (Fixed volume mode)
     lv_obj_set_style_bg_opa(slider_vol, LV_OPA_60, LV_PART_INDICATOR | LV_STATE_DISABLED);
 
     lv_obj_add_flag(slider_vol, LV_OBJ_FLAG_CLICKABLE);
@@ -536,7 +499,6 @@ void ui_player_init(lv_obj_t* parent) {
     lbl_vol_percent = lv_label_create(obj_vol_var_cont);
     lv_label_set_text(lbl_vol_percent, "0%");
     lv_obj_set_style_text_font(lbl_vol_percent, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_vol_percent, COLOR_TEXT_MUTED, 0);
     lv_obj_set_style_text_align(lbl_vol_percent, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(lbl_vol_percent, 50);
     lv_obj_align(lbl_vol_percent, LV_ALIGN_CENTER, 0, 14);

@@ -26,14 +26,12 @@ static void event_btn_preset(lv_event_t* e) {
 
 void ui_presets_init(lv_obj_t* parent) {
     s_parent = parent;
-    lv_obj_set_style_bg_color(parent, COLOR_BG, 0);
     lv_obj_set_style_pad_all(parent, 0, 0);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
     list_presets = lv_list_create(parent);
     lv_obj_set_size(list_presets, 240, 260);
     lv_obj_align(list_presets, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(list_presets, COLOR_BG, 0);
     lv_obj_set_style_border_side(list_presets, LV_BORDER_SIDE_NONE, 0);
     lv_obj_set_style_radius(list_presets, 0, 0);
     lv_obj_set_style_pad_all(list_presets, 0, 0);
@@ -46,9 +44,6 @@ void ui_presets_init(lv_obj_t* parent) {
         lv_obj_t* btn = lv_list_add_btn(list_presets, nullptr, default_name);
         preset_btns[i] = btn;
 
-        lv_obj_set_style_bg_color(btn, COLOR_BG, 0);
-        lv_obj_set_style_bg_color(btn, COLOR_SURFACE_LIGHT, LV_STATE_PRESSED);
-        lv_obj_set_style_border_color(btn, COLOR_SURFACE_LIGHT, 0);
         lv_obj_set_style_border_side(btn, LV_BORDER_SIDE_BOTTOM, 0);
         lv_obj_set_style_border_width(btn, 1, 0);
         lv_obj_set_style_radius(btn, 0, 0);
@@ -63,7 +58,6 @@ void ui_presets_init(lv_obj_t* parent) {
         preset_lbls[i] = lv_obj_get_child(btn, 0);
         if (preset_lbls[i]) {
             lv_obj_set_style_text_font(preset_lbls[i], &lv_font_montserrat_14, 0);
-            lv_obj_set_style_text_color(preset_lbls[i], COLOR_TEXT_PRIMARY, 0);
         }
 
         // Compact Left Index Label (prepended at index 0)
@@ -74,7 +68,6 @@ void ui_presets_init(lv_obj_t* parent) {
         lv_label_set_text(lbl_idx, idx_str);
         lv_obj_set_width(lbl_idx, 18);
         lv_obj_set_style_text_font(lbl_idx, &lv_font_montserrat_12, 0);
-        lv_obj_set_style_text_color(lbl_idx, COLOR_ACCENT, 0);
         lv_obj_move_to_index(lbl_idx, 0);
     }
 }

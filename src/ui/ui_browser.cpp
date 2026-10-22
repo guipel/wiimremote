@@ -27,29 +27,6 @@ static lv_obj_t* list_browser = nullptr;
 static void render_server_list();
 static void request_browse(uint8_t serverIdx, const char* objectId, const char* title);
 
-static void style_flat_list_btn(lv_obj_t* btn, lv_color_t icon_color) {
-    lv_obj_set_style_bg_color(btn, COLOR_BG, 0);
-    lv_obj_set_style_bg_color(btn, COLOR_SURFACE_LIGHT, LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(btn, COLOR_SURFACE_LIGHT, 0);
-    lv_obj_set_style_border_side(btn, LV_BORDER_SIDE_BOTTOM, 0);
-    lv_obj_set_style_border_width(btn, 1, 0);
-    lv_obj_set_style_radius(btn, 0, 0);
-    lv_obj_set_style_pad_ver(btn, 7, 0);
-    lv_obj_set_style_pad_hor(btn, 8, 0);
-    lv_obj_set_style_pad_column(btn, 8, 0);
-    lv_obj_set_style_transform_width(btn, 0, LV_STATE_PRESSED);
-    lv_obj_set_style_flex_cross_place(btn, LV_FLEX_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_font(btn, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(btn, COLOR_TEXT_PRIMARY, 0);
-
-    if (lv_obj_get_child_cnt(btn) >= 2) {
-        lv_obj_t* icon_obj = lv_obj_get_child(btn, 0);
-        if (icon_obj) {
-            lv_obj_set_style_text_color(icon_obj, icon_color, 0);
-        }
-    }
-}
-
 static void show_status_message(const char* msg) {
     if (!list_browser) return;
     lv_obj_clean(list_browser);
@@ -162,7 +139,7 @@ static void render_server_list() {
 
     for (uint8_t i = 0; i < s_servers.count; ++i) {
         lv_obj_t* btn = lv_list_add_btn(list_browser, LV_SYMBOL_DRIVE, s_servers.servers[i].name);
-        style_flat_list_btn(btn, COLOR_ACCENT);
+        ui_style_flat_list_btn(btn, COLOR_ACCENT, COLOR_TEXT_PRIMARY, 7);
         lv_obj_add_event_cb(btn, event_btn_server, LV_EVENT_CLICKED, (void*)(uintptr_t)i);
     }
 }
@@ -173,7 +150,6 @@ void ui_browser_init(lv_obj_t* parent) {
     memset(&s_current_browse, 0, sizeof(s_current_browse));
     s_nav_depth = 0;
 
-    lv_obj_set_style_bg_color(parent, COLOR_BG, 0);
     lv_obj_set_style_pad_all(parent, 0, 0);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -181,9 +157,6 @@ void ui_browser_init(lv_obj_t* parent) {
     s_cont_header = lv_obj_create(parent);
     lv_obj_set_size(s_cont_header, 240, 32);
     lv_obj_align(s_cont_header, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(s_cont_header, COLOR_SURFACE, 0);
-    lv_obj_set_style_bg_color(s_cont_header, COLOR_SURFACE_LIGHT, LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(s_cont_header, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_side(s_cont_header, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_width(s_cont_header, 1, 0);
     lv_obj_set_style_radius(s_cont_header, 0, 0);
@@ -195,7 +168,6 @@ void ui_browser_init(lv_obj_t* parent) {
     lbl_nav_icon = lv_label_create(s_cont_header);
     lv_label_set_text(lbl_nav_icon, LV_SYMBOL_REFRESH);
     lv_obj_set_style_text_font(lbl_nav_icon, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_nav_icon, COLOR_ACCENT, 0);
     lv_obj_align(lbl_nav_icon, LV_ALIGN_LEFT_MID, 10, 0);
 
     lbl_header_title = lv_label_create(s_cont_header);
@@ -203,20 +175,16 @@ void ui_browser_init(lv_obj_t* parent) {
     lv_label_set_long_mode(lbl_header_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_width(lbl_header_title, 200);
     lv_obj_set_style_text_font(lbl_header_title, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_header_title, COLOR_ACCENT, 0);
     lv_obj_align(lbl_header_title, LV_ALIGN_LEFT_MID, 32, 0);
 
     // Flat Edge-to-Edge List Container (240 x 228 px)
     list_browser = lv_list_create(parent);
     lv_obj_set_size(list_browser, 240, 228);
     lv_obj_align(list_browser, LV_ALIGN_TOP_MID, 0, 32);
-    lv_obj_set_style_bg_color(list_browser, COLOR_BG, 0);
     lv_obj_set_style_border_side(list_browser, LV_BORDER_SIDE_NONE, 0);
     lv_obj_set_style_radius(list_browser, 0, 0);
     lv_obj_set_style_pad_all(list_browser, 0, 0);
     lv_obj_set_style_pad_row(list_browser, 0, 0);
-
-    render_server_list();
 }
 
 void ui_browser_apply_theme() {
@@ -281,7 +249,7 @@ void ui_browser_set_browse_result(const UpnpBrowseList& result) {
             item.is_folder ? LV_SYMBOL_DIRECTORY : LV_SYMBOL_AUDIO,
             item.title
         );
-        style_flat_list_btn(btn, item.is_folder ? COLOR_ACCENT : COLOR_TEXT_MUTED);
+        ui_style_flat_list_btn(btn, item.is_folder ? COLOR_ACCENT : COLOR_TEXT_MUTED, COLOR_TEXT_PRIMARY, 7);
         lv_obj_add_event_cb(btn, event_btn_item, LV_EVENT_CLICKED, (void*)(uintptr_t)i);
     }
 }

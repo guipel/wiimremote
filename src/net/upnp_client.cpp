@@ -1,6 +1,7 @@
 #include "net/upnp_client.h"
 #include "net/net_utils.h"
 #include <Preferences.h>
+#include <WiFiClient.h>
 #include <HTTPClient.h>
 #include <esp_heap_caps.h>
 #include <esp_task_wdt.h>
@@ -93,10 +94,8 @@ static String xml_unescape(const String& s) {
     return out;
 }
 
-static String xml_escape(const char* s) {
-    if (!s) return "";
-    String out;
-    out.reserve(strlen(s) + 16);
+static void append_xml_escaped(String& out, const char* s) {
+    if (!s) return;
     while (*s) {
         char c = *s++;
         switch (c) {
@@ -108,6 +107,13 @@ static String xml_escape(const char* s) {
             default:   out += c; break;
         }
     }
+}
+
+static String xml_escape(const char* s) {
+    if (!s) return "";
+    String out;
+    out.reserve(strlen(s) + 16);
+    append_xml_escaped(out, s);
     return out;
 }
 
@@ -463,10 +469,13 @@ bool upnp_client_play_track(const char* wiimIp, uint8_t trackIdx, bool isFixedVo
     // Resolve true embedded track metadata via UPnP BrowseMetadata so Folder & Filename Browsing
     // populates the playback queue with embedded <dc:title> tags rather than disk filenames.
     if (strlen(s_active_control_url) > 0) {
+        WiFiClient metaClient;
         HTTPClient metaHttp;
         metaHttp.setReuse(true);
         metaHttp.setConnectTimeout(1000);
         metaHttp.setTimeout(1500);
+        bool firstChecked = false;
+
         for (uint8_t i = 0; i < totalTracks; ++i) {
             UpnpTrackFull& t = s_folder_tracks[i];
             if (t.meta_resolved || strlen(t.id) == 0) continue;
@@ -484,7 +493,7 @@ bool upnp_client_play_track(const char* wiimIp, uint8_t trackIdx, bool isFixedVo
                 "<SortCriteria></SortCriteria>"
                 "</u:Browse></s:Body></s:Envelope>";
 
-            if (metaHttp.begin(String(s_active_control_url))) {
+            if (metaHttp.begin(metaClient, String(s_active_control_url))) {
                 metaHttp.addHeader("Content-Type", "text/xml; charset=\"utf-8\"");
                 metaHttp.addHeader("SOAPAction", "\"urn:schemas-upnp-org:service:ContentDirectory:1#Browse\"");
                 int code = metaHttp.POST(soapBody);
@@ -492,11 +501,25 @@ bool upnp_client_play_track(const char* wiimIp, uint8_t trackIdx, bool isFixedVo
                     String resp = metaHttp.getString();
                     String itemDidl = xml_unescape(net_extract_xml_tag(resp, "Result"));
                     String realTitle = net_to_valid_utf8(extract_tag_content(itemDidl, "dc:title"));
+                    bool titleMatches = (realTitle.length() > 0 && strcmp(realTitle.c_str(), t.title) == 0);
                     if (realTitle.length() > 0) {
                         memset(t.title, 0, sizeof(t.title));
                         strncpy(t.title, realTitle.c_str(), sizeof(t.title) - 1);
                     }
                     t.meta_resolved = true;
+
+                    // If the first track's BrowseDirectChildren title already equals BrowseMetadata,
+                    // this container is already serving embedded titles—skip remaining HTTP round-trips.
+                    if (!firstChecked) {
+                        firstChecked = true;
+                        if (titleMatches) {
+                            for (uint8_t j = i + 1; j < totalTracks; ++j) {
+                                s_folder_tracks[j].meta_resolved = true;
+                            }
+                            metaHttp.end();
+                            break;
+                        }
+                    }
                 }
                 metaHttp.end();
             }
@@ -557,20 +580,22 @@ bool upnp_client_play_track(const char* wiimIp, uint8_t trackIdx, bool isFixedVo
         playListXml += "<" + trackTag + ">\n";
         playListXml += "<Id>" + String(i + 1) + "</Id>\n";
         playListXml += "<URL>" + escUrl + "</URL>\n";
-        playListXml += "<Metadata>" + xml_escape(didl.c_str()) + "</Metadata>\n";
+        playListXml += "<Metadata>";
+        append_xml_escaped(playListXml, didl.c_str());
+        playListXml += "</Metadata>\n";
         playListXml += "<Source>UPnPServer</Source>\n";
         playListXml += "</" + trackTag + ">\n";
     }
     playListXml += "</Tracks>\n</PlayList>";
 
     String createSoap;
-    createSoap.reserve(playListXml.length() + 512);
+    createSoap.reserve((playListXml.length() * 3) / 2 + 512);
     createSoap +=
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
         "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">"
         "<s:Body><u:CreateQueue xmlns:u=\"urn:schemas-wiimu-com:service:PlayQueue:1\">"
         "<QueueContext>";
-    createSoap += xml_escape(playListXml.c_str());
+    append_xml_escaped(createSoap, playListXml.c_str());
     playListXml = String(); // Free unescaped playlist before HTTP POST
     createSoap += "</QueueContext></u:CreateQueue></s:Body></s:Envelope>";
 

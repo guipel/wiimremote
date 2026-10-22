@@ -52,7 +52,6 @@ static void fetch_lyrics_if_needed() {
 
 void ui_lyrics_init(lv_obj_t* parent) {
     s_parent = parent;
-    lv_obj_set_style_bg_color(parent, COLOR_BG, 0);
     lv_obj_set_style_pad_all(parent, 8, 0);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
@@ -60,7 +59,6 @@ void ui_lyrics_init(lv_obj_t* parent) {
     lbl_lyrics_title = lv_label_create(parent);
     lv_label_set_text(lbl_lyrics_title, "Lyrics");
     lv_obj_set_style_text_font(lbl_lyrics_title, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(lbl_lyrics_title, COLOR_ACCENT, 0);
     lv_obj_set_style_text_align(lbl_lyrics_title, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(lbl_lyrics_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_width(lbl_lyrics_title, 224);
@@ -70,7 +68,6 @@ void ui_lyrics_init(lv_obj_t* parent) {
     lbl_lyrics_artist = lv_label_create(parent);
     lv_label_set_text(lbl_lyrics_artist, "");
     lv_obj_set_style_text_font(lbl_lyrics_artist, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl_lyrics_artist, COLOR_TEXT_MUTED, 0);
     lv_obj_set_style_text_align(lbl_lyrics_artist, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(lbl_lyrics_artist, LV_LABEL_LONG_SCROLL_CIRCULAR);
     lv_obj_set_width(lbl_lyrics_artist, 224);
@@ -80,7 +77,6 @@ void ui_lyrics_init(lv_obj_t* parent) {
     sep_lyrics = lv_obj_create(parent);
     lv_obj_set_size(sep_lyrics, 216, 1);
     lv_obj_align(sep_lyrics, LV_ALIGN_TOP_MID, 0, 46);
-    lv_obj_set_style_bg_color(sep_lyrics, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_opa(sep_lyrics, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(sep_lyrics, 0, 0);
 
@@ -97,7 +93,6 @@ void ui_lyrics_init(lv_obj_t* parent) {
     lbl_lyrics_body = lv_label_create(cont_lyrics_scroll);
     lv_label_set_text(lbl_lyrics_body, "Play a track to view lyrics.");
     lv_obj_set_style_text_font(lbl_lyrics_body, &lv_font_montserrat_14, 0);
-    lv_obj_set_style_text_color(lbl_lyrics_body, COLOR_TEXT_PRIMARY, 0);
     lv_obj_set_style_text_line_space(lbl_lyrics_body, 6, 0);
     lv_obj_set_style_text_align(lbl_lyrics_body, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(lbl_lyrics_body, 214);
