@@ -38,8 +38,8 @@ Before plugging the battery into the back of the display board, **always check t
 You only need to do this once, and it works right inside your web browser (**Google Chrome** or **Microsoft Edge**)!
 
 ### Step 1: Download the Ready-to-Flash Firmware File
-1. Go to the **[Latest GitHub Release page](https://github.com/guipel/wiimremote/releases/latest)** (or open the **[`firmware/wiimremote-factory.bin`](firmware/wiimremote-factory.bin)** file directly in this repository).
-2. Click on **`wiimremote-factory.bin`** to download it to your computer (it will save to your `Downloads` folder).
+1. Click here to download **[`wiimremote-factory.bin`](https://github.com/guipel/wiimremote/releases/latest/download/wiimremote-factory.bin)** directly (or visit the **[Latest GitHub Release page](https://github.com/guipel/wiimremote/releases/latest)** and click **`wiimremote-factory.bin`** under **Assets**).
+2. Save the file to your computer (it will go to your `Downloads` folder).
 
 ### Step 2: Plug In Your Board & Open the Web Flasher
 1. Plug your ESP32-S3 display board into your computer using your **USB-C data cable**.

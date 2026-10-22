@@ -10,50 +10,6 @@ Built for **ESP32-S3 (N16R8: 16MB Flash, 8MB Octal OPI PSRAM)** with an **ILI934
 
 ---
 
-## 🛠 Hardware Specifications & Pinout
-
-### 1. ILI9341V 2.8" SPI Display (240x320)
-| Signal | ESP32-S3 GPIO | Function |
-| :--- | :--- | :--- |
-| **MOSI** | **GPIO 11** | SPI Data Out |
-| **MISO** | **GPIO 13** | SPI Data In |
-| **SCLK** | **GPIO 12** | SPI Clock |
-| **CS** | **GPIO 10** | SPI Chip Select |
-| **DC** | **GPIO 46** | Data / Command Select |
-| **BL** | **GPIO 45** | Backlight (LEDC PWM Channel 0, 5 kHz, 8-bit, Active HIGH) |
-| **RST** | **EN / Reset** | Hardware Reset tied to system EN |
-
-### 2. FocalTech FT6336G Capacitive Touch Controller
-| Signal | ESP32-S3 GPIO | Function |
-| :--- | :--- | :--- |
-| **SDA** | **GPIO 16** | I2C Data |
-| **SCL** | **GPIO 15** | I2C Clock |
-| **INT** | **GPIO 17** | Interrupt (Active LOW, Deep Sleep Wake Source) |
-| **RST** | **GPIO 18** | Reset (Active LOW) |
-| **I2C Addr** | `0x38` | Default FocalTech 7-bit address (Port 1, 400 kHz) |
-
-### 3. Battery Level Telemetry (ADC1_CH8)
-| Signal | ESP32-S3 GPIO | Function |
-| :--- | :--- | :--- |
-| **BAT_ADC** | **GPIO 9** | ADC1 Channel 8 with 200k / 200k voltage divider (2.0x ratio) |
-
-* **Voltage Thresholds**:
-  * **Full**: $\ge 3950\text{ mV}$ (`LV_SYMBOL_BATTERY_FULL`)
-  * **High**: $\ge 3800\text{ mV}$ (`LV_SYMBOL_BATTERY_3`)
-  * **Medium**: $\ge 3650\text{ mV}$ (`LV_SYMBOL_BATTERY_2`)
-  * **Low**: $\ge 3500\text{ mV}$ (`LV_SYMBOL_BATTERY_1`)
-  * **Empty**: $< 3500\text{ mV}$ (`LV_SYMBOL_BATTERY_EMPTY`)
-  * **Critical Protection**: $\le 3350\text{ mV}$ (3 consecutive samples trigger automatic deep sleep to protect the Li-Po cell)
-
-### 4. Reserved Onboard Pins (Isolated / Protected)
-| Peripheral | Pin(s) | Description |
-| :--- | :--- | :--- |
-| **PA_EN** | **GPIO 1** | **Driven HIGH** at boot and held during deep sleep to keep onboard amplifier muted |
-| **Codec I2S** | **GPIO 4, 5, 6, 7, 8** | High-impedance pulldown, no bus collision |
-| **Status RGB** | **GPIO 42** | Status indicator LED |
-
----
-
 ## 🚀 Installation & Getting Started
 
 > 📖 **First time building this remote?** Follow the step-by-step **[Beginner's Installation & Setup Guide (`INSTALL.md`)](INSTALL.md)**—no soldering, no coding, and no software installation required!
@@ -64,7 +20,7 @@ Built for **ESP32-S3 (N16R8: 16MB Flash, 8MB Octal OPI PSRAM)** with an **ILI934
 
 ### 2. Option A: Zero-Install Web Browser Flasher (Recommended for All Users)
 You can flash the pre-built release firmware directly from **Google Chrome** or **Microsoft Edge** without installing any development tools:
-1. Download **`wiimremote-factory.bin`** from the **[Latest GitHub Release](https://github.com/guipel/wiimremote/releases/latest)** (or directly from [`firmware/wiimremote-factory.bin`](firmware/wiimremote-factory.bin)).
+1. Download **[`wiimremote-factory.bin`](https://github.com/guipel/wiimremote/releases/latest/download/wiimremote-factory.bin)** from the **[Latest GitHub Release](https://github.com/guipel/wiimremote/releases/latest)**.
 2. Connect the ESP32-S3 display board to your computer via a **USB-C data cable**.
 3. Open **[Espressif Web Flasher (`esptool-js`)](https://espressif.github.io/esptool-js/)** in Chrome or Edge and click **`Connect`** (under *Program*).
 4. Set **Flash Address** to **`0x0`**, choose **`wiimremote-factory.bin`**, and click **`Program`**.
@@ -297,6 +253,50 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View**, a
 | Operation | Endpoint | Description |
 | :--- | :--- | :--- |
 | **Fetch Lyrics** | `GET https://lrclib.net/api/get?track_name=...&artist_name=...` | Retrieves plain and synced LRC lyrics on demand |
+
+---
+
+## 🛠 Hardware Specifications & Pinout
+
+### 1. ILI9341V 2.8" SPI Display (240x320)
+| Signal | ESP32-S3 GPIO | Function |
+| :--- | :--- | :--- |
+| **MOSI** | **GPIO 11** | SPI Data Out |
+| **MISO** | **GPIO 13** | SPI Data In |
+| **SCLK** | **GPIO 12** | SPI Clock |
+| **CS** | **GPIO 10** | SPI Chip Select |
+| **DC** | **GPIO 46** | Data / Command Select |
+| **BL** | **GPIO 45** | Backlight (LEDC PWM Channel 0, 5 kHz, 8-bit, Active HIGH) |
+| **RST** | **EN / Reset** | Hardware Reset tied to system EN |
+
+### 2. FocalTech FT6336G Capacitive Touch Controller
+| Signal | ESP32-S3 GPIO | Function |
+| :--- | :--- | :--- |
+| **SDA** | **GPIO 16** | I2C Data |
+| **SCL** | **GPIO 15** | I2C Clock |
+| **INT** | **GPIO 17** | Interrupt (Active LOW, Deep Sleep Wake Source) |
+| **RST** | **GPIO 18** | Reset (Active LOW) |
+| **I2C Addr** | `0x38` | Default FocalTech 7-bit address (Port 1, 400 kHz) |
+
+### 3. Battery Level Telemetry (ADC1_CH8)
+| Signal | ESP32-S3 GPIO | Function |
+| :--- | :--- | :--- |
+| **BAT_ADC** | **GPIO 9** | ADC1 Channel 8 with 200k / 200k voltage divider (2.0x ratio) |
+
+* **Voltage Thresholds**:
+  * **Full**: $\ge 3950\text{ mV}$ (`LV_SYMBOL_BATTERY_FULL`)
+  * **High**: $\ge 3800\text{ mV}$ (`LV_SYMBOL_BATTERY_3`)
+  * **Medium**: $\ge 3650\text{ mV}$ (`LV_SYMBOL_BATTERY_2`)
+  * **Low**: $\ge 3500\text{ mV}$ (`LV_SYMBOL_BATTERY_1`)
+  * **Empty**: $< 3500\text{ mV}$ (`LV_SYMBOL_BATTERY_EMPTY`)
+  * **Critical Protection**: $\le 3350\text{ mV}$ (3 consecutive samples trigger automatic deep sleep to protect the Li-Po cell)
+
+### 4. Reserved Onboard Pins (Isolated / Protected)
+| Peripheral | Pin(s) | Description |
+| :--- | :--- | :--- |
+| **PA_EN** | **GPIO 1** | **Driven HIGH** at boot and held during deep sleep to keep onboard amplifier muted |
+| **Codec I2S** | **GPIO 4, 5, 6, 7, 8** | High-impedance pulldown, no bus collision |
+| **Status RGB** | **GPIO 42** | Status indicator LED |
 
 ---
 
