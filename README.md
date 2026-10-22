@@ -38,11 +38,11 @@ Built for **ESP32-S3 (N16R8: 16MB Flash, 8MB Octal OPI PSRAM)** with an **ILI934
 | **BAT_ADC** | **GPIO 9** | ADC1 Channel 8 with 200k / 200k voltage divider (2.0x ratio) |
 
 * **Voltage Thresholds**:
-  * **Charging / USB Power**: $\ge 4100\text{ mV}$ (tested ~4.12V float voltage)
-  * **Full**: $\ge 3950\text{ mV}$
-  * **High**: $\ge 3800\text{ mV}$
-  * **Medium**: $\ge 3650\text{ mV}$
-  * **Low**: $< 3500\text{ mV}$
+  * **Full**: $\ge 3950\text{ mV}$ (`LV_SYMBOL_BATTERY_FULL`)
+  * **High**: $\ge 3800\text{ mV}$ (`LV_SYMBOL_BATTERY_3`)
+  * **Medium**: $\ge 3650\text{ mV}$ (`LV_SYMBOL_BATTERY_2`)
+  * **Low**: $\ge 3500\text{ mV}$ (`LV_SYMBOL_BATTERY_1`)
+  * **Empty**: $< 3500\text{ mV}$ (`LV_SYMBOL_BATTERY_EMPTY`)
   * **Critical Protection**: $\le 3350\text{ mV}$ (3 consecutive samples trigger automatic deep sleep to protect the Li-Po cell)
 
 ### 4. Reserved Onboard Pins (Isolated / Protected)
@@ -75,7 +75,7 @@ The system runs on **FreeRTOS** leveraging the ESP32-S3 dual cores to achieve co
    • FT6336G (66 Hz)         • 3 Full-Screen      • NVS Fast-Path Verify    • getMetaInfo
    • Backlight PWM             Views (32px Hdr)   • MediaRenderer:1 &       • MCUKeyShortClick
    • Internal DMA Buffs      • 6 Live Themes        MediaServer:1 SSDP      • appendTracksInQueueEx
-   • ADC Battery Telemetry   • PSRAM LVGL Heap    • Async Network Scan      • UPnP ContentDirectory
+   • ADC Battery Telemetry   • PSRAM LVGL Heap    • Sync Network Scan       • UPnP ContentDirectory
                              • Extended UTF-8     • Auto Reconnect          • LRCLIB REST API
                                    ^                                              |
                                    |              xQueueUiState                   |
@@ -224,7 +224,7 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View**, a
    - Live connection status spinner with automatic close on success.
 3. **Power & Display** (Tap Battery Icon):
    - Live battery voltage readout (`V`) inside the 32px top header bar.
-   - 5%–100% screen brightness slider matching the volume bar aesthetic.
+   - **Live 180° Orientation Selector (`Rotation: Standard (0°) / Flipped (180°)`)**: Flips both the ILI9341V display and FT6336G touch coordinates immediately and persists the orientation in NVS.
    - Configurable auto-dimming timeout (dims to 1% brightness on inactivity; first tap wakes display without triggering accidental UI actions).
    - Configurable auto-sleep timeout and manual **Deep Sleep Now** action.
    - **Live Color Theme Selector (`Theme: <Name>`)**: Cycles instantaneously across 6 RGB565-tuned hi-fi color palettes isolated in [`include/ui/themes_config.h`](include/ui/themes_config.h) (`Cyber Cyan`, `Tube Amber`, `Naim Emerald`, `McIntosh Blue`, `Velvet Rose`, `Studio Crimson`) and persists the selection in NVS.

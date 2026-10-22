@@ -16,9 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Implemented recursive folder navigation (`BrowseDirectChildren`) with PSRAM-backed item lists (`UpnpItemList`) and a persistent 32px breadcrumb/back header with a dedicated server refresh button.
   - Implemented native LinkPlay `<PlayList>` queue construction (`PlayQueue:1#AppendTracksInQueueEx` on port `49152`) when tapping any track in a folder, loading the entire album/folder queue onto the WiiM streamer starting at the selected track index so `X/Y` track counters, gapless playback, and Next/Previous buttons work natively.
   - Added standard UPnP `BrowseMetadata` queries per track in `upnp_client_play_track()` so servers using `Folders & Filename Browsing` (such as Asset UPnP) still provide the true embedded `TITLE`, `ARTIST`, and `ALBUM` tags during playback on the WiiM.
-- **Declarative 6-Theme Color System (`505394c`, `da59fd3`)**:
+- **Declarative 6-Theme Color System & Live 180° Display Rotation (`505394c`, `da59fd3`, `fc2034e`)**:
   - Created `include/ui/themes_config.h` isolating 6 RGB565-tuned hi-fi color palettes (`Cyber Cyan`, `Tube Amber`, `Naim Emerald`, `McIntosh Blue`, `Velvet Rose`, `Studio Crimson`) away from UI logic, calibrated for the 16-bit RGB565 TFT gamma curve (`da59fd3`).
-  - Renamed the **Power & Battery** screen to **Power & Display** (`src/ui/modal_power.cpp`) and added a **`Theme: <Name>`** row that cycles live across all 6 themes (`ui_apply_theme()`) and persists `theme_idx` in NVS (`"wiimremote"`).
+  - Renamed the **Power & Battery** screen to **Power & Display** (`src/ui/modal_power.cpp`), added a **`Theme: <Name>`** row that cycles live across all 6 themes (`ui_apply_theme()`), and added a **`Rotation: Standard (0°) / Flipped (180°)`** row (`display_set_rotation()`) that flips both the ILI9341V display and FT6336G touch coordinates live and persists `theme_idx` and `rot_180` in NVS (`"wiimremote"`).
 - **Ghost Seek Target Indicator (`505394c`)**:
   - Added a translucent seek target indicator (`obj_seek_target`) on the Player progress bar (`src/ui/ui_player.cpp`) that marks the requested seek position while the streamer buffers and automatically hides once `curpos` catches up within 3 seconds.
 - **Input Source Cycling & Dynamic Source Icon**:
@@ -50,8 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Redesigned the Device Selector (`src/ui/modal_device.cpp`), Wi-Fi Manager (`src/ui/modal_wifi.cpp`), Power & Display (`src/ui/modal_power.cpp`), Presets (`src/ui/ui_presets.cpp`), and UPnP Browser (`src/ui/ui_browser.cpp`) into edge-to-edge flat lists with a standardized `32px` top header bar matching the main status header (`src/ui/ui_header.cpp`).
   - Added a `"Forget <SSID>"` top row in the Wi-Fi list (`CMD_WIFI_FORGET`) and displayed `"Fixed"` beneath the disabled volume slider when a streamer is in fixed line-out mode.
   - Extended `CMD_PREV` (`src/net/linkplay_client.cpp`) to restart the current song (`seek:0`) if playback is past 5 seconds, or skip to the previous track otherwise.
-- **Asynchronous Wi-Fi Scanning & Zero-Allocation SSDP Parsing**:
-  - Switched `wifi_service_start_scan()` to non-blocking async scanning (`WiFi.scanNetworks(true, ...)`) harvested in `wifi_service_handle()`, keeping `NetTask` responsive to transport/volume commands during scans.
+- **Synchronous Core 0 Wi-Fi Scanning & Zero-Allocation SSDP Parsing (`fc2034e`)**:
+  - Simplified `wifi_service_start_scan()` (`src/net/wifi_service.cpp`) to run synchronous `WiFi.scanNetworks(false, false, false, 300)` on Core 0 (`NetTask`), waiting on the ESP-IDF `WIFI_SCAN_DONE_BIT` event group instead of `WiFi.scanComplete()`'s premature `max_ms_per_chan * 20` timeout that failed during connected home-channel interleaved scans.
   - Replaced per-packet `String` heap allocations in `discovery_service.cpp` (`ssdp_listen_window`) with zero-allocation `strstr()` parsing and added a 350ms LAN connect timeout for fast-path NVS verification.
   - Throttled LVGL progress bar (`PROGRESS_BAR_MAX = 220`) and elapsed-time label redraws in `src/ui/ui_player.cpp` to only invalidate when visual values change.
   - Pinned exact library versions (`LovyanGFX @ 1.2.28`, `lvgl @ 8.4.0`, `ArduinoJson @ 7.4.3`) and enabled `-Wall -Wextra -Wno-unused-parameter` in `platformio.ini`.
@@ -62,6 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - The mute button maintains consistent mute toggle behavior across both fixed and variable modes, turning solid crimson red (`#E63946`) when muted.
 
 ### Fixed
+- **Accurate 5-Stage Battery Icon & LRCLIB `503` Retry (`fc2034e`)**:
+  - Removed the voltage-based `LV_SYMBOL_CHARGE` heuristic (`BAT_VOLT_CHARGE_MV`) in `src/ui/ui_header.cpp` so the top header always displays the true 5-stage Li-Po battery capacity icon (`FULL` >= 3.95V down to `EMPTY` < 3.50V) without false charging indicators.
+  - Added a 1.2s retry in `lyrics_client_fetch()` (`src/net/lyrics_client.cpp`) when `lrclib.net` returns `HTTP 503 Service Unavailable` (`retry-after: 1`), differentiated HTTP 5xx server overload messages from Wi-Fi connection errors, and stopped `ui_lyrics_on_track_changed()` / `linkplay_client_fetch_meta()` from re-triggering lyrics requests at 1 Hz on UPnP tracks.
 - **Boot Brightness Persistence Override**:
   - Reordered `display_driver_init()` before `power_manager_init()` in `src/main.cpp` and removed the hardcoded `BL_DEFAULT_BRIGHT` (85%) override so NVS-saved brightness is applied on boot and wake from deep sleep.
 - **Deep Sleep Immediate Re-Wake Race**:
