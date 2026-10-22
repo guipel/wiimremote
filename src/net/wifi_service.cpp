@@ -13,6 +13,7 @@ static WiFiDisconnectedCb s_on_disconnected_cb = nullptr;
 static bool s_wifi_connected = false;
 static unsigned long s_last_wifi_check = 0;
 static bool s_wifi_scanning = false;
+static bool s_wifi_scan_retried = false;
 static unsigned long s_wifi_scan_start = 0;
 static bool s_wifi_connecting = false;
 static unsigned long s_wifi_connect_start = 0;
@@ -95,6 +96,7 @@ void wifi_service_init(WiFiConnectedCb onConnected, WiFiDisconnectedCb onDisconn
 
 void wifi_service_start_scan() {
     if (s_wifi_scanning) return;
+    s_wifi_scan_retried = false;
     log_i("Starting async Wi-Fi network scan on Core 0 (current status: %d)...", WiFi.status());
     WiFi.mode(WIFI_STA);
     WiFi.setSleep(WIFI_PS_NONE);
@@ -180,6 +182,12 @@ void wifi_service_handle() {
             log_i("Async WiFi scan completed: %d networks found", scanRes);
             collect_wifi_scan_results(scanRes);
         } else if (scanRes == WIFI_SCAN_FAILED || (now - s_wifi_scan_start > 8000)) {
+            if (scanRes == WIFI_SCAN_FAILED && !s_wifi_scan_retried) {
+                s_wifi_scan_retried = true;
+                s_wifi_scan_start = now;
+                WiFi.scanNetworks(true, false, false, 120);
+                return;
+            }
             log_w("Async WiFi scan failed or timed out (%d)", scanRes);
             collect_wifi_scan_results(0);
         }
@@ -284,6 +292,10 @@ void wifi_service_handle() {
             }
         }
     }
+}
+
+bool wifi_service_is_scanning() {
+    return s_wifi_scanning;
 }
 
 bool wifi_service_is_connected() {

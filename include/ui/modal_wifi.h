@@ -6,6 +6,9 @@
 // Initialize Wi-Fi Configuration Modal overlay
 void modal_wifi_init(lv_obj_t* parent = nullptr);
 
+// Refresh Wi-Fi Modal colors on theme change
+void modal_wifi_apply_theme();
+
 // Open the Wi-Fi configuration modal and start network scan
 void modal_wifi_open();
 

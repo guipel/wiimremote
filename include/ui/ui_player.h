@@ -6,6 +6,9 @@
 // Initialize Player Tab widgets and layout
 void ui_player_init(lv_obj_t* parent);
 
+// Refresh Player Tab colors on theme change
+void ui_player_apply_theme();
+
 // Update track title, artist, and resolution from metadata
 void ui_player_set_meta(const TrackMeta& meta);
 

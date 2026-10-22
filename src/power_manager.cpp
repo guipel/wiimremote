@@ -17,6 +17,7 @@ static uint16_t s_sleep_timeout_sec = 120; // Default 2 minutes
 static uint32_t s_sleep_timeout_ms = 120000;
 
 static uint8_t s_brightness_pct = 80; // Default 80% (20% to 100% in 10% steps)
+static uint8_t s_theme_idx = 0;       // Default 0 (Cyber Cyan)
 
 static bool s_prefs_loaded = false;
 
@@ -35,8 +36,11 @@ static void load_power_preferences() {
         if (s_brightness_pct < 20) s_brightness_pct = 20;
         if (s_brightness_pct > 100) s_brightness_pct = 100;
 
+        s_theme_idx = prefs.getUChar("theme_idx", 0);
+
         prefs.end();
-        log_i("Power Manager loaded: dim=%u s, sleep=%u s, bright=%u%%", s_dim_timeout_sec, s_sleep_timeout_sec, s_brightness_pct);
+        log_i("Power Manager loaded: dim=%u s, sleep=%u s, bright=%u%%, theme=%u",
+              s_dim_timeout_sec, s_sleep_timeout_sec, s_brightness_pct, s_theme_idx);
     }
 }
 
@@ -122,6 +126,21 @@ void power_manager_set_brightness_pct(uint8_t pct) {
 uint8_t power_manager_get_brightness_pct() {
     load_power_preferences();
     return s_brightness_pct;
+}
+
+void power_manager_set_theme_idx(uint8_t idx) {
+    s_theme_idx = idx;
+    Preferences prefs;
+    if (prefs.begin("wiimremote", false)) {
+        prefs.putUChar("theme_idx", idx);
+        prefs.end();
+        log_i("Saved theme index: %u", idx);
+    }
+}
+
+uint8_t power_manager_get_theme_idx() {
+    load_power_preferences();
+    return s_theme_idx;
 }
 
 void power_manager_set_sleep_timeout_sec(uint16_t seconds) {

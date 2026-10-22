@@ -7,6 +7,9 @@
 // Initialize UI widgets and layout
 void ui_init();
 
+// Apply active color theme across all screens and modals
+void ui_apply_theme();
+
 // Process incoming state updates from Core 0 and update widgets
 void ui_process_events();
 

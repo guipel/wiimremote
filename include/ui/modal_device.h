@@ -8,6 +8,9 @@ typedef void (*OnDeviceSelectedCb)(const WiiMDevice& dev);
 // Initialize Device Selector Modal overlay
 void modal_device_init(lv_obj_t* parent = nullptr);
 
+// Refresh Device Selector Modal colors on theme change
+void modal_device_apply_theme();
+
 // Open the device selector modal
 void modal_device_open();
 

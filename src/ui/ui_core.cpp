@@ -4,6 +4,7 @@
 #include "ui/ui_player.h"
 #include "ui/ui_lyrics.h"
 #include "ui/ui_presets.h"
+#include "ui/ui_browser.h"
 #include "ui/modal_device.h"
 #include "ui/modal_wifi.h"
 #include "ui/modal_power.h"
@@ -13,11 +14,26 @@
 // External Queue handles
 extern QueueHandle_t xQueueUiState;
 
+static uint8_t s_active_theme_idx = 0;
+
+uint8_t ui_theme_get_idx() {
+    return s_active_theme_idx;
+}
+
+void ui_theme_set_idx(uint8_t idx) {
+    s_active_theme_idx = (idx < kThemeCount) ? idx : 0;
+}
+
+const ThemePaletteConfig& ui_theme_get() {
+    return kThemes[s_active_theme_idx < kThemeCount ? s_active_theme_idx : 0];
+}
+
 // Tabview & Tabs
 static lv_obj_t* tabview = nullptr;
 static lv_obj_t* tab_lyrics = nullptr;
 static lv_obj_t* tab_player = nullptr;
 static lv_obj_t* tab_presets = nullptr;
+static lv_obj_t* tab_browser = nullptr;
 
 // Battery monitoring state
 static float s_battery_filtered_mv = 0.0f;
@@ -63,12 +79,44 @@ static void timer_battery_cb(lv_timer_t* timer) {
 }
 
 static void event_tabview_changed(lv_event_t* e) {
-    if (tabview && lv_tabview_get_tab_act(tabview) == 0) {
+    if (!tabview) return;
+    uint16_t act = lv_tabview_get_tab_act(tabview);
+    if (act == 0) {
         ui_lyrics_on_tab_activated();
+    } else if (act == 3) {
+        ui_browser_on_tab_activated();
     }
 }
 
+void ui_apply_theme() {
+    lv_obj_set_style_bg_color(lv_scr_act(), COLOR_BG, 0);
+
+    if (tabview) {
+        lv_obj_set_style_bg_color(tabview, COLOR_BG, 0);
+        lv_obj_t* tab_btns = lv_tabview_get_tab_btns(tabview);
+        if (tab_btns) {
+            lv_obj_set_style_bg_color(tab_btns, COLOR_SURFACE, 0);
+            lv_obj_set_style_border_color(tab_btns, COLOR_SURFACE_LIGHT, 0);
+            lv_obj_set_style_text_color(tab_btns, COLOR_TEXT_MUTED, LV_PART_ITEMS);
+            lv_obj_set_style_text_color(tab_btns, COLOR_ACCENT, LV_PART_ITEMS | LV_STATE_CHECKED);
+            lv_obj_set_style_bg_color(tab_btns, COLOR_SURFACE_LIGHT, LV_PART_ITEMS | LV_STATE_CHECKED);
+            lv_obj_set_style_border_color(tab_btns, COLOR_ACCENT, LV_PART_ITEMS | LV_STATE_CHECKED);
+        }
+    }
+
+    ui_header_apply_theme();
+    ui_lyrics_apply_theme();
+    ui_player_apply_theme();
+    ui_presets_apply_theme();
+    ui_browser_apply_theme();
+    modal_device_apply_theme();
+    modal_wifi_apply_theme();
+    modal_power_apply_theme();
+}
+
 void ui_init() {
+    ui_theme_set_idx(power_manager_get_theme_idx());
+
     lv_obj_set_style_bg_color(lv_scr_act(), COLOR_BG, 0);
 
     // 1. Build top persistent header
@@ -76,7 +124,7 @@ void ui_init() {
 
     // 2. Build bottom-oriented Tabview
     tabview = lv_tabview_create(lv_scr_act(), LV_DIR_BOTTOM, 28);
-    lv_obj_set_size(tabview, 240, 294);
+    lv_obj_set_size(tabview, 240, 288);
     lv_obj_align(tabview, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_bg_color(tabview, COLOR_BG, 0);
 
@@ -86,40 +134,49 @@ void ui_init() {
     lv_obj_set_style_pad_all(tab_btns, 0, 0);
     lv_obj_set_style_pad_gap(tab_btns, 0, 0);
     lv_obj_set_style_border_side(tab_btns, LV_BORDER_SIDE_TOP, 0);
-    lv_obj_set_style_border_color(tab_btns, lv_color_hex(0x3A4252), 0);
+    lv_obj_set_style_border_color(tab_btns, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_width(tab_btns, 1, 0);
 
     // Tab buttons (LV_PART_ITEMS) styling
-    lv_obj_set_style_text_font(tab_btns, &lv_font_montserrat_12, LV_PART_ITEMS);
+    lv_obj_set_style_text_font(tab_btns, &lv_font_montserrat_10, LV_PART_ITEMS);
     lv_obj_set_style_text_color(tab_btns, COLOR_TEXT_MUTED, LV_PART_ITEMS);
     lv_obj_set_style_bg_opa(tab_btns, LV_OPA_TRANSP, LV_PART_ITEMS);
     lv_obj_set_style_border_side(tab_btns, LV_BORDER_SIDE_NONE, LV_PART_ITEMS);
 
     // Active/Checked Tab styling
     lv_obj_set_style_text_color(tab_btns, COLOR_ACCENT, LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(tab_btns, lv_color_hex(0x222732), LV_PART_ITEMS | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_color(tab_btns, COLOR_SURFACE_LIGHT, LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_bg_opa(tab_btns, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_border_side(tab_btns, LV_BORDER_SIDE_BOTTOM, LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_border_color(tab_btns, COLOR_ACCENT, LV_PART_ITEMS | LV_STATE_CHECKED);
     lv_obj_set_style_border_width(tab_btns, 2, LV_PART_ITEMS | LV_STATE_CHECKED);
 
-    // Add Tabs: Lyrics (Left), Player (Center - Default), Presets (Right)
+    // Add Tabs: Lyrics, Player (Default), Presets, UPnP
     tab_lyrics = lv_tabview_add_tab(tabview, LV_SYMBOL_FILE " Lyrics");
     tab_player = lv_tabview_add_tab(tabview, LV_SYMBOL_AUDIO " Player");
     tab_presets = lv_tabview_add_tab(tabview, LV_SYMBOL_LIST " Presets");
+    tab_browser = lv_tabview_add_tab(tabview, LV_SYMBOL_DIRECTORY " UPnP");
 
     ui_lyrics_init(tab_lyrics);
     ui_player_init(tab_player);
     ui_presets_init(tab_presets);
+    ui_browser_init(tab_browser);
 
-    // Set Player as default active tab (Center)
+    // Set Player as default active tab
     lv_tabview_set_act(tabview, 1, LV_ANIM_OFF);
 
-    // Hook tab navigation event for on-demand lyrics loading
+    // Hook tab navigation event for on-demand lyrics & UPnP loading
     lv_obj_add_event_cb(tabview, event_tabview_changed, LV_EVENT_VALUE_CHANGED, nullptr);
 
     // Hook preset selection to navigate back to Player tab
     ui_presets_set_on_triggered([](uint8_t index) {
+        if (tabview) {
+            lv_tabview_set_act(tabview, 1, LV_ANIM_ON);
+        }
+    });
+
+    // Hook UPnP track playback to navigate back to Player tab
+    ui_browser_set_on_track_played([]() {
         if (tabview) {
             lv_tabview_set_act(tabview, 1, LV_ANIM_ON);
         }
@@ -260,6 +317,16 @@ void ui_process_events() {
             case UI_EVT_LYRICS_UPDATED:
                 if (evt.data.lyrics) {
                     ui_set_lyrics(*evt.data.lyrics);
+                }
+                break;
+            case UI_EVT_UPNP_SERVERS_UPDATED:
+                if (evt.data.upnp_servers) {
+                    ui_browser_set_servers(*evt.data.upnp_servers);
+                }
+                break;
+            case UI_EVT_UPNP_BROWSE_RESULT:
+                if (evt.data.upnp_browse) {
+                    ui_browser_set_browse_result(*evt.data.upnp_browse);
                 }
                 break;
         }

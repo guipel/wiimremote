@@ -15,6 +15,8 @@ static lv_obj_t* btn_battery = nullptr;
 static lv_obj_t* lbl_bat_icon = nullptr;
 
 static uint32_t s_last_bat_mv = 0;
+static bool s_last_wifi_conn = false;
+static int8_t s_last_wifi_rssi = -100;
 
 static void event_btn_open_wifi_modal(lv_event_t* e) {
     modal_wifi_open();
@@ -30,19 +32,20 @@ static void event_btn_open_power_modal(lv_event_t* e) {
 
 void ui_header_init(lv_obj_t* parent) {
     header_cont = lv_obj_create(parent);
-    lv_obj_set_size(header_cont, 240, 26);
+    lv_obj_set_size(header_cont, 240, 32);
     lv_obj_align(header_cont, LV_ALIGN_TOP_MID, 0, 0);
     lv_obj_set_style_bg_color(header_cont, COLOR_SURFACE, 0);
     lv_obj_set_style_border_side(header_cont, LV_BORDER_SIDE_BOTTOM, 0);
     lv_obj_set_style_border_color(header_cont, COLOR_SURFACE_LIGHT, 0);
     lv_obj_set_style_border_width(header_cont, 1, 0);
     lv_obj_set_style_radius(header_cont, 0, 0);
-    lv_obj_set_style_pad_all(header_cont, 2, 0);
+    lv_obj_set_style_pad_all(header_cont, 0, 0);
     lv_obj_clear_flag(header_cont, LV_OBJ_FLAG_SCROLLABLE);
 
     // 1. Wi-Fi Button & Action Chevron (Left, ~38px)
     btn_wifi_select = lv_btn_create(header_cont);
-    lv_obj_set_size(btn_wifi_select, 38, 22);
+    lv_obj_set_size(btn_wifi_select, 42, 31);
+    lv_obj_set_ext_click_area(btn_wifi_select, 6);
     lv_obj_align(btn_wifi_select, LV_ALIGN_LEFT_MID, 2, 0);
     lv_obj_set_style_bg_opa(btn_wifi_select, LV_OPA_TRANSP, 0);
     lv_obj_set_style_shadow_width(btn_wifi_select, 0, 0);
@@ -58,7 +61,8 @@ void ui_header_init(lv_obj_t* parent) {
 
     // 2. Battery Button & Action Chevron (Right, ~38px)
     btn_battery = lv_btn_create(header_cont);
-    lv_obj_set_size(btn_battery, 38, 22);
+    lv_obj_set_size(btn_battery, 42, 31);
+    lv_obj_set_ext_click_area(btn_battery, 6);
     lv_obj_align(btn_battery, LV_ALIGN_RIGHT_MID, -2, 0);
     lv_obj_set_style_bg_opa(btn_battery, LV_OPA_TRANSP, 0);
     lv_obj_set_style_shadow_width(btn_battery, 0, 0);
@@ -74,7 +78,8 @@ void ui_header_init(lv_obj_t* parent) {
 
     // 3. Active Device Button (Center, ~156px)
     btn_device_select = lv_btn_create(header_cont);
-    lv_obj_set_size(btn_device_select, 156, 22);
+    lv_obj_set_size(btn_device_select, 152, 31);
+    lv_obj_set_ext_click_area(btn_device_select, 6);
     lv_obj_align(btn_device_select, LV_ALIGN_LEFT_MID, 42, 0);
     lv_obj_set_style_bg_opa(btn_device_select, LV_OPA_TRANSP, 0);
     lv_obj_set_style_shadow_width(btn_device_select, 0, 0);
@@ -92,7 +97,21 @@ void ui_header_init(lv_obj_t* parent) {
     lv_obj_align(lbl_active_device, LV_ALIGN_CENTER, 0, 0);
 }
 
+void ui_header_apply_theme() {
+    if (header_cont) {
+        lv_obj_set_style_bg_color(header_cont, COLOR_SURFACE, 0);
+        lv_obj_set_style_border_color(header_cont, COLOR_SURFACE_LIGHT, 0);
+    }
+    if (lbl_active_device) {
+        lv_obj_set_style_text_color(lbl_active_device, COLOR_ACCENT, 0);
+    }
+    ui_header_set_wifi_status(s_last_wifi_conn, s_last_wifi_rssi);
+    ui_header_update_battery(s_last_bat_mv);
+}
+
 void ui_header_set_wifi_status(bool connected, int8_t rssi) {
+    s_last_wifi_conn = connected;
+    s_last_wifi_rssi = rssi;
     if (!lbl_wifi) return;
     lv_label_set_text(lbl_wifi, LV_SYMBOL_WIFI " " LV_SYMBOL_DOWN);
     if (connected) {

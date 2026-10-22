@@ -3,16 +3,21 @@
 #include <lvgl.h>
 #include <stdio.h>
 #include <stdint.h>
+#include "ui/themes_config.h"
 
-// UI Color Tokens
-#define COLOR_BG            lv_color_hex(0x101216)
-#define COLOR_SURFACE       lv_color_hex(0x1C2028)
-#define COLOR_SURFACE_LIGHT lv_color_hex(0x282E3A)
-#define COLOR_ACCENT        lv_color_hex(0x00E5FF)
-#define COLOR_TEXT_PRIMARY  lv_color_hex(0xFFFFFF)
-#define COLOR_TEXT_MUTED    lv_color_hex(0x8E9AAB)
-#define COLOR_SUCCESS       lv_color_hex(0x10B981)
-#define COLOR_WARNING       lv_color_hex(0xF59E0B)
+uint8_t ui_theme_get_idx();
+void ui_theme_set_idx(uint8_t idx);
+const ThemePaletteConfig& ui_theme_get();
+
+// UI Color Tokens (resolved dynamically from active theme in themes_config.h)
+#define COLOR_BG            lv_color_hex(ui_theme_get().bg)
+#define COLOR_SURFACE       lv_color_hex(ui_theme_get().surface)
+#define COLOR_SURFACE_LIGHT lv_color_hex(ui_theme_get().surface_light)
+#define COLOR_ACCENT        lv_color_hex(ui_theme_get().accent)
+#define COLOR_TEXT_PRIMARY  lv_color_hex(ui_theme_get().text_primary)
+#define COLOR_TEXT_MUTED    lv_color_hex(ui_theme_get().text_muted)
+#define COLOR_SUCCESS       lv_color_hex(ui_theme_get().success)
+#define COLOR_WARNING       lv_color_hex(ui_theme_get().warning)
 
 #define PROGRESS_BAR_MAX 220
 

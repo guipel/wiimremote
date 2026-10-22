@@ -6,6 +6,9 @@
 // Initialize Lyrics Tab content
 void ui_lyrics_init(lv_obj_t* parent);
 
+// Refresh Lyrics Tab colors on theme change
+void ui_lyrics_apply_theme();
+
 // Update lyrics content from LRCLIB response
 void ui_lyrics_set_content(const LyricsInfo& info);
 

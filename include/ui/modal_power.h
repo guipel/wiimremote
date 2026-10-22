@@ -4,8 +4,11 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-// Initialize Power Management Modal overlay
+// Initialize Power & Display Modal overlay
 void modal_power_init(lv_obj_t* parent = nullptr);
+
+// Refresh Power & Display Modal colors on theme change
+void modal_power_apply_theme();
 
 // Open the power modal with current battery voltage
 void modal_power_open(uint32_t bat_mv = 0);
