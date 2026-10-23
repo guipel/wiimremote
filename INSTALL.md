@@ -48,13 +48,36 @@ You only need to do this once, and it works right inside your web browser (**Goo
 3. Under the **Program** section at the top of the page, click the **`Connect`** button.
 4. A small browser pop-up will appear listing your computer's USB ports. Select the port that says **`USB JTAG/serial debug unit`** (or `USB Serial` / `COM...` / `cu.usbmodem...`) and click **Connect**.
 
-### Step 3: Select the File & Click Program!
-1. In the table under **Program**:
-   - Change the **Flash Address** box on the left from `0x1000` to **`0x0`** *(make sure it is **`0x0`**, not `0x1000`!)*.
-   - Click **`Choose File`** on the right and select the **`wiimremote-factory.bin`** file you downloaded in Step 1.
-2. Click the **`Program`** button!
-3. You will see a progress bar (`Writing at 0x000...`) for about **15 to 20 seconds**.
-4. Once the console box at the bottom says **`Leaving... Hard resetting via RTS pin...`**, press the tiny **`RST`** (Reset) button on the back edge of your display board (or simply unplug and replug the USB-C cable). Your WiiM Remote will immediately light up!
+### Step 3: Configure the Screen & Click Program!
+1. On the **Program** screen (after connecting):
+   - **Flash Address**: Change the box on the left from `0x1000` to **`0x0`** *(make sure it is **`0x0`**, not `0x1000`!)*.
+   - **File**: Click **`Choose File`** on the right and select the **`wiimremote-factory.bin`** file you downloaded in Step 1.
+   - **Flash Mode / Flash Frequency / Flash Size**: Leave all three dropdowns set to **`keep`**.
+2. Click the blue **`Program`** button at the bottom!
+3. You will see a progress log in the black box (`Writing at 0x0...`) for about **15 seconds**.
+4. **How to know when it is 100% done**:
+   - The black log window will stop at:
+     ```text
+     Hash of data verified.
+     Leaving...
+     Hard resetting via RTS pin...
+     ```
+   - **It is not stuck!** That message means programming is 100% complete and verified—the board is simply waiting for a reset signal to start up.
+
+> [!NOTE]
+> Flashing `wiimremote-factory.bin` at `0x0` performs a full factory flash, which resets saved Wi-Fi credentials and settings to a clean first-boot state.
+
+### Step 4: Restart the Board (Choose Either Way)
+Once you see **`Hard resetting via RTS pin...`**, restart the board using **either** of these two methods:
+
+- **Way 1 — On the Board (If the board is outside a case)**:
+  1. Press the tiny physical **`RST`** (Reset) button on the back edge of your display board. Your WiiM Remote screen will immediately light up!
+- **Way 2 — On the Website (If your board is inside a sealed case and you can't reach the `RST` button)**:
+  1. Click the yellow **`Disconnect`** button at the top of the `esptool-js` page.
+  2. Scroll down to the **Console** section at the bottom of the same webpage.
+  3. Click **`Start`**, select the same USB port (`USB JTAG/serial debug unit` / `COM...`), and click **Connect**.
+  4. The board will immediately reboot and the screen will turn on! *(If needed, you can also click the **`Reset`** button right inside the Console section).*
+  5. Once the screen is on, click **`Stop`** in the Console section and unplug the USB-C cable.
 
 ---
 

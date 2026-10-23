@@ -23,8 +23,11 @@ You can flash the pre-built release firmware directly from **Google Chrome** or 
 1. Download **[`wiimremote-factory.bin`](https://github.com/guipel/wiimremote/releases/latest/download/wiimremote-factory.bin)** from the **[Latest GitHub Release](https://github.com/guipel/wiimremote/releases/latest)**.
 2. Connect the ESP32-S3 display board to your computer via a **USB-C data cable**.
 3. Open **[Espressif Web Flasher (`esptool-js`)](https://espressif.github.io/esptool-js/)** in Chrome or Edge and click **`Connect`** (under *Program*).
-4. Set **Flash Address** to **`0x0`**, choose **`wiimremote-factory.bin`**, and click **`Program`**.
-5. Press the **`RST`** button on the board once programming completes—then connect to Wi-Fi and select your WiiM device right on the touchscreen!
+4. Set **Flash Address** to **`0x0`**, choose **`wiimremote-factory.bin`**, leave **Flash Mode / Frequency / Size** set to **`keep`**, and click **`Program`**.
+5. Wait ~15 seconds until the log finishes with **`Hash of data verified. Leaving... Hard resetting via RTS pin...`** (this means flashing is 100% done; note that flashing `wiimremote-factory.bin` at `0x0` performs a full factory flash that resets saved settings).
+6. **Restart the board** using either method:
+   - **Way 1 (On the Board)**: Press the physical **`RST`** button on the back edge of the board.
+   - **Way 2 (On the Website — for boards in a sealed case)**: Click **`Disconnect`** at the top of the page, scroll down to the **Console** section, click **`Start`** (select the same USB port), and the board will immediately reboot (or click **`Reset`** under Console).
 
 ### 3. Option B: Building from Source (Developers)
 If you want to customize the code or build from source using [PlatformIO](https://platformio.org/):
