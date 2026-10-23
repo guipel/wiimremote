@@ -166,7 +166,7 @@ src/net/
 
 ## 📱 Features & UI Navigation
 
-The interface features a **32px Top Header Bar**, a **4-Tab Navigation View**, and **3 Full-Screen Settings Views**:
+The interface features a **32px Top Header Bar**, a **4-Tab Navigation View** (with a **28px Bottom Navigation Bar**), and **3 Full-Screen Settings Views**:
 
 ```
 +-------------------------------------------------------------+
@@ -175,58 +175,60 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View**, a
 |                                                             |
 |                       [ TAB CONTENT ]                       |
 |                                                             |
-|  [ Tab 1: Lyrics ] [ Tab 2: Player ] [ Tab 3: Presets ] [ Tab 4: Browser ]
+|  [ Tab 1: Lyrics ] [ Tab 2: Player ] [ Tab 3: Presets ] [ Tab 4: UPnP ]
 |                                                             |
 +-------------------------------------------------------------+
-|   Lyrics    |    Player     |    Presets    |    Browser    |  <-- Bottom Navigation
+|   Lyrics    |    Player     |    Presets    |     UPnP      |  <-- 28px Bottom Navigation
 +-------------------------------------------------------------+
 ```
 
 ### Top Header Bar (32px)
 1. **Wi-Fi Signal**: Live RSSI color-coded indicator. **Tap** opens the **Wi-Fi Networks** screen.
-2. **Active Streamer**: Displays the friendly name of the active WiiM streamer. **Tap** opens the **Select WiiM Device** screen.
+2. **Active Streamer**: Displays the friendly name of the active WiiM streamer. **Tap** opens the **Select WiiM Streamer** screen.
 3. **Battery Fuel Gauge**: Dynamic battery icon. **Tap** opens the **Power & Display** screen.
 
 ### Tab Navigation (4 Tabs)
-1. **Lyrics Tab**:
-   - Synchronized / plain-text lyrics retrieved on demand from the LRCLIB REST API.
-   - Automatically strips `[mm:ss.xx]` timing tags from synced LRC records if plain text is unavailable.
+1. **Lyrics Tab (`Lyrics`)**:
+   - Scrollable plain-text lyrics retrieved on demand from the LRCLIB REST API and automatically refreshed when the playing track changes.
+   - Uses `plainLyrics` when available, or automatically strips `[mm:ss.xx]` timing tags from synced LRC (`syncedLyrics`) records.
    - Distinct error feedback: differentiates between track not found (HTTP 404) and connection/server failures.
-2. **Now Playing Tab (Default)**:
+2. **Now Playing Tab (`Player`, Default)**:
    - High-contrast track title rendered in extended UTF-8 **Montserrat 24** typography with circular scrolling for long titles.
    - Artist and album metadata.
-   - Compact audio resolution telemetry (`bits/sample_rate_kHz`, e.g., `24/96`) in the transport row.
-   - Interactive progress bar with **Ghost Seek Target Indicator** (shows requested seek position while streamer buffers to the target timestamp) and elapsed/total duration timestamps.
-   - Centered transport controls: Previous, Play/Pause/Resume, Next.
+   - Interactive progress bar with **Ghost Seek Target Indicator** (shows requested seek position while streamer buffers to the target timestamp).
+   - Elapsed (`00:00`) and total (`--:--`) duration timestamps flanking the centered audio resolution readout (`bits/sample_rate_kHz`, e.g., `24/96`) directly beneath the progress bar.
+   - Centered transport controls: **Previous** (restarts current track to `00:00` if elapsed playback is `> 5s`, or skips to previous track when `<= 5s`), **Play/Pause/Resume**, and **Next**.
    - Centered track counter (`X/Y`) directly beneath the Play/Pause button (auto-hidden when `0/0`).
    - **Unified Volume & Input Source Row**:
-     - Persistent row containing the instant mute button, 120 px volume slider, percentage/`"Fixed"` indicator, and Input Source cycle button (`` Wi-Fi $\rightarrow$ `蓝牙` Bluetooth $\rightarrow$ `AUX` Line-In $\rightarrow$ `OPT` Optical).
+     - Persistent row containing the instant mute button, 120 px volume slider, percentage/`"Fixed"` indicator, and Input Source cycle button (`` Wi-Fi $\rightarrow$ `ᛒ` Bluetooth $\rightarrow$ `AUX` Line-In $\rightarrow$ `OPT` Optical).
      - **Variable Volume**: Interactive slider updating output volume in real-time with numeric percentage label (`0%`–`100%`).
      - **Fixed Volume**: Disables the volume slider, displays `"Fixed"` beneath the bar, and preserves mute toggle functionality.
-3. **Presets Tab**:
+3. **Presets Tab (`Presets`)**:
    - Edge-to-edge scrollable list of **12 presets** dynamically synced from the WiiM device (`getPresetInfo`), with unassigned slots visually dimmed.
-   - One-touch preset recall with automatic navigation back to the Player tab.
-4. **UPnP / DLNA Media Browser Tab**:
+   - One-touch preset recall with automatic navigation back to the **Player** tab.
+4. **UPnP / DLNA Media Browser Tab (`UPnP`)**:
    - Automatically discovers local UPnP `MediaServer:1` servers (Asset UPnP, MinimServer, Plex, Synology, etc.) via SSDP.
    - Navigates arbitrary folder hierarchies via UPnP `ContentDirectory:1` (`BrowseDirectChildren`) with automatic 128-item page navigation (`Previous Page` / `Next Page`), breadcrumb page memory, and a persistent 32px back/refresh header.
-   - Tapping any track builds a native LinkPlay `<PlayList>` queue (`CreateQueue` & `PlayQueueWithIndex`) containing the full album/folder starting at the selected track—enabling gapless album playback, accurate `X/Y` track counters, Next/Previous track skipping, and true embedded `TITLE` metadata lookup via UPnP `BrowseMetadata`.
+   - Tapping any track builds a native LinkPlay `<PlayList>` queue (`CreateQueue` & `PlayQueueWithIndex`) containing the full album/folder starting at the selected track and automatically switches to the **Player** tab—enabling gapless album playback, accurate `X/Y` track counters, Next/Previous track skipping, and true embedded `TITLE` metadata lookup via UPnP `BrowseMetadata`.
 
 ### Full-Screen Settings Views (32px Unified Header)
-1. **Select WiiM Device** (Tap Streamer Name):
+1. **Select WiiM Streamer** (Tap Streamer Name):
    - Lists all WiiM streamers discovered via NVS cache and SSDP broadcast.
    - Shows device name and IP address, with active streamer indicator.
-   - Dedicated refresh button in the right header to trigger SSDP discovery on demand.
+   - Dedicated refresh button in the right header to trigger SSDP discovery on demand (`"Scanning streamers..."`).
 2. **Wi-Fi Networks** (Tap Wi-Fi Icon):
    - Non-blocking touchscreen network scanner displaying available SSIDs with RSSI-colored signal icons and a top `"Forget <SSID>"` action when connected.
-   - Full on-screen QWERTY touch keyboard for password entry with automatic saved-password reconnect.
+   - Full on-screen QWERTY touch keyboard for password entry with show/hide password toggle and automatic saved-password reconnect.
    - Live connection status spinner with automatic close on success.
 3. **Power & Display** (Tap Battery Icon):
-   - Live battery voltage readout (`V`) inside the 32px top header bar.
-   - **Live 180° Orientation Selector (`Rotation: Standard (0°) / Flipped (180°)`)**: Flips both the ILI9341V display and FT6336G touch coordinates immediately and persists the orientation in NVS.
-   - Configurable auto-dimming timeout (dims to ~10% brightness (`PWM 25/255`) on inactivity; first tap wakes display without triggering accidental UI actions).
-   - Configurable auto-sleep timeout and manual **Deep Sleep Now** action.
-   - **Live Color Theme Selector (`Theme: <Name>`)**: Cycles instantaneously across 6 RGB565-tuned hi-fi color palettes isolated in [`include/ui/themes_config.h`](include/ui/themes_config.h) (`Cyber Cyan`, `Tube Amber`, `Naim Emerald`, `McIntosh Blue`, `Velvet Rose`, `Studio Crimson`) and persists the selection in NVS.
-   - ESP32-S3 deep sleep with capacitive touch-to-wake interrupt support (`FT6336G` monitor mode + `PA_EN` GPIO hold).
+   - 32px top header bar (`<  Power & Display`, tap to return) followed by a 7-row flat settings list:
+     1. **Live Battery Voltage (`Battery Voltage: X.XX V`)**: Real-time battery voltage readout.
+     2. **Live Color Theme Selector (`Theme: <Name>`)**: Cycles instantaneously across 6 RGB565-tuned hi-fi color palettes isolated in [`include/ui/themes_config.h`](include/ui/themes_config.h) (`Cyber Cyan`, `Tube Amber`, `Naim Emerald`, `McIntosh Blue`, `Velvet Rose`, `Studio Crimson`) and persists the selection in NVS.
+     3. **Live 180° Orientation Selector (`Rotation: Standard (0°) / Flipped (180°)`)**: Flips both the ILI9341V display and FT6336G touch coordinates immediately and persists the orientation in NVS.
+     4. **Display Brightness (`Brightness: 20% / 40% / 60% / 80% / 100%`)**: Adjusts active backlight PWM brightness in real time and persists the setting in NVS.
+     5. **Auto-Dim Timeout (`Auto-Dim: 15s / 30s / 1m / 2m / 5m / Never`)**: Dims display to ~10% brightness (`PWM 25/255`) on inactivity; first tap wakes the display without triggering accidental UI actions.
+     6. **Auto-Sleep Timeout (`Auto-Sleep: 30s / 1m / 2m / 5m / 10m / Never`)**: Configures inactivity timeout before entering ESP32-S3 deep sleep.
+     7. **Manual Deep Sleep (`Enter Deep Sleep Now`)**: Immediately enters ESP32-S3 deep sleep with capacitive touch-to-wake interrupt support (`FT6336G` monitor mode + `PA_EN` GPIO hold).
 
 ---
 

@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Checked `xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) == pdTRUE` across all remaining UI command dispatches (`src/ui/ui_player.cpp`, `src/ui/ui_presets.cpp`, `src/ui/modal_device.cpp`, `src/ui/modal_wifi.cpp`, `src/ui/ui_lyrics.cpp`) and gated optimistic UI transitions on enqueue success.
   - Updated `README.md` to document UPnP 128-item folder pagination and align the `wifi_service.cpp` file-tree description.
   - Updated `INSTALL.md` and `README.md` (`ae2cae5`) to detail the exact `esptool-js` Web Flasher settings (`keep` dropdowns, `Hard resetting via RTS pin...` completion log, full-flash NVS note) and both post-flash restart methods (**On the Board** via the physical `RST` button and **On the Website** via `Disconnect` &rarr; `Console` &rarr; `Start`/`Reset` for sealed enclosures).
+  - Updated `## 📱 Features & UI Navigation` in `README.md` (`31c6358`) to match the exact on-screen UI (`UPnP` 4th tab label, scrollable plain-text lyrics description, audio resolution position beneath the progress bar, `> 5s` Previous track restart behavior, `ᛒ` Bluetooth icon, `Select WiiM Streamer` title, and the 7-row `Power & Display` settings layout including `Brightness`).
 
 ---
 
