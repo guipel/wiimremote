@@ -37,12 +37,11 @@ static void event_btn_close_modal(lv_event_t* e) {
 }
 
 static void event_btn_rescan(lv_event_t* e) {
-    if (lbl_header_title) {
-        lv_label_set_text(lbl_header_title, "Scanning streamers...");
-    }
     UiCommand cmd;
     cmd.type = CMD_TRIGGER_RESCAN;
-    xQueueSend(xQueueUiCmd, &cmd, 0);
+    if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) == pdTRUE && lbl_header_title) {
+        lv_label_set_text(lbl_header_title, "Scanning streamers...");
+    }
 }
 
 static void event_device_item_clicked(lv_event_t* e) {
@@ -52,7 +51,7 @@ static void event_device_item_clicked(lv_event_t* e) {
         cmd.type = CMD_SELECT_DEVICE;
         strncpy(cmd.data.device_ip, current_device_list.devices[idx].ip, sizeof(cmd.data.device_ip) - 1);
         cmd.data.device_ip[sizeof(cmd.data.device_ip) - 1] = '\0';
-        xQueueSend(xQueueUiCmd, &cmd, 0);
+        if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 
         if (s_on_device_selected) {
             s_on_device_selected(current_device_list.devices[idx]);

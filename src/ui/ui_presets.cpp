@@ -17,7 +17,7 @@ static void event_btn_preset(lv_event_t* e) {
     UiCommand cmd;
     cmd.type = CMD_TRIGGER_PRESET;
     cmd.data.preset_index = (uint8_t)index;
-    xQueueSend(xQueueUiCmd, &cmd, 0);
+    if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 
     if (s_on_preset_triggered) {
         s_on_preset_triggered((uint8_t)index);

@@ -1,12 +1,14 @@
 #include "ui/ui_browser.h"
 #include "ui/ui_theme.h"
 #include "config.h"
+#include <stdio.h>
 
 extern QueueHandle_t xQueueUiCmd;
 
 struct NavEntry {
     char object_id[64];
     char title[48];
+    uint16_t start_index;
 };
 
 static constexpr uint8_t MAX_NAV_DEPTH = 10;
@@ -25,7 +27,7 @@ static lv_obj_t* lbl_header_title = nullptr;
 static lv_obj_t* list_browser = nullptr;
 
 static void render_server_list();
-static bool request_browse(uint8_t serverIdx, const char* objectId, const char* title);
+static bool request_browse(uint8_t serverIdx, const char* objectId, const char* title, uint16_t startIndex = 0);
 
 static void show_status_message(const char* msg) {
     if (!list_browser) return;
@@ -42,22 +44,38 @@ static void show_status_message(const char* msg) {
     lv_obj_set_style_pad_left(lbl, 8, 0);
 }
 
-static void update_header() {
+static void update_header(bool showPageRange = false) {
     if (!lbl_nav_icon || !lbl_header_title) return;
     if (s_nav_depth == 0) {
         lv_label_set_text(lbl_nav_icon, LV_SYMBOL_REFRESH);
         lv_label_set_text(lbl_header_title, "UPnP Servers");
     } else {
         lv_label_set_text(lbl_nav_icon, LV_SYMBOL_LEFT);
-        lv_label_set_text(lbl_header_title, s_nav_stack[s_nav_depth - 1].title);
+        const char* baseTitle = s_nav_stack[s_nav_depth - 1].title;
+        if (showPageRange && s_current_browse.count > 0 && (s_current_browse.start_index > 0 || s_current_browse.has_more)) {
+            char hdrBuf[96];
+            uint32_t firstItem = (uint32_t)s_current_browse.start_index + 1;
+            uint32_t lastItem = (uint32_t)s_current_browse.start_index + (uint32_t)s_current_browse.count;
+            if (s_current_browse.total_matches >= lastItem) {
+                snprintf(hdrBuf, sizeof(hdrBuf), "%s (%u-%u of %u)",
+                         baseTitle, (unsigned int)firstItem, (unsigned int)lastItem, (unsigned int)s_current_browse.total_matches);
+            } else {
+                snprintf(hdrBuf, sizeof(hdrBuf), "%s (%u-%u)",
+                         baseTitle, (unsigned int)firstItem, (unsigned int)lastItem);
+            }
+            lv_label_set_text(lbl_header_title, hdrBuf);
+        } else {
+            lv_label_set_text(lbl_header_title, baseTitle);
+        }
     }
 }
 
-static bool request_browse(uint8_t serverIdx, const char* objectId, const char* title) {
+static bool request_browse(uint8_t serverIdx, const char* objectId, const char* title, uint16_t startIndex) {
     UiCommand cmd;
     memset(&cmd, 0, sizeof(cmd));
     cmd.type = CMD_UPNP_BROWSE;
     cmd.data.upnp_browse.server_index = serverIdx;
+    cmd.data.upnp_browse.start_index = startIndex;
     strncpy(cmd.data.upnp_browse.object_id, objectId, sizeof(cmd.data.upnp_browse.object_id) - 1);
     strncpy(cmd.data.upnp_browse.title, title, sizeof(cmd.data.upnp_browse.title) - 1);
     if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(50)) != pdTRUE) {
@@ -65,7 +83,7 @@ static bool request_browse(uint8_t serverIdx, const char* objectId, const char* 
         return false;
     }
 
-    update_header();
+    update_header(false);
     show_status_message("Loading folder...");
     return true;
 }
@@ -84,10 +102,21 @@ static void event_btn_nav(lv_event_t* e) {
             render_server_list();
         } else {
             const NavEntry& prev = s_nav_stack[s_nav_depth - 1];
-            if (!request_browse(s_active_server_idx, prev.object_id, prev.title)) {
+            if (!request_browse(s_active_server_idx, prev.object_id, prev.title, prev.start_index)) {
                 s_nav_depth++;
             }
         }
+    }
+}
+
+static void event_btn_page(lv_event_t* e) {
+    if (s_nav_depth == 0) return;
+    uint16_t targetStart = (uint16_t)(uintptr_t)lv_event_get_user_data(e);
+    NavEntry& cur = s_nav_stack[s_nav_depth - 1];
+    uint16_t prevStart = cur.start_index;
+    cur.start_index = targetStart;
+    if (!request_browse(s_active_server_idx, cur.object_id, cur.title, targetStart)) {
+        cur.start_index = prevStart;
     }
 }
 
@@ -97,10 +126,12 @@ static void event_btn_server(lv_event_t* e) {
 
     s_active_server_idx = srvIdx;
     s_nav_depth = 1;
+    memset(&s_nav_stack[0], 0, sizeof(s_nav_stack[0]));
     strncpy(s_nav_stack[0].object_id, "0", sizeof(s_nav_stack[0].object_id) - 1);
     strncpy(s_nav_stack[0].title, s_servers.servers[srvIdx].name, sizeof(s_nav_stack[0].title) - 1);
+    s_nav_stack[0].start_index = 0;
 
-    if (!request_browse(srvIdx, "0", s_servers.servers[srvIdx].name)) {
+    if (!request_browse(srvIdx, "0", s_servers.servers[srvIdx].name, 0)) {
         s_nav_depth = 0;
     }
 }
@@ -117,12 +148,14 @@ static void event_btn_item(lv_event_t* e) {
             memset(&next, 0, sizeof(next));
             strncpy(next.object_id, item.id, sizeof(next.object_id) - 1);
             strncpy(next.title, item.title, sizeof(next.title) - 1);
+            next.start_index = 0;
         } else {
             NavEntry& top = s_nav_stack[MAX_NAV_DEPTH - 1];
             strncpy(top.object_id, item.id, sizeof(top.object_id) - 1);
             strncpy(top.title, item.title, sizeof(top.title) - 1);
+            top.start_index = 0;
         }
-        if (!request_browse(s_active_server_idx, item.id, item.title)) {
+        if (!request_browse(s_active_server_idx, item.id, item.title, 0)) {
             s_nav_depth = prevDepth;
         }
     } else {
@@ -141,7 +174,7 @@ static void event_btn_item(lv_event_t* e) {
 }
 
 static void render_server_list() {
-    update_header();
+    update_header(false);
     if (!list_browser) return;
     lv_obj_clean(list_browser);
     lv_obj_scroll_to_y(list_browser, 0, LV_ANIM_OFF);
@@ -221,11 +254,12 @@ void ui_browser_apply_theme() {
 
 void ui_browser_on_tab_activated() {
     if (s_nav_depth == 0 && s_servers.count == 0) {
-        show_status_message("Scanning for UPnP servers...");
         UiCommand cmd;
         memset(&cmd, 0, sizeof(cmd));
         cmd.type = CMD_UPNP_SCAN_SERVERS;
-        xQueueSend(xQueueUiCmd, &cmd, 0);
+        if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(50)) == pdTRUE) {
+            show_status_message("Scanning for UPnP servers...");
+        }
     }
 }
 
@@ -240,7 +274,7 @@ void ui_browser_set_browse_result(const UpnpBrowseList& result) {
     s_current_browse = result;
     if (s_nav_depth == 0 || !list_browser) return;
 
-    update_header();
+    update_header(true);
     lv_obj_clean(list_browser);
     lv_obj_scroll_to_y(list_browser, 0, LV_ANIM_OFF);
 
@@ -254,6 +288,16 @@ void ui_browser_set_browse_result(const UpnpBrowseList& result) {
         return;
     }
 
+    if (result.start_index > 0) {
+        uint16_t prevStart = (result.start_index >= MAX_UPNP_ITEMS) ? (result.start_index - MAX_UPNP_ITEMS) : 0;
+        char prevLabel[48];
+        snprintf(prevLabel, sizeof(prevLabel), "Previous Page (%u-%u)",
+                 (unsigned int)(prevStart + 1), (unsigned int)result.start_index);
+        lv_obj_t* btnPrev = lv_list_add_btn(list_browser, LV_SYMBOL_LEFT, prevLabel);
+        ui_style_flat_list_btn(btnPrev, COLOR_ACCENT, COLOR_ACCENT, 7);
+        lv_obj_add_event_cb(btnPrev, event_btn_page, LV_EVENT_CLICKED, (void*)(uintptr_t)prevStart);
+    }
+
     for (uint8_t i = 0; i < result.count; ++i) {
         const UpnpItem& item = result.items[i];
         lv_obj_t* btn = lv_list_add_btn(
@@ -263,6 +307,28 @@ void ui_browser_set_browse_result(const UpnpBrowseList& result) {
         );
         ui_style_flat_list_btn(btn, item.is_folder ? COLOR_ACCENT : COLOR_TEXT_MUTED, COLOR_TEXT_PRIMARY, 7);
         lv_obj_add_event_cb(btn, event_btn_item, LV_EVENT_CLICKED, (void*)(uintptr_t)i);
+    }
+
+    if (result.has_more) {
+        uint32_t nextStart32 = (uint32_t)result.start_index + (uint32_t)result.count;
+        if (nextStart32 <= 65000U) {
+            uint16_t nextStart = (uint16_t)nextStart32;
+            uint32_t nextEnd = nextStart32 + MAX_UPNP_ITEMS;
+            if (result.total_matches > nextStart && result.total_matches < nextEnd) {
+                nextEnd = result.total_matches;
+            }
+            char nextLabel[48];
+            if (result.total_matches > nextStart) {
+                snprintf(nextLabel, sizeof(nextLabel), "Next Page (%u-%u)",
+                         (unsigned int)(nextStart + 1), (unsigned int)nextEnd);
+            } else {
+                snprintf(nextLabel, sizeof(nextLabel), "Next Page (%u+)",
+                         (unsigned int)(nextStart + 1));
+            }
+            lv_obj_t* btnNext = lv_list_add_btn(list_browser, LV_SYMBOL_RIGHT, nextLabel);
+            ui_style_flat_list_btn(btnNext, COLOR_ACCENT, COLOR_ACCENT, 7);
+            lv_obj_add_event_cb(btnNext, event_btn_page, LV_EVENT_CLICKED, (void*)(uintptr_t)nextStart);
+        }
     }
 }
 

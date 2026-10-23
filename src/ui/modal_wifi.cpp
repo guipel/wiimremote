@@ -66,14 +66,14 @@ static void event_btn_close_wifi_modal(lv_event_t* e) {
     modal_wifi_close();
     UiCommand cmd;
     cmd.type = CMD_WIFI_RECONNECT;
-    xQueueSend(xQueueUiCmd, &cmd, 0);
+    if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 }
 
 static void event_btn_wifi_forget(lv_event_t* e) {
     log_i("User tapped Forget Network");
     UiCommand cmd;
     cmd.type = CMD_WIFI_FORGET;
-    xQueueSend(xQueueUiCmd, &cmd, 0);
+    if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 
     current_wifi_connected = false;
     current_connected_ssid[0] = '\0';
@@ -98,7 +98,7 @@ static void event_btn_wifi_rescan(lv_event_t* e) {
     }
     UiCommand cmd;
     cmd.type = CMD_WIFI_START_SCAN;
-    xQueueSend(xQueueUiCmd, &cmd, 0);
+    if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 }
 
 static void event_btn_wifi_eye_toggle(lv_event_t* e) {
@@ -127,7 +127,7 @@ static void do_wifi_connect(const char* ssid, const char* pass) {
     cmd.data.wifi_connect.ssid[sizeof(cmd.data.wifi_connect.ssid) - 1] = '\0';
     strncpy(cmd.data.wifi_connect.password, pass ? pass : "", sizeof(cmd.data.wifi_connect.password) - 1);
     cmd.data.wifi_connect.password[sizeof(cmd.data.wifi_connect.password) - 1] = '\0';
-    xQueueSend(xQueueUiCmd, &cmd, 0);
+    if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 
     if (wifi_view_list) lv_obj_add_flag(wifi_view_list, LV_OBJ_FLAG_HIDDEN);
     if (wifi_view_pass) lv_obj_add_flag(wifi_view_pass, LV_OBJ_FLAG_HIDDEN);
@@ -452,7 +452,7 @@ void modal_wifi_open() {
 
     UiCommand cmd;
     cmd.type = CMD_WIFI_START_SCAN;
-    xQueueSend(xQueueUiCmd, &cmd, 0);
+    if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 }
 
 void modal_wifi_close() {

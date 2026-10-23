@@ -8,5 +8,5 @@ void upnp_client_reset_ignored();
 void upnp_client_clear_servers();
 void upnp_client_on_ssdp_location(const char* locationUrl);
 void upnp_client_broadcast_servers();
-void upnp_client_browse(uint8_t serverIdx, const char* objectId, const char* folderTitle);
+void upnp_client_browse(uint8_t serverIdx, const char* objectId, const char* folderTitle, uint16_t startIndex = 0);
 bool upnp_client_play_track(const char* wiimIp, uint8_t trackIdx, bool isFixedVolume);

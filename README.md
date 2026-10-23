@@ -152,7 +152,7 @@ include/net/
 
 src/net/
 ├── net_utils.cpp       # Pure stateless utility functions
-├── wifi_service.cpp    # ESP32 Wi-Fi station management & non-blocking reconnect/scan
+├── wifi_service.cpp    # ESP32 Wi-Fi station management, non-blocking reconnect & Core 0 scan
 ├── discovery_service.cpp # SSDP UDP listener, MediaRenderer/MediaServer verification, device lists
 ├── linkplay_client.cpp # LinkPlay HTTP/HTTPS client & UPnP SOAP transport control
 ├── upnp_client.cpp     # UPnP BrowseDirectChildren, BrowseMetadata, CreateQueue & PlayQueueWithIndex
@@ -205,7 +205,7 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View**, a
    - One-touch preset recall with automatic navigation back to the Player tab.
 4. **UPnP / DLNA Media Browser Tab**:
    - Automatically discovers local UPnP `MediaServer:1` servers (Asset UPnP, MinimServer, Plex, Synology, etc.) via SSDP.
-   - Navigates arbitrary folder hierarchies via UPnP `ContentDirectory:1` (`BrowseDirectChildren`) with a persistent 32px breadcrumb/back header and server refresh button.
+   - Navigates arbitrary folder hierarchies via UPnP `ContentDirectory:1` (`BrowseDirectChildren`) with automatic 128-item page navigation (`Previous Page` / `Next Page`), breadcrumb page memory, and a persistent 32px back/refresh header.
    - Tapping any track builds a native LinkPlay `<PlayList>` queue (`CreateQueue` & `PlayQueueWithIndex`) containing the full album/folder starting at the selected track—enabling gapless album playback, accurate `X/Y` track counters, Next/Previous track skipping, and true embedded `TITLE` metadata lookup via UPnP `BrowseMetadata`.
 
 ### Full-Screen Settings Views (32px Unified Header)

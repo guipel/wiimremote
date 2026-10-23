@@ -120,6 +120,9 @@ struct UpnpItem {
 struct UpnpBrowseList {
     char title[48];
     bool is_error;
+    bool has_more;
+    uint16_t start_index;
+    uint16_t total_matches;
     uint8_t count;
     UpnpItem items[MAX_UPNP_ITEMS];
 };
@@ -239,6 +242,7 @@ struct UiCommand {
         } lyrics_req;               // For CMD_FETCH_LYRICS
         struct {
             uint8_t server_index;
+            uint16_t start_index;
             char object_id[64];
             char title[48];
         } upnp_browse;              // For CMD_UPNP_BROWSE
