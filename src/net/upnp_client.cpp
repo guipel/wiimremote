@@ -8,6 +8,7 @@
 #include "config.h"
 
 extern QueueHandle_t xQueueUiState;
+extern QueueHandle_t xQueueUiCmd;
 
 struct UpnpTrackFull {
     char id[64];
@@ -321,10 +322,11 @@ void upnp_client_on_ssdp_location(const char* locationUrl) {
     upnp_client_broadcast_servers();
 }
 
-void upnp_client_browse(uint8_t serverIdx, const char* objectId, const char* folderTitle) {
+void upnp_client_browse(uint8_t serverIdx, const char* objectId, const char* folderTitle, uint16_t startIndex) {
     UpnpBrowseList* pBrowse = alloc_browse_list();
     if (!pBrowse) return;
     strncpy(pBrowse->title, (folderTitle && strlen(folderTitle) > 0) ? folderTitle : "Folder", sizeof(pBrowse->title) - 1);
+    pBrowse->start_index = startIndex;
 
     if (serverIdx >= s_server_list.count) {
         pBrowse->is_error = true;
@@ -345,7 +347,7 @@ void upnp_client_browse(uint8_t serverIdx, const char* objectId, const char* fol
         "<ObjectID>" + objIdStr + "</ObjectID>"
         "<BrowseFlag>BrowseDirectChildren</BrowseFlag>"
         "<Filter>*</Filter>"
-        "<StartingIndex>0</StartingIndex>"
+        "<StartingIndex>" + String(startIndex) + "</StartingIndex>"
         "<RequestedCount>" + String(MAX_UPNP_ITEMS) + "</RequestedCount>"
         "<SortCriteria></SortCriteria>"
         "</u:Browse></s:Body></s:Envelope>";
@@ -384,6 +386,8 @@ void upnp_client_browse(uint8_t serverIdx, const char* objectId, const char* fol
     String soapResp = http.getString();
     http.end();
 
+    int32_t parsedTotalMatches = net_extract_xml_tag(soapResp, "TotalMatches").toInt();
+    uint32_t totalMatches = (parsedTotalMatches > 0) ? (uint32_t)parsedTotalMatches : 0;
     String didl = xml_unescape(net_extract_xml_tag(soapResp, "Result"));
     soapResp = String(); // Free SOAP envelope immediately
 
@@ -473,6 +477,13 @@ void upnp_client_browse(uint8_t serverIdx, const char* objectId, const char* fol
         pos = iEnd + 7;
     }
 
+    pBrowse->total_matches = (uint16_t)((totalMatches > 65535U) ? 65535U : totalMatches);
+    if (totalMatches > (uint32_t)startIndex + (uint32_t)pBrowse->count) {
+        pBrowse->has_more = true;
+    } else if (totalMatches == 0 && pBrowse->count >= MAX_UPNP_ITEMS) {
+        pBrowse->has_more = true;
+    }
+
     log_i("[UPnP] Browse '%s' -> %u items (%u tracks)",
           pBrowse->title, pBrowse->count, s_folder_track_count);
 
@@ -501,8 +512,13 @@ bool upnp_client_play_track(const char* wiimIp, uint8_t trackIdx, bool isFixedVo
         metaHttp.setConnectTimeout(800);
         metaHttp.setTimeout(1200);
         bool firstChecked = false;
+        unsigned long metaStartMs = millis();
 
-        for (uint8_t i = 0; i < totalTracks; ++i) {
+        for (uint8_t offset = 0; offset < totalTracks; ++offset) {
+            uint8_t i = (uint8_t)((trackIdx + offset) % totalTracks);
+            if (offset > 0 && ((millis() - metaStartMs >= 1500UL) || (xQueueUiCmd && uxQueueMessagesWaiting(xQueueUiCmd) > 0))) {
+                break;
+            }
             UpnpTrackFull& t = s_folder_tracks[i];
             if (t.meta_resolved || strlen(t.id) == 0) continue;
 
@@ -547,7 +563,7 @@ bool upnp_client_play_track(const char* wiimIp, uint8_t trackIdx, bool isFixedVo
             if (!firstChecked) {
                 firstChecked = true;
                 if (titleMatches) {
-                    for (uint8_t j = i + 1; j < totalTracks; ++j) {
+                    for (uint8_t j = 0; j < totalTracks; ++j) {
                         s_folder_tracks[j].meta_resolved = true;
                     }
                     break;

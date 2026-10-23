@@ -1,4 +1,5 @@
 #include "net/discovery_service.h"
+#include "net/linkplay_client.h"
 #include "net/upnp_client.h"
 #include "net/net_utils.h"
 #include "net/wifi_service.h"
@@ -49,6 +50,14 @@ static void save_active_device(const WiiMDevice& dev) {
     s_dev_prefs.putString("active_name", dev.name);
     s_dev_prefs.putBool("fixed_vol", dev.is_fixed_volume);
     log_i("Saved active device to NVS: %s (%s, Fixed=%d)", dev.name, dev.ip, dev.is_fixed_volume ? 1 : 0);
+}
+
+static void clear_saved_active_device() {
+    s_dev_prefs.remove("active_ip");
+    s_dev_prefs.remove("active_uuid");
+    s_dev_prefs.remove("active_name");
+    s_dev_prefs.remove("fixed_vol");
+    log_i("Cleared active device from NVS");
 }
 
 static void load_saved_device_list() {
@@ -489,46 +498,87 @@ void discovery_service_trigger_rescan() {
     evt.data.scan.is_scanning = true;
     xQueueSend(xQueueUiState, &evt, 0);
 
-    // 1. Probe previously-discovered IPs from NVS and prune stale/unreachable entries
+    // 1. Snapshot NVS devices and broadcast SSDP M-SEARCH immediately so responses arrive in parallel
     portENTER_CRITICAL(&s_device_mux);
     DeviceList savedSnapshot = s_device_list;
     s_device_list.count = 0;
     portEXIT_CRITICAL(&s_device_mux);
 
-    bool activeVerified = false;
+    discovery_service_send_ssdp_query();
+
+    // 2. Probe previously-discovered IPs from NVS and prune stale/unreachable entries
     for (uint8_t i = 0; i < savedSnapshot.count; ++i) {
         esp_task_wdt_reset();
         WiiMDevice dev;
         if (query_device_status(savedSnapshot.devices[i].ip, &dev)) {
             dev.is_fixed_volume = savedSnapshot.devices[i].is_fixed_volume;
             add_or_update_device(dev);
-            if (s_has_active_device &&
-                (strcmp(dev.uuid, s_active_device.uuid) == 0 || strcmp(dev.ip, s_active_device.ip) == 0)) {
-                activeVerified = true;
-            }
         } else {
             log_w("Pruning unreachable NVS streamer: %s (%s)", savedSnapshot.devices[i].name, savedSnapshot.devices[i].ip);
         }
+        discovery_service_process_ssdp();
         vTaskDelay(pdMS_TO_TICKS(15)); // Yield to prevent WDT timeout
     }
 
-    if (s_has_active_device && !activeVerified) {
-        portENTER_CRITICAL(&s_device_mux);
+    // 3. Collect incoming SSDP responses (catches newly added or DHCP re-IP'd streamers)
+    for (uint8_t w = 0; w < 8; ++w) {
+        esp_task_wdt_reset();
+        discovery_service_process_ssdp();
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
+    // 4. Reconcile active device state after both NVS probes and SSDP collection complete
+    bool activePresent = false;
+    bool switchedActive = false;
+    bool clearedActive = false;
+    WiiMDevice newActiveDev;
+    memset(&newActiveDev, 0, sizeof(newActiveDev));
+
+    portENTER_CRITICAL(&s_device_mux);
+    for (uint8_t i = 0; i < s_device_list.count; ++i) {
+        if (s_device_list.devices[i].is_active ||
+            (s_has_active_device &&
+             ((strlen(s_active_device.uuid) > 0 && strcmp(s_device_list.devices[i].uuid, s_active_device.uuid) == 0) ||
+              strcmp(s_device_list.devices[i].ip, s_active_device.ip) == 0))) {
+            s_device_list.devices[i].is_active = true;
+            s_active_device = s_device_list.devices[i];
+            s_has_active_device = true;
+            activePresent = true;
+            break;
+        }
+    }
+    if (s_has_active_device && !activePresent) {
         if (s_device_list.count > 0) {
             s_active_device = s_device_list.devices[0];
             s_active_device.is_active = true;
             s_device_list.devices[0].is_active = true;
+            newActiveDev = s_active_device;
+            switchedActive = true;
         } else {
             s_has_active_device = false;
             memset(&s_active_device, 0, sizeof(s_active_device));
+            clearedActive = true;
         }
-        portEXIT_CRITICAL(&s_device_mux);
     }
+    portEXIT_CRITICAL(&s_device_mux);
 
     save_saved_device_list();
 
-    // 2. Broadcast SSDP discovery
-    discovery_service_send_ssdp_query();
+    if (switchedActive) {
+        save_active_device(newActiveDev);
+        if (s_on_active_changed_cb) {
+            s_on_active_changed_cb(newActiveDev);
+        }
+    } else if (clearedActive) {
+        clear_saved_active_device();
+        linkplay_client_reset_session();
+        linkplay_client_reset_track_cache();
+        UiEvent stEvt;
+        memset(&stEvt, 0, sizeof(stEvt));
+        stEvt.type = UI_EVT_PLAYER_STATE;
+        stEvt.data.player.state = PLAY_STATE_NONE;
+        xQueueSend(xQueueUiState, &stEvt, 0);
+    }
 
     // Broadcast current device list to UI
     discovery_service_broadcast_list();

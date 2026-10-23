@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.2] - 2026-10-23
+
+### Added
+- **UPnP Folder Pagination (`5836b1c`)**:
+  - Extended UPnP `ContentDirectory:1` `BrowseDirectChildren` (`include/model.h`, `include/net/upnp_client.h`, `src/net/upnp_client.cpp`, `src/network_manager.cpp`, `src/ui/ui_browser.cpp`) with `<StartingIndex>` and `<TotalMatches>` pagination so folders with more than 128 items can be browsed across unlimited 128-item pages.
+  - Added `Previous Page` and `Next Page` navigation rows in the UPnP Browser list, active range display in the 32px top header (`Folder (1-128 of 300)`), and per-level page memory in the breadcrumb stack so pressing Back (`<`) returns to the exact page previously viewed.
+
+### Fixed
+- **Active Device Rescan & Fallback Lifecycle (`5836b1c`)**:
+  - Reordered `discovery_service_trigger_rescan()` (`src/net/discovery_service.cpp`) to broadcast SSDP M-SEARCH and process incoming responses *before* evaluating active-device fallback so streamers whose DHCP IP changed are reconciled by UUID first.
+  - Persisted the fallback active streamer (`save_active_device()`) and fired `s_on_active_changed_cb()` when the previous active device is unreachable, or purged NVS `active_*` keys (`clear_saved_active_device()`), reset the LinkPlay session/cache, and cleared the Player UI when no streamers remain reachable.
+- **UPnP `BrowseMetadata` Time Budget & Priority Ordering (`5836b1c`)**:
+  - Updated `upnp_client_play_track()` (`src/net/upnp_client.cpp`) to resolve `BrowseMetadata` for the user-selected track (`trackIdx`) first and cap subsequent folder metadata enrichment to a `1500ms` total budget (aborting early if a new UI command arrives in `xQueueUiCmd`).
+- **Complete `xQueueUiCmd` Enqueue Validation & Documentation (`5836b1c`)**:
+  - Checked `xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) == pdTRUE` across all remaining UI command dispatches (`src/ui/ui_player.cpp`, `src/ui/ui_presets.cpp`, `src/ui/modal_device.cpp`, `src/ui/modal_wifi.cpp`, `src/ui/ui_lyrics.cpp`) and gated optimistic UI transitions on enqueue success.
+  - Updated `README.md` to document UPnP 128-item folder pagination and align the `wifi_service.cpp` file-tree description.
+
+---
+
 ## [1.0.1] - 2026-10-22
 
 ### Fixed

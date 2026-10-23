@@ -197,7 +197,11 @@ static void event_slider_seek(lv_event_t* e) {
                 UiCommand cmd;
                 cmd.type = CMD_SEEK_POSITION;
                 cmd.data.seek_ms = seek_ms;
-                xQueueSend(xQueueUiCmd, &cmd, 0);
+                if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) {
+                    has_pending_seek = false;
+                    if (obj_seek_target) lv_obj_add_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
+                    set_bar_and_time(current_actual_curpos_ms, current_totlen_ms, true);
+                }
             }
         }
     } else if (code == LV_EVENT_PRESS_LOST) {
@@ -233,7 +237,7 @@ static void event_slider_vol(lv_event_t* e) {
             UiCommand cmd;
             cmd.type = CMD_SET_VOL;
             cmd.data.volume = current_volume;
-            if (xQueueSend(xQueueUiCmd, &cmd, 0) == pdTRUE) {
+            if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) == pdTRUE) {
                 s_last_enqueued_vol = current_volume;
                 s_last_vol_enqueue_ms = now;
             }
@@ -244,7 +248,7 @@ static void event_slider_vol(lv_event_t* e) {
             UiCommand cmd;
             cmd.type = CMD_SET_VOL;
             cmd.data.volume = current_volume;
-            if (xQueueSend(xQueueUiCmd, &cmd, 0) == pdTRUE) {
+            if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) == pdTRUE) {
                 s_last_enqueued_vol = current_volume;
                 s_last_vol_enqueue_ms = millis();
             }
@@ -257,7 +261,7 @@ static void event_btn_prev(lv_event_t* e) {
     UiCommand cmd;
     cmd.type = CMD_PREV;
     cmd.data.seek_ms = current_actual_curpos_ms;
-    xQueueSend(xQueueUiCmd, &cmd, 0);
+    if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 
     // Enter buffering state: freeze progress, retain current play/pause icon
     current_play_state = PLAY_STATE_BUFFERING;
@@ -275,13 +279,13 @@ static void event_btn_play_pause(lv_event_t* e) {
 
     UiCommand cmd;
     cmd.type = CMD_PLAY_PAUSE;
-    xQueueSend(xQueueUiCmd, &cmd, 0);
+    if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 }
 
 static void event_btn_next(lv_event_t* e) {
     UiCommand cmd;
     cmd.type = CMD_NEXT;
-    xQueueSend(xQueueUiCmd, &cmd, 0);
+    if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 
     // Enter buffering state: freeze progress, retain current play/pause icon
     current_play_state = PLAY_STATE_BUFFERING;
@@ -293,7 +297,7 @@ static void event_btn_mute(lv_event_t* e) {
     UiCommand cmd;
     cmd.type = CMD_SET_MUTE;
     cmd.data.mute = !current_mute_state;
-    xQueueSend(xQueueUiCmd, &cmd, 0);
+    if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 }
 
 static void event_btn_input(lv_event_t* e) {
@@ -306,7 +310,7 @@ static void event_btn_input(lv_event_t* e) {
     cmd.type = CMD_SWITCH_MODE;
     strncpy(cmd.data.input_mode, kInputModes[s_current_input_idx], sizeof(cmd.data.input_mode) - 1);
     cmd.data.input_mode[sizeof(cmd.data.input_mode) - 1] = '\0';
-    xQueueSend(xQueueUiCmd, &cmd, 0);
+    if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 }
 
 void ui_player_init(lv_obj_t* parent) {

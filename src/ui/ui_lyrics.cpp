@@ -43,7 +43,7 @@ static void fetch_lyrics_if_needed() {
         cmd.type = CMD_FETCH_LYRICS;
         strncpy(cmd.data.lyrics_req.title, s_current_track_meta.title, sizeof(cmd.data.lyrics_req.title) - 1);
         strncpy(cmd.data.lyrics_req.artist, s_current_track_meta.artist, sizeof(cmd.data.lyrics_req.artist) - 1);
-        if (xQueueSend(xQueueUiCmd, &cmd, 0) == pdTRUE) {
+        if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) == pdTRUE) {
             s_lyrics_loading = true;
             s_lyrics_resolved = false;
         }

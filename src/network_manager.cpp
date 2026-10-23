@@ -219,7 +219,8 @@ void WiiMNetworkManager::processIncomingCommands() {
             case CMD_UPNP_BROWSE:
                 upnp_client_browse(cmd.data.upnp_browse.server_index,
                                    cmd.data.upnp_browse.object_id,
-                                   cmd.data.upnp_browse.title);
+                                   cmd.data.upnp_browse.title,
+                                   cmd.data.upnp_browse.start_index);
                 break;
 
             case CMD_UPNP_PLAY_TRACK:
