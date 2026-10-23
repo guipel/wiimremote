@@ -6,12 +6,15 @@ Welcome! This guide walks you step-by-step through assembling and installing the
 
 ---
 
-## 1. What You Need (Shopping List)
+## 1. What You Need (Shopping List — 100% Plug-and-Play, No Soldering)
+
+All hardware components plug directly together—**no soldering is required**:
 
 1. **Touchscreen Board**: [Hosyond 2.8" ESP32-S3 Capacitive Touch Display (`240x320` IPS)](https://www.amazon.com/dp/B0FKG7WRWV)
 2. **Rechargeable Battery**: [3.7V 3000mAh Li-Po Battery with JST 1.25mm 2-Pin Plug](https://www.amazon.com/dp/B0DK5BBKM5)
-3. **USB-C Data Cable**: Any standard USB-C cable that supports **data transfer** (note: some cheap cables that come with power banks or lamps are "charge-only" and won't let your computer talk to the board).
-4. **A Computer with Google Chrome or Microsoft Edge**: Windows, Mac, or Linux (no software installation required!).
+3. **3D-Printed Enclosure / Case**: [3D Print Case Model on Thingiverse (`thing:7426214`)](https://www.thingiverse.com/thing:7426214)
+4. **USB-C Data Cable**: Any standard USB-C cable that supports **data transfer** (note: some cheap cables that come with power banks or lamps are "charge-only" and won't let your computer talk to the board).
+5. **A Computer with Google Chrome or Microsoft Edge**: Windows, Mac, or Linux (no software installation required!).
 
 ---
 

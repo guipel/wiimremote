@@ -14,9 +14,11 @@ Built for **ESP32-S3 (N16R8: 16MB Flash, 8MB Octal OPI PSRAM)** with an **ILI934
 
 > 📖 **First time building this remote?** Follow the step-by-step **[Beginner's Installation & Setup Guide (`INSTALL.md`)](INSTALL.md)**—no soldering, no coding, and no software installation required!
 
-### 1. Recommended Hardware
+### 1. Recommended Hardware (100% Plug-and-Play — No Soldering Required)
+This project requires **zero soldering**—the ESP32-S3, 2.8" IPS touchscreen, and battery charging circuit all come pre-assembled on a single plug-and-play board:
 - **Touchscreen Board**: [Hosyond 2.8" ESP32-S3 Capacitive Touch Display (ILI9341V 240x320 + FT6336G, N16R8)](https://www.amazon.com/dp/B0FKG7WRWV)
 - **Rechargeable Battery**: [3.7V 3000mAh Li-Po Battery (JST 1.25mm 2-Pin)](https://www.amazon.com/dp/B0DK5BBKM5) *(Always verify `+` Red / `-` Black polarity before plugging in—see [`INSTALL.md`](INSTALL.md))*
+- **3D-Printed Case / Enclosure**: [3D Print Model on Thingiverse (`thing:7426214`)](https://www.thingiverse.com/thing:7426214)
 
 ### 2. Option A: Zero-Install Web Browser Flasher (Recommended for All Users)
 You can flash the pre-built release firmware directly from **Google Chrome** or **Microsoft Edge** without installing any development tools:
@@ -311,7 +313,7 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View** (w
 
 - **Personal / Non-Commercial Use Only**: This repository and its pre-built firmware binaries are licensed to the public under the **[PolyForm Noncommercial License 1.0.0](LICENSE)** strictly for **personal, hobby, and non-commercial use**.
 - **No Third-Party Commercial Use or Sales**: No person or entity other than the copyright holder (`guipel`) is permitted to sell this software, sell pre-flashed hardware devices, bundle this firmware with hardware for commercial sale, or use this project for monetary compensation without prior written authorization from the author. All commercial manufacturing and sales rights are reserved exclusively by the copyright holder.
-- **Third-Party Open Source Components**: This firmware links against unmodified third-party open-source libraries that remain governed by their respective licenses (see **[`LICENSE`](LICENSE)** for full copyright notices and license texts):
+- **Third-Party Open Source Components**: This firmware links against third-party open-source libraries and font assets that remain governed by their respective licenses (see **[`LICENSE`](LICENSE)** for full copyright notices and license texts):
   - **[LVGL (`v8.4.0`)](https://github.com/lvgl/lvgl)** — MIT License
   - **[LovyanGFX (`v1.2.28`)](https://github.com/lovyan03/LovyanGFX)** — 2-Clause BSD (FreeBSD) & MIT Licenses
   - **[ArduinoJson (`v7.4.3`)](https://github.com/bblanchon/ArduinoJson)** — MIT License
