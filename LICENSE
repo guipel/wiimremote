@@ -146,8 +146,8 @@ these terms.
 THIRD-PARTY OPEN SOURCE NOTICES & ATTRIBUTIONS
 ================================================================================
 
-This firmware incorporates unmodified third-party open-source libraries that
-remain licensed under their respective original terms:
+This firmware links against third-party open-source libraries and font assets
+that remain licensed under their respective original terms:
 
 --------------------------------------------------------------------------------
 1. LVGL (Light and Versatile Graphics Library) - v8.4.0 (MIT License)
