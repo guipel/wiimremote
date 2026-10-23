@@ -305,5 +305,18 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View** (w
 
 ---
 
-## 📄 License
-This project is licensed under the MIT License.
+## 📄 License & Commercial Rights
+
+**Copyright © 2026 guipel. All commercial rights reserved.**
+
+- **Personal / Non-Commercial Use Only**: This repository and its pre-built firmware binaries are licensed to the public under the **[PolyForm Noncommercial License 1.0.0](LICENSE)** strictly for **personal, hobby, and non-commercial use**.
+- **No Third-Party Commercial Use or Sales**: No person or entity other than the copyright holder (`guipel`) is permitted to sell this software, sell pre-flashed hardware devices, bundle this firmware with hardware for commercial sale, or use this project for monetary compensation without prior written authorization from the author. All commercial manufacturing and sales rights are reserved exclusively by the copyright holder.
+- **Third-Party Open Source Components**: This firmware links against unmodified third-party open-source libraries that remain governed by their respective licenses (see **[`LICENSE`](LICENSE)** for full copyright notices and license texts):
+  - **[LVGL (`v8.4.0`)](https://github.com/lvgl/lvgl)** — MIT License
+  - **[LovyanGFX (`v1.2.28`)](https://github.com/lovyan03/LovyanGFX)** — 2-Clause BSD (FreeBSD) & MIT Licenses
+  - **[ArduinoJson (`v7.4.3`)](https://github.com/bblanchon/ArduinoJson)** — MIT License
+  - **[Espressif Arduino-ESP32](https://github.com/espressif/arduino-esp32) / [ESP-IDF](https://github.com/espressif/esp-idf) / [FreeRTOS](https://www.freertos.org/)** — LGPL-2.1 / Apache-2.0 / MIT Licenses
+  - **Montserrat Font & FontAwesome Symbols** — SIL Open Font License 1.1 (OFL-1.1)
+- **External Services & Trademarks**:
+  - Lyrics lookup uses the public community **[LRCLIB (`lrclib.net`)](https://lrclib.net)** service on an "as-is" basis.
+  - *"WiiM"* and *"LinkPlay"* are trademarks of Linkplay Technology Inc. This project is an independent third-party companion remote for WiiM streamers and is not affiliated with, endorsed by, or sponsored by Linkplay Technology Inc.
