@@ -211,8 +211,12 @@ void WiiMNetworkManager::processIncomingCommands() {
                 break;
 
             case CMD_UPNP_SCAN_SERVERS:
-                upnp_client_clear_servers();
                 discovery_service_send_upnp_server_query();
+                for (uint8_t w = 0; w < 12; ++w) {
+                    esp_task_wdt_reset();
+                    discovery_service_process_ssdp();
+                    vTaskDelay(pdMS_TO_TICKS(50));
+                }
                 upnp_client_broadcast_servers();
                 break;
 

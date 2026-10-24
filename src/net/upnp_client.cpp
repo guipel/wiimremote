@@ -22,9 +22,6 @@ struct UpnpTrackFull {
 
 static Preferences s_upnp_prefs;
 static UpnpServerList s_server_list;
-static constexpr uint8_t MAX_IGNORED_LOCATIONS = 16;
-static char s_ignored_base_urls[MAX_IGNORED_LOCATIONS][64];
-static uint8_t s_ignored_loc_count = 0;
 
 static UpnpTrackFull* s_folder_tracks = nullptr;
 static uint8_t s_folder_track_count = 0;
@@ -165,8 +162,6 @@ static UpnpBrowseList* alloc_browse_list() {
 void upnp_client_init() {
     s_upnp_prefs.begin("wiim_upnp", false);
     memset(&s_server_list, 0, sizeof(s_server_list));
-    memset(s_ignored_base_urls, 0, sizeof(s_ignored_base_urls));
-    s_ignored_loc_count = 0;
     if (!s_folder_tracks) {
         s_folder_tracks = (UpnpTrackFull*)heap_caps_malloc(
             sizeof(UpnpTrackFull) * MAX_UPNP_ITEMS,
@@ -185,16 +180,6 @@ void upnp_client_init() {
     if (s_server_list.count > 0) {
         upnp_client_broadcast_servers();
     }
-}
-
-void upnp_client_reset_ignored() {
-    s_ignored_loc_count = 0;
-}
-
-void upnp_client_clear_servers() {
-    s_ignored_loc_count = 0;
-    memset(&s_server_list, 0, sizeof(s_server_list));
-    save_saved_servers();
 }
 
 void upnp_client_broadcast_servers() {
@@ -230,13 +215,6 @@ void upnp_client_on_ssdp_location(const char* locationUrl) {
         }
     }
 
-    // Check if already probed and confirmed to lack ContentDirectory
-    for (uint8_t i = 0; i < s_ignored_loc_count; ++i) {
-        if (strcmp(s_ignored_base_urls[i], baseUrl) == 0) {
-            return;
-        }
-    }
-
     esp_task_wdt_reset();
 
     HTTPClient http;
@@ -248,7 +226,6 @@ void upnp_client_on_ssdp_location(const char* locationUrl) {
 
     int code = http.GET();
     if (code != HTTP_CODE_OK) {
-        // Do not blacklist on transient HTTP timeouts (e.g. when server is busy transcoding DSD)
         http.end();
         return;
     }
@@ -258,9 +235,6 @@ void upnp_client_on_ssdp_location(const char* locationUrl) {
 
     int cdIdx = payload.indexOf("urn:schemas-upnp-org:service:ContentDirectory:");
     if (cdIdx < 0) {
-        if (s_ignored_loc_count < MAX_IGNORED_LOCATIONS) {
-            strncpy(s_ignored_base_urls[s_ignored_loc_count++], baseUrl, sizeof(s_ignored_base_urls[0]) - 1);
-        }
         return;
     }
 

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.3] - 2026-10-24
+
+### Fixed
+- **Non-Destructive UPnP Server Refresh & 600ms SSDP Scan Window (`15ca383`)**:
+  - Removed the destructive `upnp_client_clear_servers()` wipe and `s_ignored_base_urls` cache from `include/net/upnp_client.h`, `src/net/upnp_client.cpp`, and `src/net/discovery_service.cpp` so refreshing the UPnP Servers screen never deletes active UPnP servers (such as Asset UPnP) from RAM or NVS while streaming.
+  - Updated `CMD_UPNP_SCAN_SERVERS` in `src/network_manager.cpp` to listen for incoming SSDP UDP responses across a dedicated `600ms` (`12 x 50ms`) window on `NetTask` before broadcasting `s_server_list` to the UI.
+
+### Changed & Documented
+- **PolyForm Noncommercial License 1.0.0 & Third-Party Notices (`efb6bd4`, `5ca3b11`)**:
+  - Added [`LICENSE`](LICENSE) and updated `## 📄 License & Commercial Rights` in `README.md` under the **PolyForm Noncommercial License 1.0.0** (personal/non-commercial use only, with all commercial manufacturing and sales rights reserved exclusively by `guipel`), including full third-party open-source attributions (`LVGL`, `LovyanGFX`, `ArduinoJson`, `Arduino-ESP32` / `ESP-IDF` / `FreeRTOS`, `SIL OFL-1.1`) and LinkPlay/WiiM trademark disclaimers.
+- **3D-Printed Enclosure Model & Web Flasher Reset Guide (`ae2cae5`, `31c6358`, `5ca3b11`)**:
+  - Added the 3D-printed enclosure model link (`https://www.thingiverse.com/thing:7426214`) and 100% plug-and-play / zero-soldering note to `README.md` and `INSTALL.md`.
+  - Updated `INSTALL.md` and `README.md` (`ae2cae5`) to detail the exact `esptool-js` Web Flasher settings (`keep` dropdowns, `Hard resetting via RTS pin...` completion log, full-flash NVS note) and both post-flash restart methods (**On the Board** via the physical `RST` button and **On the Website** via `Disconnect` &rarr; `Console` &rarr; `Start`/`Reset` for sealed enclosures).
+  - Updated `## 📱 Features & UI Navigation` in `README.md` (`31c6358`) to match the exact on-screen UI (`UPnP` 4th tab label, scrollable plain-text lyrics description, audio resolution position beneath the progress bar, `> 5s` Previous track restart behavior, `ᛒ` Bluetooth icon, `Select WiiM Streamer` title, and the 7-row `Power & Display` settings layout including `Brightness`).
+
+---
+
 ## [1.0.2] - 2026-10-23
 
 ### Added
@@ -23,10 +40,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Complete `xQueueUiCmd` Enqueue Validation & Documentation (`5836b1c`)**:
   - Checked `xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) == pdTRUE` across all remaining UI command dispatches (`src/ui/ui_player.cpp`, `src/ui/ui_presets.cpp`, `src/ui/modal_device.cpp`, `src/ui/modal_wifi.cpp`, `src/ui/ui_lyrics.cpp`) and gated optimistic UI transitions on enqueue success.
   - Updated `README.md` to document UPnP 128-item folder pagination and align the `wifi_service.cpp` file-tree description.
-  - Updated `INSTALL.md` and `README.md` (`ae2cae5`) to detail the exact `esptool-js` Web Flasher settings (`keep` dropdowns, `Hard resetting via RTS pin...` completion log, full-flash NVS note) and both post-flash restart methods (**On the Board** via the physical `RST` button and **On the Website** via `Disconnect` &rarr; `Console` &rarr; `Start`/`Reset` for sealed enclosures).
-  - Updated `## 📱 Features & UI Navigation` in `README.md` (`31c6358`) to match the exact on-screen UI (`UPnP` 4th tab label, scrollable plain-text lyrics description, audio resolution position beneath the progress bar, `> 5s` Previous track restart behavior, `ᛒ` Bluetooth icon, `Select WiiM Streamer` title, and the 7-row `Power & Display` settings layout including `Brightness`).
-  - Added [`LICENSE`](LICENSE) and updated `## 📄 License & Commercial Rights` in `README.md` (`efb6bd4`, `5ca3b11`) under the **PolyForm Noncommercial License 1.0.0** (personal/non-commercial use only, with all commercial manufacturing and sales rights reserved exclusively by `guipel`), including full third-party open-source attributions (`LVGL`, `LovyanGFX`, `ArduinoJson`, `Arduino-ESP32` / `ESP-IDF` / `FreeRTOS`, `SIL OFL-1.1`) and LinkPlay/WiiM trademark disclaimers.
-  - Added the 3D-printed enclosure model link (`https://www.thingiverse.com/thing:7426214`) and 100% plug-and-play / zero-soldering note to `README.md` and `INSTALL.md` (`5ca3b11`).
 
 ---
 
