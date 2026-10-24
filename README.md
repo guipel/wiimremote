@@ -209,7 +209,7 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View** (w
    - Edge-to-edge scrollable list of **12 presets** dynamically synced from the WiiM device (`getPresetInfo`), with unassigned slots visually dimmed.
    - One-touch preset recall with automatic navigation back to the **Player** tab.
 4. **UPnP / DLNA Media Browser Tab (`UPnP`)**:
-   - Automatically discovers local UPnP `MediaServer:1` servers (Asset UPnP, MinimServer, Plex, Synology, etc.) via SSDP.
+   - Automatically discovers local UPnP `MediaServer:1` servers (Asset UPnP, MinimServer, Plex, Synology, etc.) via SSDP, persists discovered servers in NVS (`"wiim_upnp"`), and performs non-destructive 600ms SSDP refresh scans that preserve active servers while updating changed endpoints by `UDN` or friendly name.
    - Navigates arbitrary folder hierarchies via UPnP `ContentDirectory:1` (`BrowseDirectChildren`) with automatic 128-item page navigation (`Previous Page` / `Next Page`), breadcrumb page memory, and a persistent 32px back/refresh header.
    - Tapping any track builds a native LinkPlay `<PlayList>` queue (`CreateQueue` & `PlayQueueWithIndex`) containing the full album/folder starting at the selected track and automatically switches to the **Player** tab—enabling gapless album playback, accurate `X/Y` track counters, Next/Previous track skipping, and true embedded `TITLE` metadata lookup via UPnP `BrowseMetadata`.
 

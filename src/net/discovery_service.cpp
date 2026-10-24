@@ -491,7 +491,6 @@ void discovery_service_trigger_rescan() {
 
     // Clear ignored non-WiiM IP cache on explicit rescan
     s_ignored_count = 0;
-    upnp_client_reset_ignored();
 
     UiEvent evt;
     evt.type = UI_EVT_SCAN_STATUS;
