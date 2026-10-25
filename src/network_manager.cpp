@@ -277,7 +277,7 @@ void WiiMNetworkManager::runTaskLoop() {
             linkplay_client_fetch_meta(activeDev.ip);
 
             bool isFixed = activeDev.is_fixed_volume;
-            if (linkplay_client_fetch_config(activeDev.ip, isFixed) && isFixed != activeDev.is_fixed_volume) {
+            if (linkplay_client_fetch_config(activeDev.ip, isFixed)) {
                 discovery_service_set_active_fixed_volume(isFixed);
                 activeDev.is_fixed_volume = isFixed;
             }
@@ -307,6 +307,7 @@ void WiiMNetworkManager::runTaskLoop() {
             bool isFixed = false;
             if (linkplay_client_fetch_config(activeDev.ip, isFixed) && isFixed != activeDev.is_fixed_volume) {
                 discovery_service_set_active_fixed_volume(isFixed);
+                _lastStatusPoll = 0;
             }
         }
 

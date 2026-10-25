@@ -517,7 +517,7 @@ bool linkplay_client_fetch_config(const char* targetIp, bool& outIsFixedVolume) 
     if (!targetIp || strlen(targetIp) == 0) return false;
 
     String payload;
-    int httpCode = execute_api_get(targetIp, "getNewAudioOutputHardwareMode", payload);
+    int httpCode = execute_api_get(targetIp, "getStatusEx", payload);
     if (httpCode != HTTP_CODE_OK || payload.length() == 0) {
         return false;
     }
@@ -526,18 +526,10 @@ bool linkplay_client_fetch_config(const char* targetIp, bool& outIsFixedVolume) 
     DeserializationError err = deserializeJson(doc, payload);
     if (err) return false;
 
-    const char* volCtrl = doc["volume_control"] | "";
-    const char* fixedVol = doc["fixed_volume"] | "";
-
-    if (strlen(volCtrl) > 0) {
-        outIsFixedVolume = (strcmp(volCtrl, "1") == 0);
-        return true;
-    } else if (strlen(fixedVol) > 0) {
-        outIsFixedVolume = (strcmp(fixedVol, "1") == 0);
-        return true;
-    }
-
-    return false;
+    const char* vc = doc["volume_control"] | "0";
+    outIsFixedVolume = (strcmp(vc, "1") == 0);
+    s_last_player_state.is_fixed_volume = outIsFixedVolume;
+    return true;
 }
 
 void linkplay_client_seek(const char* targetIp, uint32_t seek_ms) {
