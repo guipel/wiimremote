@@ -239,7 +239,7 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View** (w
 ### LinkPlay / WiiM HTTP & UPnP APIs
 | Operation | Endpoint / Action | Description |
 | :--- | :--- | :--- |
-| **Device Identification** | `GET /httpapi.asp?command=getStatusEx` | Discovers device name, UUID, and MAC |
+| **Device Identification & Config** | `GET /httpapi.asp?command=getStatusEx` | Discovers device name, UUID, MAC, and fixed-volume (`volume_control`) state |
 | **Playback Telemetry** | `GET /httpapi.asp?command=getPlayerStatus` | Polls play state, position, duration, mode, and volume |
 | **Track Metadata** | `GET /httpapi.asp?command=getMetaInfo` | Retrieves title, artist, album, sample rate, and bit depth |
 | **Presets List** | `GET /httpapi.asp?command=getPresetInfo` | Retrieves 12 preset names and mappings |

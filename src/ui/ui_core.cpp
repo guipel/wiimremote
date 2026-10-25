@@ -209,7 +209,6 @@ void ui_init() {
         ui_header_set_active_device(dev.name);
         ui_player_clear();
         ui_lyrics_clear();
-        ui_player_set_fixed_volume_mode(dev.is_fixed_volume);
     });
 
     modal_wifi_init(lv_scr_act());
@@ -237,14 +236,12 @@ void ui_set_devices(const DeviceList& list) {
     for (uint8_t i = 0; i < list.count; ++i) {
         if (list.devices[i].is_active) {
             ui_header_set_active_device(list.devices[i].name);
-            ui_player_set_fixed_volume_mode(list.devices[i].is_fixed_volume);
             activeFound = true;
             break;
         }
     }
     if (!activeFound && list.count > 0) {
         ui_header_set_active_device(list.devices[0].name);
-        ui_player_set_fixed_volume_mode(list.devices[0].is_fixed_volume);
     } else if (list.count == 0) {
         ui_header_set_active_device(nullptr);
     }

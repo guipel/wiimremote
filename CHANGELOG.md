@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.4] - 2026-10-25
+
+### Fixed
+- **Dynamic Fixed-Volume Detection & Bit-Perfect DSD Playback (`81db9ef`)**:
+  - Restored `getStatusEx` (`volume_control` == `"1"`) in `linkplay_client_fetch_config()` (`src/net/linkplay_client.cpp`), replacing `getNewAudioOutputHardwareMode` which did not return `volume_control` on WiiM streamers and prevented Fixed Volume mode and UPnP DoP DSD streaming (`.forced.wavdop`) from being detected.
+  - Removed NVS persistence of `is_fixed_volume` (`fixed_vol` and `dev_fixed_%u` in `src/net/discovery_service.cpp`) and device-list volume mode overrides in `src/ui/ui_core.cpp` so Fixed vs. Variable volume mode is always read dynamically from the active streamer and updated immediately on the Player UI (`src/network_manager.cpp`).
+
+---
+
 ## [1.0.3] - 2026-10-24
 
 ### Fixed
