@@ -198,7 +198,7 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View** (w
    - High-contrast track title rendered in extended UTF-8 **Montserrat 24** typography with circular scrolling for long titles.
    - Artist and album metadata.
    - Interactive progress bar with **Ghost Seek Target Indicator** (shows requested seek position while streamer buffers to the target timestamp).
-   - Elapsed (`00:00`) and total (`--:--`) duration timestamps flanking the centered audio resolution readout (`bits/sample_rate_kHz`, e.g., `24/96`) directly beneath the progress bar.
+   - Elapsed (`00:00`) and total (`--:--`) duration timestamps flanking the centered audio resolution readout (`bits/sample_rate_kHz`, e.g., `24/96`, or `DSD` for DoP streams on Fixed Volume streamers) directly beneath the progress bar.
    - Centered transport controls: **Previous** (restarts current track to `00:00` if elapsed playback is `> 5s`, or skips to previous track when `<= 5s`), **Play/Pause/Resume**, and **Next**.
    - Centered track counter (`X/Y`) directly beneath the Play/Pause button (auto-hidden when `0/0`).
    - **Unified Volume & Input Source Row**:

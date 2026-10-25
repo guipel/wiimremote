@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.5] - 2026-10-25
+
+### Added
+- **DoP `DSD` Resolution Indicator (`48a7b1b`)**:
+  - Updated `update_stream_info_labels()` in `src/ui/ui_player.cpp` to display `DSD` beneath the progress bar when streaming DoP (`current_is_fixed && current_bit_depth == 32 && current_sample_rate == 176400`), while preserving `24/176` for 24-bit/176.4kHz FLAC tracks and variable-volume PCM WAV transcodes.
+
+### Fixed
+- **Track Transition Audio Resolution Race Condition (`48a7b1b`)**:
+  - Updated `linkplay_client_poll_active()` and `linkplay_client_fetch_meta()` in `src/net/linkplay_client.cpp` so that on track change, the Player UI immediately updates the new title/artist/album from `getPlayerStatus` and clears the resolution indicator to empty (`sample_rate = 0`), then fetches `getMetaInfo` on the subsequent poll once `sampleRate > 0` is reported by the audio decoder—preventing the previous track's resolution or a blank resolution from being locked in at `00:00`.
+
+---
+
 ## [1.0.4] - 2026-10-25
 
 ### Fixed
