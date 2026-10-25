@@ -260,6 +260,11 @@ bool linkplay_client_fetch_meta(const char* targetIp) {
         bitDepth = (uint8_t)atoi(vDepth.as<const char*>());
     }
 
+    if (sampleRate == 0) {
+        free(pMeta);
+        return false;
+    }
+
     pMeta->sample_rate = sampleRate;
     pMeta->bit_depth = bitDepth;
 
@@ -271,7 +276,7 @@ bool linkplay_client_fetch_meta(const char* targetIp) {
         free(pMeta);
     }
 
-    return (decTitle.length() > 0 || sampleRate > 0);
+    return true;
 }
 
 void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, PlayerState& outState) {
@@ -355,10 +360,22 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
                 s_cached_upnp_track_num = 0;
                 s_cached_upnp_track_total = 0;
                 isNewTrack = true;
-                if (linkplay_client_fetch_meta(targetIp)) {
-                    s_meta_resolved = true;
+
+                // 1) Track changed: update title/artist/album and set resolution to empty (0)
+                TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
+                if (pMeta) {
+                    memset(pMeta, 0, sizeof(TrackMeta));
+                    strncpy(pMeta->title, decTitle.c_str(), sizeof(pMeta->title) - 1);
+                    strncpy(pMeta->artist, decArtist.c_str(), sizeof(pMeta->artist) - 1);
+                    strncpy(pMeta->album, decAlbum.c_str(), sizeof(pMeta->album) - 1);
+                    UiEvent evtMeta;
+                    evtMeta.type = UI_EVT_META_UPDATED;
+                    evtMeta.data.meta = pMeta;
+                    if (xQueueSend(xQueueUiState, &evtMeta, 0) != pdTRUE) {
+                        free(pMeta);
+                    }
                 }
-            } else if (!s_meta_resolved && evt.data.player.state == PLAY_STATE_PLAYING) {
+            } else if (!s_meta_resolved) {
                 if (linkplay_client_fetch_meta(targetIp)) {
                     s_meta_resolved = true;
                 }

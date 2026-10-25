@@ -114,13 +114,17 @@ static void update_stream_info_labels() {
     if (lbl_resolution) {
         char res_buf[32] = "";
         if (current_sample_rate > 0) {
-            uint8_t display_depth = current_bit_depth;
-            if (display_depth >= 32) display_depth = 24;
-            uint32_t khz = current_sample_rate / 1000;
-            if (display_depth > 0) {
-                snprintf(res_buf, sizeof(res_buf), "%u/%u", (unsigned int)display_depth, (unsigned int)khz);
+            if (current_is_fixed && current_bit_depth == 32 && current_sample_rate == 176400) {
+                snprintf(res_buf, sizeof(res_buf), "DSD");
             } else {
-                snprintf(res_buf, sizeof(res_buf), "%u", (unsigned int)khz);
+                uint8_t display_depth = current_bit_depth;
+                if (display_depth >= 32) display_depth = 24;
+                uint32_t khz = current_sample_rate / 1000;
+                if (display_depth > 0) {
+                    snprintf(res_buf, sizeof(res_buf), "%u/%u", (unsigned int)display_depth, (unsigned int)khz);
+                } else {
+                    snprintf(res_buf, sizeof(res_buf), "%u", (unsigned int)khz);
+                }
             }
         }
         lv_label_set_text(lbl_resolution, res_buf);
