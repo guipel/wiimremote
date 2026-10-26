@@ -15,11 +15,10 @@ static bool s_persistent_http_configured = false;
 static String s_last_raw_title = "";
 static String s_last_raw_artist = "";
 static String s_last_raw_album = "";
-static String s_last_raw_plicurr = "";
 static String s_last_known_track_title = "";
 static String s_last_known_artist = "";
-static String s_last_known_album = "";
 static bool s_meta_resolved = false;
+static uint8_t s_meta_retries = 0;
 static uint32_t s_cached_track_duration_ms = 0;
 static uint8_t s_active_mode = 0;
 static uint16_t s_active_plicurr = 0;
@@ -33,11 +32,10 @@ void linkplay_client_init() {
     s_last_raw_title = "";
     s_last_raw_artist = "";
     s_last_raw_album = "";
-    s_last_raw_plicurr = "";
     s_last_known_track_title = "";
     s_last_known_artist = "";
-    s_last_known_album = "";
     s_meta_resolved = false;
+    s_meta_retries = 0;
     s_cached_upnp_track_num = 0;
     s_cached_upnp_track_total = 0;
     s_cached_track_duration_ms = 0;
@@ -57,12 +55,11 @@ void linkplay_client_reset_track_cache() {
     s_last_raw_title = "";
     s_last_raw_artist = "";
     s_last_raw_album = "";
-    s_last_raw_plicurr = "";
     s_last_known_track_title = "";
     s_last_known_artist = "";
-    s_last_known_album = "";
     s_cached_track_duration_ms = 0;
     s_meta_resolved = false;
+    s_meta_retries = 0;
     s_cached_upnp_track_num = 0;
     s_cached_upnp_track_total = 0;
 }
@@ -80,6 +77,7 @@ static int execute_api_get(const char* targetIp, const String& cmd, String& outP
         linkplay_client_reset_session();
         s_persistent_client.setInsecure();
         s_persistent_http.setReuse(true);
+        s_persistent_http.setConnectTimeout(1000);
         s_persistent_http.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
         s_persistent_ip = String(targetIp);
         s_persistent_http_configured = true;
@@ -99,10 +97,10 @@ static int execute_api_get(const char* targetIp, const String& cmd, String& outP
 
     // If socket dropped by server (e.g. keep-alive timeout), reconnect once
     if (code <= 0) {
-        log_w("Keep-alive socket dropped (%d), reconnecting to %s...", code, targetIp);
         linkplay_client_reset_session();
         s_persistent_client.setInsecure();
         s_persistent_http.setReuse(true);
+        s_persistent_http.setConnectTimeout(1000);
         s_persistent_http.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
         s_persistent_ip = String(targetIp);
         s_persistent_http_configured = true;
@@ -195,7 +193,6 @@ static void fetch_upnp_track_duration(const char* targetIp) {
                 int h = 0, m = 0, s = 0;
                 if (sscanf(durStr.c_str(), "%d:%d:%d", &h, &m, &s) == 3) {
                     s_cached_track_duration_ms = (uint32_t)(h * 3600 + m * 60 + s) * 1000;
-                    log_i("UPnP TrackDuration: %s (%u ms)", durStr.c_str(), s_cached_track_duration_ms);
                 }
             }
         }
@@ -223,18 +220,13 @@ bool linkplay_client_fetch_meta(const char* targetIp) {
     const char* rawTitle = doc["metaData"]["title"] | doc["Title"] | doc["title"] | "";
     const char* rawArtist = doc["metaData"]["artist"] | doc["Artist"] | doc["artist"] | "";
     const char* rawAlbum = doc["metaData"]["album"] | doc["Album"] | doc["album"] | "";
-    String decTitle = net_decode_hex_string(rawTitle);
-    String decArtist = net_decode_hex_string(rawArtist);
-    String decAlbum = net_decode_hex_string(rawAlbum);
+    String decTitle = net_to_valid_utf8(String(rawTitle));
+    String decArtist = net_to_valid_utf8(String(rawArtist));
+    String decAlbum = net_to_valid_utf8(String(rawAlbum));
 
     if (decTitle.length() > 0) {
         s_last_known_track_title = decTitle;
         s_last_known_artist = decArtist;
-        s_last_known_album = decAlbum;
-    } else if (s_last_known_track_title.length() > 0) {
-        decTitle = s_last_known_track_title;
-        decArtist = s_last_known_artist;
-        decAlbum = s_last_known_album;
     }
 
     strncpy(pMeta->title, decTitle.c_str(), sizeof(pMeta->title) - 1);
@@ -260,11 +252,14 @@ bool linkplay_client_fetch_meta(const char* targetIp) {
         bitDepth = (uint8_t)atoi(vDepth.as<const char*>());
     }
 
-    if (sampleRate == 0) {
+    if (decTitle.length() == 0 && sampleRate == 0) {
         free(pMeta);
         return false;
     }
 
+    if (sampleRate > 0) {
+        s_meta_resolved = true;
+    }
     pMeta->sample_rate = sampleRate;
     pMeta->bit_depth = bitDepth;
 
@@ -276,21 +271,21 @@ bool linkplay_client_fetch_meta(const char* targetIp) {
         free(pMeta);
     }
 
-    return true;
+    return (sampleRate > 0);
 }
 
-void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, PlayerState& outState) {
-    if (!targetIp || strlen(targetIp) == 0) return;
+bool linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, PlayerState& outState) {
+    if (!targetIp || strlen(targetIp) == 0) return false;
 
     String payload;
     int httpCode = execute_api_get(targetIp, "getPlayerStatus", payload);
     if (httpCode != HTTP_CODE_OK || payload.length() == 0) {
-        return;
+        return false;
     }
 
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, payload);
-    if (err) return;
+    if (err) return false;
 
     UiEvent evt;
     memset(&evt, 0, sizeof(evt));
@@ -328,70 +323,29 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
     // Track Identity & Change Detection (evaluated BEFORE duration/position math)
     bool isNewTrack = false;
     if (evt.data.player.state == PLAY_STATE_NONE) {
-        s_last_raw_title = "";
-        s_last_raw_artist = "";
-        s_last_raw_album = "";
-        s_last_raw_plicurr = "";
-        s_last_known_track_title = "";
-        s_last_known_artist = "";
-        s_last_known_album = "";
-        s_cached_track_duration_ms = 0;
-        s_meta_resolved = false;
-        s_cached_upnp_track_num = 0;
-        s_cached_upnp_track_total = 0;
+        linkplay_client_reset_track_cache();
     } else {
         if (strlen(rawTitle) > 0) {
             if (strcmp(s_last_raw_title.c_str(), rawTitle) != 0 ||
                 strcmp(s_last_raw_artist.c_str(), rawArtist) != 0 ||
-                strcmp(s_last_raw_album.c_str(), rawAlbum) != 0 ||
-                strcmp(s_last_raw_plicurr.c_str(), rawPlicurr) != 0) {
+                strcmp(s_last_raw_album.c_str(), rawAlbum) != 0) {
                 s_last_raw_title = rawTitle;
                 s_last_raw_artist = rawArtist;
                 s_last_raw_album = rawAlbum;
-                s_last_raw_plicurr = rawPlicurr;
-                String decTitle = net_decode_hex_string(rawTitle);
-                String decArtist = net_decode_hex_string(rawArtist);
-                String decAlbum = net_decode_hex_string(rawAlbum);
-                s_last_known_track_title = decTitle;
-                s_last_known_artist = decArtist;
-                s_last_known_album = decAlbum;
                 s_cached_track_duration_ms = 0;
                 s_meta_resolved = false;
+                s_meta_retries = 0;
                 s_cached_upnp_track_num = 0;
                 s_cached_upnp_track_total = 0;
                 isNewTrack = true;
-
-                // 1) Track changed: update title/artist/album and set resolution to empty (0)
-                TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
-                if (pMeta) {
-                    memset(pMeta, 0, sizeof(TrackMeta));
-                    strncpy(pMeta->title, decTitle.c_str(), sizeof(pMeta->title) - 1);
-                    strncpy(pMeta->artist, decArtist.c_str(), sizeof(pMeta->artist) - 1);
-                    strncpy(pMeta->album, decAlbum.c_str(), sizeof(pMeta->album) - 1);
-                    UiEvent evtMeta;
-                    evtMeta.type = UI_EVT_META_UPDATED;
-                    evtMeta.data.meta = pMeta;
-                    if (xQueueSend(xQueueUiState, &evtMeta, 0) != pdTRUE) {
-                        free(pMeta);
-                    }
-                }
-            } else if (!s_meta_resolved) {
-                if (linkplay_client_fetch_meta(targetIp)) {
+            }
+            if (!s_meta_resolved) {
+                if (linkplay_client_fetch_meta(targetIp) || ++s_meta_retries >= 3) {
                     s_meta_resolved = true;
                 }
             }
-        } else if (s_last_known_track_title.length() > 0) {
-            s_last_raw_title = "";
-            s_last_raw_artist = "";
-            s_last_raw_album = "";
-            s_last_raw_plicurr = "";
-            s_last_known_track_title = "";
-            s_last_known_artist = "";
-            s_last_known_album = "";
-            s_cached_track_duration_ms = 0;
-            s_meta_resolved = false;
-            s_cached_upnp_track_num = 0;
-            s_cached_upnp_track_total = 0;
+        } else if (s_last_raw_title.length() > 0) {
+            linkplay_client_reset_track_cache();
 
             TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
             if (pMeta) {
@@ -465,31 +419,27 @@ void linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
     evt.data.player.track_num = s_active_plicurr;
     evt.data.player.track_total = s_active_plicount;
 
-    // Stream / Audio Format
-    const char* rate = doc["rate"] | doc["SampleRate"] | doc["samplerate"] | "";
-    const char* bitDepth = doc["bitDepth"] | doc["bitdepth"] | "";
-    evt.data.player.stream.sample_rate = (uint32_t)atoi(rate);
-    evt.data.player.stream.bit_depth = (uint8_t)atoi(bitDepth);
-
     s_last_player_state = evt.data.player;
     outState = evt.data.player;
     xQueueSend(xQueueUiState, &evt, 0);
+    return true;
 }
 
-void linkplay_client_fetch_presets(const char* targetIp) {
-    if (!targetIp || strlen(targetIp) == 0) return;
+bool linkplay_client_fetch_presets(const char* targetIp) {
+    if (!targetIp || strlen(targetIp) == 0) return false;
 
     String payload;
     int httpCode = execute_api_get(targetIp, "getPresetInfo", payload);
     if (httpCode != HTTP_CODE_OK || payload.length() == 0) {
-        return;
+        return false;
     }
 
     JsonDocument doc;
     DeserializationError err = deserializeJson(doc, payload);
+    if (err) return false;
 
     PresetList* pPresets = (PresetList*)malloc(sizeof(PresetList));
-    if (!pPresets) return;
+    if (!pPresets) return false;
     memset(pPresets, 0, sizeof(PresetList));
     pPresets->count = MAX_PRESETS;
 
@@ -500,24 +450,22 @@ void linkplay_client_fetch_presets(const char* targetIp) {
         pPresets->items[i].is_assigned = false;
     }
 
-    if (!err) {
-        JsonArray array = doc["preset_list"].as<JsonArray>();
-        if (!array.isNull()) {
-            uint8_t idx = 0;
-            for (JsonObject item : array) {
-                if (idx >= MAX_PRESETS) break;
-                int pNum = item["number"] | item["preset_key"] | (idx + 1);
-                const char* pName = item["name"] | item["title"] | "";
-                if (pNum >= 1 && pNum <= MAX_PRESETS) {
-                    pPresets->items[pNum - 1].index = (uint8_t)pNum;
-                    if (strlen(pName) > 0) {
-                        String dec = net_to_valid_utf8(String(pName));
-                        strncpy(pPresets->items[pNum - 1].name, dec.c_str(), sizeof(pPresets->items[pNum - 1].name) - 1);
-                        pPresets->items[pNum - 1].is_assigned = true;
-                    }
+    JsonArray array = doc["preset_list"].as<JsonArray>();
+    if (!array.isNull()) {
+        uint8_t idx = 0;
+        for (JsonObject item : array) {
+            if (idx >= MAX_PRESETS) break;
+            int pNum = item["number"] | item["preset_key"] | (idx + 1);
+            const char* pName = item["name"] | item["title"] | "";
+            if (pNum >= 1 && pNum <= MAX_PRESETS) {
+                pPresets->items[pNum - 1].index = (uint8_t)pNum;
+                if (strlen(pName) > 0) {
+                    String dec = net_to_valid_utf8(String(pName));
+                    strncpy(pPresets->items[pNum - 1].name, dec.c_str(), sizeof(pPresets->items[pNum - 1].name) - 1);
+                    pPresets->items[pNum - 1].is_assigned = true;
                 }
-                idx++;
             }
+            idx++;
         }
     }
 
@@ -528,6 +476,7 @@ void linkplay_client_fetch_presets(const char* targetIp) {
     if (xQueueSend(xQueueUiState, &evt, 0) != pdTRUE) {
         free(pPresets);
     }
+    return true;
 }
 
 bool linkplay_client_fetch_config(const char* targetIp, bool& outIsFixedVolume) {

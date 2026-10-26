@@ -138,7 +138,8 @@ static void touchpad_read_cb(lv_indev_drv_t *indev_driver, lv_indev_data_t *data
 }
 
 void display_driver_init() {
-    // 1. Initialize LovyanGFX (backlight brightness & rotation are applied immediately after by power_manager_init)
+    // 1. Initialize LovyanGFX with backlight kept at 0 until first UI frame is rendered
+    gfx.setBrightness(0);
     gfx.init();
     gfx.setRotation(SCREEN_ROTATION);
     gfx.setColorDepth(16);
@@ -208,9 +209,11 @@ void display_prepare_deep_sleep() {
     lgfx::i2c::writeRegister8(TOUCH_I2C_PORT, TOUCH_ADDR, 0x86, 0x01, 0, TOUCH_I2C_FREQ);
     lgfx::i2c::writeRegister8(TOUCH_I2C_PORT, TOUCH_ADDR, 0xA5, 0x01, 0, TOUCH_I2C_FREQ);
 
-    // 2. Wait for any in-flight SPI DMA transfer to finish and turn off backlight
+    // 2. Wait for any in-flight SPI DMA transfer to finish, turn off backlight, and clear GRAM
     gfx.waitDisplay();
     gfx.setBrightness(0);
+    gfx.fillScreen(0);
+    gfx.waitDisplay();
 
     // 3. Drive TFT_BL LOW and lock it in deep sleep so the MOSFET gate cannot float
     pinMode(TFT_BL, OUTPUT);

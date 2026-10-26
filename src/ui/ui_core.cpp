@@ -12,6 +12,7 @@
 #include "config.h"
 
 // External Queue handles
+extern QueueHandle_t xQueueUiCmd;
 extern QueueHandle_t xQueueUiState;
 
 // 10x12 Pixel Alpha Bitmap for clean Padlock Icon
@@ -62,6 +63,24 @@ static lv_obj_t* tab_lyrics = nullptr;
 static lv_obj_t* tab_player = nullptr;
 static lv_obj_t* tab_presets = nullptr;
 static lv_obj_t* tab_browser = nullptr;
+
+// Startup & Device-Switch Progress Overlay
+static lv_obj_t* s_boot_overlay = nullptr;
+static lv_obj_t* s_lbl_boot_title = nullptr;
+static lv_obj_t* s_lbl_boot_msg = nullptr;
+static lv_obj_t* s_bar_boot = nullptr;
+static lv_obj_t* s_btn_boot_retry = nullptr;
+static lv_obj_t* s_lbl_boot_retry = nullptr;
+static bool s_boot_has_error = false;
+
+static void event_btn_boot_retry(lv_event_t* e) {
+    (void)e;
+    ui_set_boot_status(20, false, false, "Retrying...");
+    UiCommand cmd;
+    memset(&cmd, 0, sizeof(cmd));
+    cmd.type = CMD_RETRY_SYNC;
+    xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20));
+}
 
 // Battery monitoring state
 static float s_battery_filtered_mv = 0.0f;
@@ -138,6 +157,26 @@ void ui_apply_theme() {
     ui_player_apply_theme();
     ui_presets_apply_theme();
     ui_browser_apply_theme();
+    if (s_boot_overlay) {
+        lv_obj_set_style_bg_color(s_boot_overlay, COLOR_BG, 0);
+    }
+    if (s_lbl_boot_title) {
+        lv_obj_set_style_text_color(s_lbl_boot_title, COLOR_TEXT_PRIMARY, 0);
+    }
+    if (s_lbl_boot_msg) {
+        lv_obj_set_style_text_color(s_lbl_boot_msg, s_boot_has_error ? lv_color_hex(0xE63946) : COLOR_TEXT_MUTED, 0);
+    }
+    if (s_bar_boot) {
+        lv_obj_set_style_bg_color(s_bar_boot, COLOR_SURFACE_LIGHT, LV_PART_MAIN);
+        lv_obj_set_style_bg_color(s_bar_boot, COLOR_ACCENT, LV_PART_INDICATOR);
+    }
+    if (s_btn_boot_retry) {
+        lv_obj_set_style_bg_color(s_btn_boot_retry, COLOR_ACCENT, 0);
+        lv_obj_set_style_bg_color(s_btn_boot_retry, COLOR_SURFACE_LIGHT, LV_STATE_PRESSED);
+    }
+    if (s_lbl_boot_retry) {
+        lv_obj_set_style_text_color(s_lbl_boot_retry, COLOR_BG, 0);
+    }
     modal_device_apply_theme();
     modal_wifi_apply_theme();
     modal_power_apply_theme();
@@ -203,12 +242,64 @@ void ui_init() {
         }
     });
 
-    // 3. Build modal pickers
+    // 3. Build Startup / Device-Switch Progress Overlay (240x288 below top header bar)
+    s_boot_overlay = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(s_boot_overlay, 240, 288);
+    lv_obj_align(s_boot_overlay, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_opa(s_boot_overlay, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(s_boot_overlay, 0, 0);
+    lv_obj_set_style_border_side(s_boot_overlay, LV_BORDER_SIDE_NONE, 0);
+    lv_obj_set_style_pad_all(s_boot_overlay, 0, 0);
+    lv_obj_clear_flag(s_boot_overlay, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_boot_overlay, LV_OBJ_FLAG_CLICKABLE);
+
+    s_lbl_boot_title = lv_label_create(s_boot_overlay);
+    lv_label_set_text(s_lbl_boot_title, "WiiM Remote");
+    lv_obj_set_style_text_font(s_lbl_boot_title, &lv_font_montserrat_16, 0);
+    lv_obj_align(s_lbl_boot_title, LV_ALIGN_TOP_MID, 0, 72);
+
+    s_lbl_boot_msg = lv_label_create(s_boot_overlay);
+    lv_label_set_text(s_lbl_boot_msg, "Connecting to Wi-Fi...");
+    lv_obj_set_width(s_lbl_boot_msg, 216);
+    lv_label_set_long_mode(s_lbl_boot_msg, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_align(s_lbl_boot_msg, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_font(s_lbl_boot_msg, &lv_font_montserrat_12, 0);
+    lv_obj_align(s_lbl_boot_msg, LV_ALIGN_TOP_MID, 0, 108);
+
+    s_bar_boot = lv_bar_create(s_boot_overlay);
+    lv_obj_set_size(s_bar_boot, 176, 8);
+    lv_obj_align(s_bar_boot, LV_ALIGN_TOP_MID, 0, 152);
+    lv_bar_set_range(s_bar_boot, 0, 100);
+    lv_obj_set_style_anim_time(s_bar_boot, 250, 0);
+    lv_bar_set_value(s_bar_boot, 20, LV_ANIM_OFF);
+    lv_obj_set_style_radius(s_bar_boot, 4, LV_PART_MAIN);
+    lv_obj_set_style_radius(s_bar_boot, 4, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(s_bar_boot, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(s_bar_boot, LV_OPA_COVER, LV_PART_INDICATOR);
+
+    s_btn_boot_retry = lv_btn_create(s_boot_overlay);
+    lv_obj_set_size(s_btn_boot_retry, 116, 34);
+    lv_obj_align(s_btn_boot_retry, LV_ALIGN_TOP_MID, 0, 148);
+    lv_obj_set_style_radius(s_btn_boot_retry, 17, 0);
+    lv_obj_set_style_shadow_width(s_btn_boot_retry, 0, 0);
+    lv_obj_add_flag(s_btn_boot_retry, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(s_btn_boot_retry, event_btn_boot_retry, LV_EVENT_CLICKED, nullptr);
+
+    s_lbl_boot_retry = lv_label_create(s_btn_boot_retry);
+    lv_label_set_text(s_lbl_boot_retry, LV_SYMBOL_REFRESH " Retry");
+    lv_obj_set_style_text_font(s_lbl_boot_retry, &lv_font_montserrat_14, 0);
+    lv_obj_center(s_lbl_boot_retry);
+
+    // 4. Build modal pickers
     modal_device_init(lv_scr_act());
     modal_device_set_on_selected([](const WiiMDevice& dev) {
         ui_header_set_active_device(dev.name);
         ui_player_clear();
         ui_lyrics_clear();
+        ui_presets_clear();
+        char msg[64];
+        snprintf(msg, sizeof(msg), "Connecting to %.40s...", dev.name);
+        ui_set_boot_status(20, false, false, msg);
     });
 
     modal_wifi_init(lv_scr_act());
@@ -253,7 +344,7 @@ void ui_set_devices(const DeviceList& list) {
 void ui_set_player_state(const PlayerState& state) {
     ui_player_update_state(state.state, state.curpos_ms, state.totlen_ms);
     ui_player_set_volume(state.volume, state.is_fixed_volume, state.mute);
-    ui_player_set_stream_info(state.stream, state.track_num, state.track_total, state.mode);
+    ui_player_set_stream_info(state.track_num, state.track_total, state.mode);
 }
 
 void ui_set_track_meta(const TrackMeta& meta) {
@@ -288,6 +379,40 @@ void ui_wifi_on_connect_failed() {
 
 void ui_set_lyrics(const LyricsInfo& info) {
     ui_lyrics_set_content(info);
+}
+
+void ui_set_boot_status(uint8_t progress_pct, bool has_error, bool completed, const char* message) {
+    if (!s_boot_overlay) return;
+
+    if (completed) {
+        s_boot_has_error = false;
+        if (s_bar_boot) {
+            lv_bar_set_value(s_bar_boot, 0, LV_ANIM_OFF);
+        }
+        lv_obj_add_flag(s_boot_overlay, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    bool was_hidden = lv_obj_has_flag(s_boot_overlay, LV_OBJ_FLAG_HIDDEN);
+    s_boot_has_error = has_error;
+    lv_obj_clear_flag(s_boot_overlay, LV_OBJ_FLAG_HIDDEN);
+
+    if (s_lbl_boot_msg && message) {
+        lv_label_set_text(s_lbl_boot_msg, message);
+        lv_obj_set_style_text_color(s_lbl_boot_msg, has_error ? lv_color_hex(0xE63946) : COLOR_TEXT_MUTED, 0);
+    }
+
+    if (has_error) {
+        if (s_bar_boot) lv_obj_add_flag(s_bar_boot, LV_OBJ_FLAG_HIDDEN);
+        if (s_btn_boot_retry) lv_obj_clear_flag(s_btn_boot_retry, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        if (s_btn_boot_retry) lv_obj_add_flag(s_btn_boot_retry, LV_OBJ_FLAG_HIDDEN);
+        if (s_bar_boot) {
+            lv_obj_clear_flag(s_bar_boot, LV_OBJ_FLAG_HIDDEN);
+            bool snap = was_hidden || (progress_pct < (uint8_t)lv_bar_get_value(s_bar_boot));
+            lv_bar_set_value(s_bar_boot, progress_pct, snap ? LV_ANIM_OFF : LV_ANIM_ON);
+        }
+    }
 }
 
 void ui_process_events() {
@@ -346,6 +471,12 @@ void ui_process_events() {
                 if (evt.data.upnp_browse) {
                     ui_browser_set_browse_result(*evt.data.upnp_browse);
                 }
+                break;
+            case UI_EVT_BOOT_STATUS:
+                ui_set_boot_status(evt.data.boot.progress_pct,
+                                   evt.data.boot.has_error,
+                                   evt.data.boot.completed,
+                                   evt.data.boot.message);
                 break;
         }
         ui_event_free(&evt);

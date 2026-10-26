@@ -25,3 +25,4 @@ void ui_open_wifi_modal();
 void ui_wifi_on_connected(const char* ip);
 void ui_wifi_on_connect_failed();
 void ui_set_lyrics(const LyricsInfo& info);
+void ui_set_boot_status(uint8_t progress_pct, bool has_error, bool completed, const char* message);

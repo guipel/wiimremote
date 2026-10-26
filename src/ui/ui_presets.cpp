@@ -101,6 +101,19 @@ void ui_presets_set_list(const PresetList& presets) {
     }
 }
 
+void ui_presets_clear() {
+    for (uint8_t i = 0; i < MAX_PRESETS; ++i) {
+        if (preset_lbls[i]) {
+            char default_name[32];
+            snprintf(default_name, sizeof(default_name), "Preset %d", i + 1);
+            lv_label_set_text(preset_lbls[i], default_name);
+        }
+        if (preset_btns[i]) {
+            lv_obj_set_style_opa(preset_btns[i], LV_OPA_50, 0);
+        }
+    }
+}
+
 void ui_presets_set_on_triggered(OnPresetTriggeredCb cb) {
     s_on_preset_triggered = cb;
 }

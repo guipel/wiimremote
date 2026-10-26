@@ -43,49 +43,6 @@ String net_to_valid_utf8(const String& str) {
     return out;
 }
 
-String net_decode_hex_string(const char* hex) {
-    if (!hex || strlen(hex) == 0) return "";
-    size_t len = strlen(hex);
-
-    // Check if it looks like a valid hex string (even length, hex chars)
-    bool isHex = (len >= 2 && (len % 2 == 0));
-    bool allDigits = true;
-    for (size_t i = 0; i < len && isHex; ++i) {
-        char c = hex[i];
-        if (c >= '0' && c <= '9') {
-            continue;
-        } else if ((c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
-            allDigits = false;
-        } else {
-            isHex = false;
-        }
-    }
-
-    // Short numeric strings like "1984", "2024", "99" are plain numbers, not hex
-    if (!isHex || (allDigits && len <= 6)) {
-        return net_to_valid_utf8(String(hex));
-    }
-
-    String decoded = "";
-    decoded.reserve(len / 2);
-    for (size_t i = 0; i < len; i += 2) {
-        char byteChars[3] = { hex[i], hex[i + 1], '\0' };
-        uint8_t byteVal = (uint8_t)strtoul(byteChars, nullptr, 16);
-        if (byteVal == 0) {
-            return net_to_valid_utf8(String(hex));
-        }
-        decoded += (char)byteVal;
-    }
-
-    // Guard against plain ASCII words made of hex letters (e.g. "ABBA", "ACDC", "CAFE", "FACE"):
-    // If the decoded bytes contain control chars or invalid UTF-8, treat the input as plain text.
-    if (!is_strict_utf8_printable(decoded.c_str(), decoded.length())) {
-        return net_to_valid_utf8(String(hex));
-    }
-
-    return decoded;
-}
-
 String net_url_encode(const char* str) {
     if (!str) return "";
     String encoded = "";

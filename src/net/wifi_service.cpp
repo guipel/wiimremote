@@ -74,8 +74,18 @@ void wifi_service_init(WiFiConnectedCb onConnected, WiFiDisconnectedCb onDisconn
         WiFi.setSleep(WIFI_PS_MIN_MODEM);
         s_wifi_connecting = true;
         s_wifi_connect_start = millis();
-        s_pending_connect_ssid = s_cached_saved_ssid;
-        s_pending_connect_pass = s_cached_saved_pass;
+        s_pending_connect_ssid = "";
+        s_pending_connect_pass = "";
+
+        UiEvent evtBoot;
+        memset(&evtBoot, 0, sizeof(evtBoot));
+        evtBoot.type = UI_EVT_BOOT_STATUS;
+        evtBoot.data.boot.progress_pct = 20;
+        evtBoot.data.boot.has_error = false;
+        evtBoot.data.boot.completed = false;
+        snprintf(evtBoot.data.boot.message, sizeof(evtBoot.data.boot.message), "Connecting to Wi-Fi...");
+        xQueueSend(xQueueUiState, &evtBoot, 0);
+
         WiFi.begin(s_cached_saved_ssid.c_str(), s_cached_saved_pass.c_str());
     } else {
         log_w("No user-configured Wi-Fi credentials. Setup required!");
@@ -152,7 +162,12 @@ void wifi_service_forget() {
 void wifi_service_reconnect() {
     if (s_cached_saved_ssid.length() > 0 && WiFi.status() != WL_CONNECTED) {
         log_i("Reconnecting to saved Wi-Fi: %s", s_cached_saved_ssid.c_str());
-        wifi_service_connect(s_cached_saved_ssid.c_str(), s_cached_saved_pass.c_str());
+        s_wifi_connecting = true;
+        s_wifi_connect_start = millis();
+        s_pending_connect_ssid = "";
+        s_pending_connect_pass = "";
+        WiFi.disconnect(false, false);
+        WiFi.begin(s_cached_saved_ssid.c_str(), s_cached_saved_pass.c_str());
     }
 }
 
@@ -241,13 +256,25 @@ void wifi_service_handle() {
         if (s_wifi_connecting) {
             if (now - s_wifi_connect_start >= WIFI_CONNECT_TIMEOUT_MS) {
                 s_wifi_connecting = false;
-                log_w("Wi-Fi connection to %s timed out!", s_pending_connect_ssid.c_str());
-                s_pending_connect_ssid = "";
-                s_pending_connect_pass = "";
-                UiEvent evt;
-                evt.type = UI_EVT_WIFI_CONNECT_FAILED;
-                xQueueSend(xQueueUiState, &evt, 0);
-                wifi_service_start_scan();
+                if (s_pending_connect_ssid.length() > 0) {
+                    log_w("Wi-Fi connection to %s timed out!", s_pending_connect_ssid.c_str());
+                    s_pending_connect_ssid = "";
+                    s_pending_connect_pass = "";
+                    UiEvent evt;
+                    evt.type = UI_EVT_WIFI_CONNECT_FAILED;
+                    xQueueSend(xQueueUiState, &evt, 0);
+                    wifi_service_start_scan();
+                } else {
+                    log_w("Saved Wi-Fi connection to %s timed out!", s_cached_saved_ssid.c_str());
+                    UiEvent evtBoot;
+                    memset(&evtBoot, 0, sizeof(evtBoot));
+                    evtBoot.type = UI_EVT_BOOT_STATUS;
+                    evtBoot.data.boot.progress_pct = 20;
+                    evtBoot.data.boot.has_error = true;
+                    evtBoot.data.boot.completed = false;
+                    snprintf(evtBoot.data.boot.message, sizeof(evtBoot.data.boot.message), "Wi-Fi connection failed");
+                    xQueueSend(xQueueUiState, &evtBoot, 0);
+                }
             }
         } else {
             if (s_cached_saved_ssid.length() > 0 && now - s_last_wifi_check >= WIFI_RECONNECT_INTERVAL_MS) {
