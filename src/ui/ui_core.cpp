@@ -85,15 +85,6 @@ static void event_btn_boot_retry(lv_event_t* e) {
 // Battery monitoring state
 static float s_battery_filtered_mv = 0.0f;
 static uint8_t s_crit_battery_count = 0;
-static uint32_t last_progress_tick_ms = 0;
-
-static void timer_progress_cb(lv_timer_t* timer) {
-    uint32_t now = millis();
-    uint32_t delta = (last_progress_tick_ms == 0) ? 50 : (now - last_progress_tick_ms);
-    last_progress_tick_ms = now;
-
-    ui_player_tick_progress(delta);
-}
 
 static void timer_battery_cb(lv_timer_t* timer) {
     uint32_t sum = 0;
@@ -308,10 +299,7 @@ void ui_init() {
     // 4. Apply initial theme colors across all screens & modals (single source of truth)
     ui_apply_theme();
 
-    // 5. Progress Interpolation Timer (50ms = 20 FPS updates)
-    lv_timer_create(timer_progress_cb, 50, nullptr);
-
-    // 6. Battery Monitoring Timer (5000ms period, immediate initial sample)
+    // 5. Battery Monitoring Timer (5000ms period, immediate initial sample)
     lv_timer_t* timer_bat = lv_timer_create(timer_battery_cb, BAT_SAMPLE_INTERVAL_MS, nullptr);
     timer_battery_cb(timer_bat);
 }

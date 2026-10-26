@@ -12,7 +12,6 @@ bool linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
 bool linkplay_client_fetch_meta(const char* targetIp);
 bool linkplay_client_fetch_presets(const char* targetIp);
 bool linkplay_client_fetch_config(const char* targetIp, bool& outIsFixedVol);
-void linkplay_client_seek(const char* targetIp, uint32_t seek_ms);
 
 const String& linkplay_client_get_last_title();
 const String& linkplay_client_get_last_artist();

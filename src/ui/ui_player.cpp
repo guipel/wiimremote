@@ -35,15 +35,12 @@ static uint8_t s_last_enqueued_vol = 0xFF;
 static unsigned long s_last_vol_enqueue_ms = 0;
 static bool is_user_seeking = false;
 static bool current_mute_state = false;
-static PlayState current_play_state = PLAY_STATE_UNKNOWN;
 static uint32_t current_totlen_ms = 0;
 static uint32_t current_actual_curpos_ms = 0;
 static int32_t s_last_bar_val = -1;
 static uint32_t s_last_displayed_sec = 0xFFFFFFFF;
 static lv_obj_t* obj_seek_target = nullptr;
-static uint32_t pending_seek_target_ms = 0;
-static bool has_pending_seek = false;
-static unsigned long pending_seek_timestamp = 0;
+static uint32_t s_seek_target_ms = 0;
 
 static uint32_t current_sample_rate = 0;
 static uint8_t current_bit_depth = 0;
@@ -139,7 +136,7 @@ static void update_stream_info_labels() {
     }
 }
 
-// Helper: Convert touch X coordinate on progress bar to seek target in ms
+// Helper: Convert touch X coordinate on progress bar to seek target in ms (aligned to whole seconds)
 static uint32_t touch_x_to_seek_ms(lv_indev_t* indev, int32_t* out_cx) {
     lv_point_t p;
     lv_indev_get_point(indev, &p);
@@ -150,7 +147,8 @@ static uint32_t touch_x_to_seek_ms(lv_indev_t* indev, int32_t* out_cx) {
     int32_t val = ((cx - 10) * PROGRESS_BAR_MAX) / 220;
     if (val < 0) val = 0;
     if (val > PROGRESS_BAR_MAX) val = PROGRESS_BAR_MAX;
-    return (uint32_t)(((uint64_t)val * (uint64_t)current_totlen_ms) / PROGRESS_BAR_MAX);
+    uint32_t raw_ms = (uint32_t)(((uint64_t)val * (uint64_t)current_totlen_ms) / PROGRESS_BAR_MAX);
+    return (raw_ms / 1000) * 1000;
 }
 
 // Event Callback - Track Progress Bar Seeking
@@ -158,18 +156,17 @@ static void event_slider_seek(lv_event_t* e) {
     lv_event_code_t code = lv_event_get_code(e);
 
     if (code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING) {
-        is_user_seeking = true;
-
         if (current_totlen_ms > 0) {
+            is_user_seeking = true;
             lv_indev_t* indev = lv_indev_get_act();
             if (indev) {
                 int32_t cx = 0;
-                uint32_t seek_ms = touch_x_to_seek_ms(indev, &cx);
+                s_seek_target_ms = touch_x_to_seek_ms(indev, &cx);
 
                 char preview_buf[16];
-                format_time(seek_ms, preview_buf, sizeof(preview_buf));
+                format_time(s_seek_target_ms, preview_buf, sizeof(preview_buf));
                 if (lbl_time_cur) lv_label_set_text(lbl_time_cur, preview_buf);
-                s_last_displayed_sec = seek_ms / 1000;
+                s_last_displayed_sec = s_seek_target_ms / 1000;
 
                 if (obj_seek_target) {
                     lv_obj_set_pos(obj_seek_target, cx - 7, 74);
@@ -177,43 +174,31 @@ static void event_slider_seek(lv_event_t* e) {
                 }
             }
         }
-    } else if (code == LV_EVENT_RELEASED) {
+    } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        if (!is_user_seeking) return;
         is_user_seeking = false;
-        if (current_totlen_ms > 0) {
+
+        if (code == LV_EVENT_RELEASED && current_totlen_ms > 0) {
             lv_indev_t* indev = lv_indev_get_act();
             if (indev) {
                 int32_t cx = 0;
-                uint32_t seek_ms = touch_x_to_seek_ms(indev, &cx);
-                pending_seek_target_ms = seek_ms;
-                has_pending_seek = true;
-                pending_seek_timestamp = millis();
-
-                if (obj_seek_target) {
-                    lv_obj_set_pos(obj_seek_target, cx - 7, 74);
-                    lv_obj_clear_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
-                }
-
-                char cur_buf[16];
-                format_time(seek_ms, cur_buf, sizeof(cur_buf));
-                if (lbl_time_cur) lv_label_set_text(lbl_time_cur, cur_buf);
-                s_last_displayed_sec = seek_ms / 1000;
-
-                UiCommand cmd;
-                cmd.type = CMD_SEEK_POSITION;
-                cmd.data.seek_ms = seek_ms;
-                if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) {
-                    has_pending_seek = false;
-                    if (obj_seek_target) lv_obj_add_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
-                    set_bar_and_time(current_actual_curpos_ms, current_totlen_ms, true);
-                }
+                s_seek_target_ms = touch_x_to_seek_ms(indev, &cx);
             }
         }
-    } else if (code == LV_EVENT_PRESS_LOST) {
-        is_user_seeking = false;
-        if (!has_pending_seek && obj_seek_target) {
+
+        if (obj_seek_target) {
             lv_obj_add_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
         }
-        set_bar_and_time(current_actual_curpos_ms, current_totlen_ms, true);
+
+        if (current_totlen_ms > 0) {
+            UiCommand cmd;
+            cmd.type = CMD_SEEK_POSITION;
+            cmd.data.seek_ms = s_seek_target_ms;
+            if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) == pdTRUE) {
+                current_actual_curpos_ms = s_seek_target_ms;
+            }
+            set_bar_and_time(current_actual_curpos_ms, current_totlen_ms, true);
+        }
     }
 }
 
@@ -267,8 +252,6 @@ static void event_btn_prev(lv_event_t* e) {
     cmd.data.seek_ms = current_actual_curpos_ms;
     if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 
-    // Enter buffering state: freeze progress, retain current play/pause icon
-    current_play_state = PLAY_STATE_BUFFERING;
     current_actual_curpos_ms = 0;
     set_bar_and_time(0, current_totlen_ms, true);
 }
@@ -291,8 +274,6 @@ static void event_btn_next(lv_event_t* e) {
     cmd.type = CMD_NEXT;
     if (xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(20)) != pdTRUE) return;
 
-    // Enter buffering state: freeze progress, retain current play/pause icon
-    current_play_state = PLAY_STATE_BUFFERING;
     current_actual_curpos_ms = 0;
     set_bar_and_time(0, current_totlen_ms, true);
 }
@@ -589,9 +570,6 @@ void ui_player_set_meta(const TrackMeta& meta) {
         current_bit_depth = 0;
     }
 
-    has_pending_seek = false;
-    if (obj_seek_target) lv_obj_add_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
-
     update_stream_info_labels();
 }
 
@@ -605,11 +583,9 @@ void ui_player_update_state(PlayState state, uint32_t curpos_ms, uint32_t totlen
         } else if (state == PLAY_STATE_NONE) {
             lv_label_set_text(lbl_play_pause, LV_SYMBOL_PLAY);
         }
-        // When state is PLAY_STATE_BUFFERING, PLAY_STATE_LOADING, or PLAY_STATE_UNKNOWN:
+        // When state is PLAY_STATE_BUFFERING or PLAY_STATE_UNKNOWN:
         // RETAIN existing symbol! Zero flickering between Pause and Play.
     }
-
-    current_play_state = state;
 
     // 2. Playback cleared
     if (state == PLAY_STATE_NONE) {
@@ -617,17 +593,13 @@ void ui_player_update_state(PlayState state, uint32_t curpos_ms, uint32_t totlen
         return;
     }
 
-    // 3. Transient Buffering / Loading States
-    if (state == PLAY_STATE_BUFFERING || state == PLAY_STATE_LOADING || state == PLAY_STATE_UNKNOWN) {
+    // 3. Transient Buffering / Unknown States
+    if (state == PLAY_STATE_BUFFERING || state == PLAY_STATE_UNKNOWN) {
         if (totlen_ms > 0) {
             current_totlen_ms = totlen_ms;
             char time_tot_buf[16] = "--:--";
             format_time(current_totlen_ms, time_tot_buf, sizeof(time_tot_buf));
             if (lbl_time_total) lv_label_set_text(lbl_time_total, time_tot_buf);
-        }
-        if (curpos_ms == 0 && !has_pending_seek) {
-            current_actual_curpos_ms = 0;
-            set_bar_and_time(0, current_totlen_ms, true);
         }
         return;
     }
@@ -636,15 +608,6 @@ void ui_player_update_state(PlayState state, uint32_t curpos_ms, uint32_t totlen
     current_totlen_ms = totlen_ms;
     current_actual_curpos_ms = (totlen_ms > 0 && curpos_ms > totlen_ms) ? totlen_ms : curpos_ms;
 
-    // Check if streamer caught up with pending seek target
-    if (has_pending_seek) {
-        int32_t diff = (int32_t)curpos_ms - (int32_t)pending_seek_target_ms;
-        if (abs(diff) <= 3000 || (millis() - pending_seek_timestamp > 5000)) {
-            has_pending_seek = false;
-            if (obj_seek_target) lv_obj_add_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-
     if (bar_progress && !is_user_seeking) {
         char time_tot_buf[16] = "--:--";
         if (current_totlen_ms > 0) {
@@ -652,9 +615,7 @@ void ui_player_update_state(PlayState state, uint32_t curpos_ms, uint32_t totlen
         }
         if (lbl_time_total) lv_label_set_text(lbl_time_total, time_tot_buf);
 
-        if (!has_pending_seek) {
-            set_bar_and_time(current_actual_curpos_ms, current_totlen_ms, false);
-        }
+        set_bar_and_time(current_actual_curpos_ms, current_totlen_ms, false);
     }
 }
 
@@ -753,17 +714,6 @@ void ui_player_set_stream_info(uint16_t track_num, uint16_t track_total, uint8_t
     update_stream_info_labels();
 }
 
-void ui_player_tick_progress(uint32_t delta_ms) {
-    if (current_play_state == PLAY_STATE_PLAYING && !is_user_seeking && !has_pending_seek && current_totlen_ms > 0) {
-        current_actual_curpos_ms += delta_ms;
-        if (current_actual_curpos_ms > current_totlen_ms) {
-            current_actual_curpos_ms = current_totlen_ms;
-        }
-
-        set_bar_and_time(current_actual_curpos_ms, current_totlen_ms, false);
-    }
-}
-
 void ui_player_clear() {
     if (lbl_title) lv_label_set_text(lbl_title, "");
     if (lbl_artist) lv_label_set_text(lbl_artist, "");
@@ -772,7 +722,6 @@ void ui_player_clear() {
     is_user_seeking = false;
     set_bar_and_time(0, 0, true);
     if (lbl_time_total) lv_label_set_text(lbl_time_total, "--:--");
-    has_pending_seek = false;
     if (obj_seek_target) lv_obj_add_flag(obj_seek_target, LV_OBJ_FLAG_HIDDEN);
 
     current_sample_rate = 0;

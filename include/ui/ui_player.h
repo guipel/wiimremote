@@ -21,9 +21,6 @@ void ui_player_set_volume(uint8_t volume, bool is_fixed, bool mute);
 // Update track index counter (e.g. 5/12) and input mode
 void ui_player_set_stream_info(uint16_t track_num, uint16_t track_total, uint8_t mode);
 
-// Interpolate progress bar and elapsed time (called from periodic UI timer)
-void ui_player_tick_progress(uint32_t delta_ms);
-
 // Immediately clear all playback widgets (e.g. on device switch or track cleared)
 void ui_player_clear();
 

@@ -220,7 +220,7 @@ void WiiMNetworkManager::processIncomingCommands() {
                     if (pos_ms > 5000) {
                         // Mid-song (>5s): Restart current song from 0:00
                         log_i("Dispatching Prev (Restart track -> Seek to 0:00)");
-                        linkplay_client_seek(activeDev.ip, 0);
+                        linkplay_client_send_cmd(activeDev.ip, "setPlayerCmd:seek:0");
                     } else {
                         // Within first 5s: Move to previous track
                         log_i("Dispatching Prev (Previous track)");
@@ -266,7 +266,10 @@ void WiiMNetworkManager::processIncomingCommands() {
             case CMD_SEEK_POSITION:
                 if (hasActive) {
                     log_i("Dispatching Seek to %u ms", cmd.data.seek_ms);
-                    linkplay_client_seek(activeDev.ip, cmd.data.seek_ms);
+                    char seekCmd[32];
+                    snprintf(seekCmd, sizeof(seekCmd), "setPlayerCmd:seek:%u", (unsigned int)(cmd.data.seek_ms / 1000));
+                    linkplay_client_send_cmd(activeDev.ip, String(seekCmd));
+                    _lastStatusPoll = millis() - (STATUS_POLL_INTERVAL_MS - 250);
                 }
                 break;
 
