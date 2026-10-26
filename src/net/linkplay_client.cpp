@@ -373,7 +373,7 @@ bool linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
     }
 
     // Discard any residual transition position or stale buffering offsets
-    if (isNewTrack || evt.data.player.state == PLAY_STATE_BUFFERING || evt.data.player.state == PLAY_STATE_LOADING || evt.data.player.state == PLAY_STATE_NONE || evt.data.player.state == PLAY_STATE_UNKNOWN) {
+    if (isNewTrack || evt.data.player.state == PLAY_STATE_BUFFERING || evt.data.player.state == PLAY_STATE_NONE || evt.data.player.state == PLAY_STATE_UNKNOWN) {
         curpos = 0;
     }
 
@@ -496,41 +496,6 @@ bool linkplay_client_fetch_config(const char* targetIp, bool& outIsFixedVolume) 
     outIsFixedVolume = (strcmp(vc, "1") == 0);
     s_last_player_state.is_fixed_volume = outIsFixedVolume;
     return true;
-}
-
-void linkplay_client_seek(const char* targetIp, uint32_t seek_ms) {
-    if (!targetIp || strlen(targetIp) == 0) return;
-
-    uint32_t totalSec = seek_ms / 1000;
-    uint8_t h = (uint8_t)(totalSec / 3600);
-    uint8_t m = (uint8_t)((totalSec % 3600) / 60);
-    uint8_t s = (uint8_t)(totalSec % 60);
-
-    char targetStr[16];
-    snprintf(targetStr, sizeof(targetStr), "%02u:%02u:%02u", h, m, s);
-
-    HTTPClient http;
-    String url = "http://" + String(targetIp) + ":49152/upnp/control/rendertransport1";
-    http.setConnectTimeout(500);
-    http.setTimeout(1200);
-
-    if (!http.begin(url)) {
-        return;
-    }
-
-    http.addHeader("Content-Type", "text/xml; charset=\"utf-8\"");
-    http.addHeader("SOAPAction", "\"urn:schemas-upnp-org:service:AVTransport:1#Seek\"");
-
-    String soapBody = String("<?xml version=\"1.0\"?>"
-                             "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\">"
-                             "<s:Body><u:Seek xmlns:u=\"urn:schemas-upnp-org:service:AVTransport:1\">"
-                             "<InstanceID>0</InstanceID>"
-                             "<Unit>REL_TIME</Unit>"
-                             "<Target>") + targetStr + String("</Target>"
-                             "</u:Seek></s:Body></s:Envelope>");
-
-    (void)http.POST(soapBody);
-    http.end();
 }
 
 const PlayerState& linkplay_client_get_last_player_state() {
