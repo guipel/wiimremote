@@ -20,7 +20,13 @@ void ui_task_entry(void* param) {
     esp_task_wdt_add(NULL);
 
     // Initialize UI Layout & Widgets
+    display_set_rotation(power_manager_get_rotation_180());
     ui_init();
+
+    // Flush the initial frame (Startup Progress Screen) to GRAM before turning on backlight PWM
+    lv_timer_handler();
+    gfx.waitDMA();
+    power_manager_init();
 
     for (;;) {
         esp_task_wdt_reset();
@@ -47,11 +53,13 @@ void ui_task_entry(void* param) {
 
 // System Hardware Setup
 static void hardware_pins_init() {
-    // 1. Release deep-sleep GPIO holds on PA_EN and Backlight, then mute audio amp immediately
+    // 1. Release deep-sleep GPIO holds on PA_EN and Backlight, then mute audio amp and keep backlight LOW
     gpio_hold_dis((gpio_num_t)PIN_PA_EN);
     gpio_hold_dis((gpio_num_t)TFT_BL);
     pinMode(PIN_PA_EN, OUTPUT);
     digitalWrite(PIN_PA_EN, HIGH);
+    pinMode(TFT_BL, OUTPUT);
+    digitalWrite(TFT_BL, LOW);
 
     // 2. Reserved Codec I2S pins: set to high-impedance input to avoid bus contention
     pinMode(PIN_I2S_MCLK, INPUT_PULLDOWN);
@@ -106,9 +114,8 @@ void setup() {
         while (1) delay(1000);
     }
 
-    // 5. Initialize LovyanGFX Display and FT6336G Capacitive Touch FIRST, then apply saved brightness
+    // 5. Initialize LovyanGFX Display and FT6336G Capacitive Touch FIRST (backlight stays off until first UI frame)
     display_driver_init();
-    power_manager_init();
 
     // 6. Spawn Network & Polling Task on Core 0
     BaseType_t netTaskOk = xTaskCreatePinnedToCore(

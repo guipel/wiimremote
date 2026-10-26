@@ -320,6 +320,7 @@ static void event_btn_input(lv_event_t* e) {
 void ui_player_init(lv_obj_t* parent) {
     s_parent = parent;
     lv_obj_set_style_pad_all(parent, 8, 0);
+    lv_obj_set_style_pad_top(parent, 6, 0);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
     // 1. Telemetry: Audio Resolution (Centered under progress bar) & Track Counter (Centered under Play/Pause)
@@ -736,11 +737,7 @@ void ui_player_set_fixed_volume_mode(bool is_fixed) {
     }
 }
 
-void ui_player_set_stream_info(const StreamInfo& stream, uint16_t track_num, uint16_t track_total, uint8_t mode) {
-    if (stream.sample_rate > 0) {
-        current_sample_rate = stream.sample_rate;
-        current_bit_depth = stream.bit_depth;
-    }
+void ui_player_set_stream_info(uint16_t track_num, uint16_t track_total, uint8_t mode) {
     current_track_num = track_num;
     current_track_total = track_total;
 

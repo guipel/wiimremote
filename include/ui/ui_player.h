@@ -18,8 +18,8 @@ void ui_player_update_state(PlayState state, uint32_t curpos_ms, uint32_t totlen
 // Update volume level, mute state, and fixed vs variable controls
 void ui_player_set_volume(uint8_t volume, bool is_fixed, bool mute);
 
-// Update stream resolution, track index counter (e.g. 24/96, 5/12), and input mode
-void ui_player_set_stream_info(const StreamInfo& stream, uint16_t track_num, uint16_t track_total, uint8_t mode);
+// Update track index counter (e.g. 5/12) and input mode
+void ui_player_set_stream_info(uint16_t track_num, uint16_t track_total, uint8_t mode);
 
 // Interpolate progress bar and elapsed time (called from periodic UI timer)
 void ui_player_tick_progress(uint32_t delta_ms);

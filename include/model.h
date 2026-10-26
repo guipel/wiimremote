@@ -36,11 +36,6 @@ struct DeviceList {
     WiiMDevice devices[MAX_DISCOVERED_DEVICES];
 };
 
-struct StreamInfo {
-    uint32_t sample_rate;   // e.g. 44100, 96000, 192000
-    uint8_t bit_depth;      // e.g. 16, 24
-};
-
 struct PlayerState {
     PlayState state;
     uint8_t volume;         // 0 - 100
@@ -48,7 +43,6 @@ struct PlayerState {
     bool is_fixed_volume;   // True if fixed volume mode (external preamp)
     uint32_t curpos_ms;     // Track position in ms
     uint32_t totlen_ms;     // Track total duration in ms
-    StreamInfo stream;
     uint8_t mode;           // LinkPlay operating mode (10/31/32=Wi-Fi, 40=Line-In, 41=BT, 43=Optical)
     uint16_t track_num;     // e.g. 11
     uint16_t track_total;   // e.g. 97
@@ -145,7 +139,8 @@ enum UiEventType {
     UI_EVT_WIFI_CONNECT_FAILED,
     UI_EVT_LYRICS_UPDATED,
     UI_EVT_UPNP_SERVERS_UPDATED,
-    UI_EVT_UPNP_BROWSE_RESULT
+    UI_EVT_UPNP_BROWSE_RESULT,
+    UI_EVT_BOOT_STATUS
 };
 
 struct UiEvent {
@@ -157,6 +152,12 @@ struct UiEvent {
             char ip[24];
             char ssid[33];
         } wifi;
+        struct {
+            uint8_t progress_pct;
+            bool has_error;
+            bool completed;
+            char message[64];
+        } boot;
         DeviceList* devices;
         PlayerState player;
         TrackMeta* meta;
@@ -220,7 +221,8 @@ enum CmdType {
     CMD_SWITCH_MODE,
     CMD_UPNP_SCAN_SERVERS,
     CMD_UPNP_BROWSE,
-    CMD_UPNP_PLAY_TRACK
+    CMD_UPNP_PLAY_TRACK,
+    CMD_RETRY_SYNC
 };
 
 struct UiCommand {

@@ -23,6 +23,9 @@ public:
     // Get active device info
     bool getActiveDevice(WiiMDevice* dev);
 
+    // Synchronize config, status, metadata, and presets from the active WiiM
+    bool syncActiveDevice();
+
     // Synchronize poll timestamps after an immediate active-device fetch
     void markActiveDevicePolled();
 
@@ -40,7 +43,9 @@ private:
     unsigned long _lastVolumeSent;
     uint8_t _pendingVolume;
     bool _volumePending;
-    bool _initialPresetsFetched;
+    bool _deviceSynced;
+    bool _syncFailed;
+    bool _syncInProgress;
 };
 
 void network_task_entry(void* param);
