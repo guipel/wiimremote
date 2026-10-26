@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Startup, Wake-Up, and Streamer-Switch Progress Overlay (`a20df99`)**:
+  - Added a `240x288` synchronization progress overlay (`UI_EVT_BOOT_STATUS` / `CMD_RETRY_SYNC`) below the `240x32` status header in `src/ui/ui_core.cpp` and `src/network_manager.cpp` that steps through Wi-Fi connection (`20%`), streamer configuration (`40%`), playback status (`60%`), track metadata (`80%`), and presets (`95%`) before revealing the main UI (`100%`).
+  - Added an interactive `[Retry]` button on the progress overlay when Wi-Fi connection fails or the selected WiiM streamer does not respond, pausing background polling until the user taps `[Retry]` or selects another streamer from the top header.
+- **LRCLIB Keyword Search Fallback (`a20df99`)**:
+  - Updated `lyrics_client_fetch()` in `src/net/lyrics_client.cpp` to fall back to `GET /api/search?q=<title> <artist>` over the same TLS connection when exact-match `GET /api/get` returns `HTTP 404`, selecting the first entry with non-empty `plainLyrics` or `syncedLyrics`.
+
+### Changed
+- **Single-Source Track Metadata via `getMetaInfo` (`a20df99`)**:
+  - Removed `TrackMeta` emission from `getPlayerStatus` in `src/net/linkplay_client.cpp` and removed `net_decode_hex_string()` from `src/net/net_utils.cpp`, making `linkplay_client_fetch_meta()` (`getMetaInfo`) the single source of truth for track title, artist, album, sample rate, and bit depth (eliminating XML entity flashes such as `don&apos;t` on track transitions).
+  - Updated `linkplay_client_poll_active()` to fetch `getMetaInfo` immediately on the same poll that detects a track change (`if (!s_meta_resolved)`).
+- **Eliminated Wake-Up Display Flicker & Refined Player Spacing (`a20df99`)**:
+  - Deferred backlight enable (`power_manager_init()`) in `src/main.cpp` until after `ui_init()` renders the first LVGL frame to DMA, and removed redundant `fillScreen` / `lv_obj_invalidate` calls in `src/display_driver.cpp`.
+  - Shifted Player tab content up by `2 px` (`pad_top: 8` &rarr; `6` in `src/ui/ui_player.cpp`).
+
+---
+
 ## [1.0.5] - 2026-10-25
 
 ### Added
