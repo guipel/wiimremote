@@ -451,6 +451,7 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_border_width(btn_var_mute, 1, 0);
     lv_obj_set_style_radius(btn_var_mute, 8, 0);
     lv_obj_set_style_pad_all(btn_var_mute, 0, 0);
+    lv_obj_set_ext_click_area(btn_var_mute, 3);
     lv_obj_clear_flag(btn_var_mute, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(btn_var_mute, event_btn_mute, LV_EVENT_CLICKED, nullptr);
 
@@ -470,6 +471,7 @@ void ui_player_init(lv_obj_t* parent) {
     lv_obj_set_style_border_width(btn_var_input, 1, 0);
     lv_obj_set_style_radius(btn_var_input, 8, 0);
     lv_obj_set_style_pad_all(btn_var_input, 0, 0);
+    lv_obj_set_ext_click_area(btn_var_input, 3);
     lv_obj_clear_flag(btn_var_input, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_event_cb(btn_var_input, event_btn_input, LV_EVENT_CLICKED, nullptr);
 

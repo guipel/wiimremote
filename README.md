@@ -197,7 +197,7 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View** (w
 2. **Now Playing Tab (`Player`, Default)**:
    - High-contrast track title rendered in extended UTF-8 **Montserrat 24** typography with circular scrolling for long titles.
    - Artist and album metadata.
-   - Interactive progress bar with **Ghost Seek Target Indicator** (shows requested seek position while streamer buffers to the target timestamp).
+   - Interactive progress bar with live touch seek preview pill (`obj_seek_target`) while dragging and instant seek snap on release.
    - Elapsed (`00:00`) and total (`--:--`) duration timestamps flanking the centered audio resolution readout (`bits/sample_rate_kHz`, e.g., `24/96`, or `DSD` for DoP streams on Fixed Volume streamers) directly beneath the progress bar.
    - Centered transport controls: **Previous** (restarts current track to `00:00` if elapsed playback is `> 5s`, or skips to previous track when `<= 5s`), **Play/Pause/Resume**, and **Next**.
    - Centered track counter (`X/Y`) directly beneath the Play/Pause button (auto-hidden when `0/0`).
@@ -247,7 +247,7 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View** (w
 | **Resume / Start Playback** | `GET /httpapi.asp?command=setPlayerCmd:resume` / `play` | Resumes playback from pause or starts stopped queue |
 | **Next Track** | `GET /httpapi.asp?command=setPlayerCmd:next` | Skips to next track in queue |
 | **Previous Track** | `GET /httpapi.asp?command=setPlayerCmd:prev` | Skips to previous track |
-| **Seek Position** | `POST AVTransport:1#Seek (REL_TIME)` | Seeks to target `HH:MM:SS` timestamp via UPnP AVTransport |
+| **Seek Position** | `GET /httpapi.asp?command=setPlayerCmd:seek:<SEC>` | Seeks to target timestamp in seconds (`0`..`totlen`) |
 | **Set Volume** | `GET /httpapi.asp?command=setPlayerCmd:vol:<VAL>` | Adjusts volume (0..100) |
 | **Set Mute** | `GET /httpapi.asp?command=setPlayerCmd:mute:<1\|0>` | Toggles mute state |
 | **Input Source Switch** | `GET /httpapi.asp?command=setPlayerCmd:switchmode:<MODE>` | Switches input (`wifi`, `bluetooth`, `line-in`, `optical`) |
@@ -259,7 +259,7 @@ The interface features a **32px Top Header Bar**, a **4-Tab Navigation View** (w
 ### External Lyrics API (LRCLIB)
 | Operation | Endpoint | Description |
 | :--- | :--- | :--- |
-| **Fetch Lyrics** | `GET https://lrclib.net/api/get?track_name=...&artist_name=...` | Retrieves plain and synced LRC lyrics on demand |
+| **Fetch Lyrics** | `GET https://lrclib.net/api/get` & `/api/search` | Retrieves plain and synced LRC lyrics on demand with keyword search fallback |
 
 ---
 

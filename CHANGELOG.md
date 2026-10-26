@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [1.0.6] - 2026-10-26
+
 ### Added
 - **Startup, Wake-Up, and Streamer-Switch Progress Overlay (`a20df99`)**:
   - Added a `240x288` synchronization progress overlay (`UI_EVT_BOOT_STATUS` / `CMD_RETRY_SYNC`) below the `240x32` status header in `src/ui/ui_core.cpp` and `src/network_manager.cpp` that steps through Wi-Fi connection (`20%`), streamer configuration (`40%`), playback status (`60%`), track metadata (`80%`), and presets (`95%`) before revealing the main UI (`100%`).
@@ -17,12 +21,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated `lyrics_client_fetch()` in `src/net/lyrics_client.cpp` to fall back to `GET /api/search?q=<title> <artist>` over the same TLS connection when exact-match `GET /api/get` returns `HTTP 404`, selecting the first entry with non-empty `plainLyrics` or `syncedLyrics`.
 
 ### Changed
+- **Native LinkPlay `setPlayerCmd:seek` & Deterministic Progress Bar State (`c68d4ed`)**:
+  - Replaced the 35-line UPnP SOAP `AVTransport:1#Seek` client (`linkplay_client_seek()`) with LinkPlay's native `GET /httpapi.asp?command=setPlayerCmd:seek:<seconds>` over the persistent HTTPS socket in `src/network_manager.cpp` (`CMD_SEEK_POSITION` and `CMD_PREV`).
+  - Removed the `has_pending_seek` / `pending_seek_timestamp` catch-up window heuristics, the `50 ms` `timer_progress_cb` / `ui_player_tick_progress()` dead-reckoning timer, `current_play_state`, and the unused `PLAY_STATE_LOADING` enum across `include/model.h`, `include/ui/ui_player.h`, `src/ui/ui_core.cpp`, and `src/ui/ui_player.cpp` (`-100` net lines), driving the progress bar and `MM:SS` elapsed timer directly from the streamer's `1000 ms` status poll and live touch input.
 - **Single-Source Track Metadata via `getMetaInfo` (`a20df99`)**:
   - Removed `TrackMeta` emission from `getPlayerStatus` in `src/net/linkplay_client.cpp` and removed `net_decode_hex_string()` from `src/net/net_utils.cpp`, making `linkplay_client_fetch_meta()` (`getMetaInfo`) the single source of truth for track title, artist, album, sample rate, and bit depth (eliminating XML entity flashes such as `don&apos;t` on track transitions).
   - Updated `linkplay_client_poll_active()` to fetch `getMetaInfo` immediately on the same poll that detects a track change (`if (!s_meta_resolved)`).
 - **Eliminated Wake-Up Display Flicker & Refined Player Spacing (`a20df99`)**:
   - Deferred backlight enable (`power_manager_init()`) in `src/main.cpp` until after `ui_init()` renders the first LVGL frame to DMA, and removed redundant `fillScreen` / `lv_obj_invalidate` calls in `src/display_driver.cpp`.
   - Shifted Player tab content up by `2 px` (`pad_top: 8` &rarr; `6` in `src/ui/ui_player.cpp`).
+
+### Fixed
+- **Mute & Input Button Touch Target Margin**:
+  - Added a `3 px` extended click area (`lv_obj_set_ext_click_area(..., 3)`) on `btn_var_mute` and `btn_var_input` in `src/ui/ui_player.cpp` so off-center taps near the inner edges of the Mute and Input buttons are captured by the foreground buttons rather than the adjacent volume slider.
 
 ---
 
