@@ -125,6 +125,7 @@ static bool query_device_status(const char* ip, WiiMDevice* outDevice) {
     // 1. FAST PATH: Query plain HTTP UPnP description.xml on port 49152 (instant, no TLS overhead!)
     {
         HTTPClient http;
+        esp_task_wdt_reset();
         String url = "http://" + String(ip) + ":" + String(WIIM_UPNP_PORT) + "/description.xml";
         http.setConnectTimeout(350);
         http.setTimeout(600);
@@ -148,9 +149,11 @@ static bool query_device_status(const char* ip, WiiMDevice* outDevice) {
 
     // 2. FALLBACK PATH: Query HTTPS 443 with getStatusEx
     if (devName.length() == 0) {
+        esp_task_wdt_reset();
+        linkplay_client_reset_session();
         WiFiClientSecure secureClient;
         secureClient.setInsecure(); // Accept WiiM self-signed TLS cert
-        secureClient.setTimeout(1); // 1 sec handshake timeout
+        secureClient.setHandshakeTimeout(2); // 2 sec TLS handshake timeout
 
         HTTPClient https;
         String url = "https://" + String(ip) + "/httpapi.asp?command=getStatusEx";
@@ -389,6 +392,11 @@ void discovery_service_process_ssdp() {
         if (len <= 0) continue;
         packetBuffer[len] = '\0';
 
+        // Ignore inbound M-SEARCH queries from other controllers and ssdp:byebye teardown notices
+        if (strncmp(packetBuffer, "M-SEARCH", 8) == 0 || strstr(packetBuffer, "ssdp:byebye") != nullptr) {
+            continue;
+        }
+
         // Route UPnP MediaServer / ContentDirectory announcements to upnp_client
         if (strstr(packetBuffer, "MediaServer") != nullptr ||
             strstr(packetBuffer, "ContentDirectory") != nullptr) {
@@ -425,7 +433,7 @@ void discovery_service_process_ssdp() {
         const char* locPtr = strstr(packetBuffer, "LOCATION: http://");
         if (!locPtr) locPtr = strstr(packetBuffer, "location: http://");
         if (!locPtr) locPtr = strstr(packetBuffer, "Location: http://");
-        if (locPtr && strstr(locPtr, ":49152") == nullptr &&
+        if ((!locPtr || strstr(locPtr, ":49152") == nullptr) &&
             strstr(packetBuffer, "Linkplay") == nullptr &&
             strstr(packetBuffer, "LinkPlay") == nullptr &&
             strstr(packetBuffer, "WiFiAudio") == nullptr &&

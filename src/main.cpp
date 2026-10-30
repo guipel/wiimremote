@@ -75,7 +75,6 @@ static void hardware_pins_init() {
 
 void setup() {
     Serial.begin(115200);
-    delay(200);
     log_i("=================================================");
     log_i("  WiiM ESP32-S3 Touchscreen Remote Control       ");
     log_i("=================================================");
@@ -114,10 +113,10 @@ void setup() {
         while (1) delay(1000);
     }
 
-    // 5. Initialize LovyanGFX Display and FT6336G Capacitive Touch FIRST (backlight stays off until first UI frame)
-    display_driver_init();
+    // 5. Pre-allocate LVGL Internal DMA buffers before Wi-Fi allocates internal RX/TX buffers
+    display_driver_prealloc();
 
-    // 6. Spawn Network & Polling Task on Core 0
+    // 6. Spawn Network & Polling Task on Core 0 FIRST so Wi-Fi connects in parallel with LCD init
     BaseType_t netTaskOk = xTaskCreatePinnedToCore(
         network_task_entry,
         "NetTask",
@@ -128,7 +127,10 @@ void setup() {
         NET_TASK_CORE
     );
 
-    // 7. Spawn UI & Display Task on Core 1
+    // 7. Initialize LovyanGFX Display and FT6336G Capacitive Touch on Core 1 (backlight stays off until first UI frame)
+    display_driver_init();
+
+    // 8. Spawn UI & Display Task on Core 1
     BaseType_t uiTaskOk = xTaskCreatePinnedToCore(
         ui_task_entry,
         "UiTask",

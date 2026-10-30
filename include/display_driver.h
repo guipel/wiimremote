@@ -19,6 +19,7 @@ public:
 extern LGFX_ESP32S3_Custom gfx;
 
 // Driver functions
+void display_driver_prealloc();
 void display_driver_init();
 void display_set_backlight(uint8_t brightness);
 void display_set_rotation(bool flipped_180);

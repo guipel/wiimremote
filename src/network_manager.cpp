@@ -32,9 +32,7 @@ static void on_active_device_changed(const WiiMDevice& dev) {
 }
 
 static void on_wifi_connected() {
-    discovery_service_start_ssdp_listener();
-    discovery_service_broadcast_list();
-    WiiMNetworkManager::getInstance().syncActiveDevice();
+    WiiMNetworkManager::getInstance().onWifiConnected();
 }
 
 static void on_wifi_disconnected() {
@@ -83,11 +81,27 @@ void WiiMNetworkManager::markActiveDevicePolled() {
     _syncFailed = false;
 }
 
+void WiiMNetworkManager::onWifiConnected() {
+    discovery_service_start_ssdp_listener();
+    discovery_service_broadcast_list();
+    if (_deviceSynced) {
+        // Seamless AP roam: restore modem power-save and resume polling immediately
+        wifi_service_set_power_save(true);
+        _lastStatusPoll = 0;
+        return;
+    }
+    syncActiveDevice();
+}
+
 bool WiiMNetworkManager::syncActiveDevice() {
     if (_syncInProgress) return false;
     _syncInProgress = true;
     _deviceSynced = false;
     _syncFailed = false;
+
+    // Keep Wi-Fi radio out of DTIM sleep during active TLS/HTTP handshake burst
+    wifi_service_set_power_save(false);
+    log_i("[Sync] Starting active device sync...");
 
     WiiMDevice activeDev;
     bool hasActive = discovery_service_get_active_device(&activeDev);
@@ -100,6 +114,7 @@ bool WiiMNetworkManager::syncActiveDevice() {
         if (!hasActive) {
             _syncFailed = true;
             _syncInProgress = false;
+            wifi_service_set_power_save(true);
             emit_boot_status(40, true, false, "No WiiM streamers found");
             return false;
         }
@@ -107,7 +122,7 @@ bool WiiMNetworkManager::syncActiveDevice() {
 
     char msg[64];
     snprintf(msg, sizeof(msg), "Connecting to %.40s...", activeDev.name);
-    emit_boot_status(50, false, false, msg);
+    emit_boot_status(60, false, false, msg);
 
     linkplay_client_reset_session();
     linkplay_client_reset_track_cache();
@@ -150,34 +165,26 @@ bool WiiMNetworkManager::syncActiveDevice() {
     if (!configOk || !statusOk) {
         _syncFailed = true;
         _syncInProgress = false;
+        wifi_service_set_power_save(true);
         snprintf(msg, sizeof(msg), "Cannot reach %.40s", activeDev.name);
-        emit_boot_status(50, true, false, msg);
+        emit_boot_status(60, true, false, msg);
         return false;
     }
 
-    emit_boot_status(80, false, false, "Loading presets...");
-    esp_task_wdt_reset();
-    bool presetsOk = linkplay_client_fetch_presets(activeDev.ip);
-    if (!presetsOk) {
-        esp_task_wdt_reset();
-        presetsOk = linkplay_client_fetch_presets(activeDev.ip);
-    }
-    if (!presetsOk) {
-        _syncFailed = true;
-        _syncInProgress = false;
-        snprintf(msg, sizeof(msg), "Failed to load presets from %.30s", activeDev.name);
-        emit_boot_status(80, true, false, msg);
-        return false;
-    }
-
-    if (st.state != PLAY_STATE_NONE && st.state != PLAY_STATE_UNKNOWN) {
-        esp_task_wdt_reset();
-        linkplay_client_fetch_meta(activeDev.ip);
-    }
-
+    // Reveal Player UI immediately once active player state & track metadata are synced
     markActiveDevicePolled();
     _syncInProgress = false;
     emit_boot_status(100, false, true, "Ready");
+    log_i("[Sync] Player UI ready (%s at %s). Loading presets in background...", activeDev.name, activeDev.ip);
+
+    // Load presets asynchronously right after revealing the Player screen, then re-enable Wi-Fi modem sleep
+    esp_task_wdt_reset();
+    if (!linkplay_client_fetch_presets(activeDev.ip)) {
+        esp_task_wdt_reset();
+        linkplay_client_fetch_presets(activeDev.ip);
+    }
+    wifi_service_set_power_save(true);
+    log_i("[Sync] Background presets loaded; WIFI_PS_MIN_MODEM enabled.");
     return true;
 }
 
@@ -334,6 +341,8 @@ void WiiMNetworkManager::processIncomingCommands() {
 
             case CMD_UPNP_PLAY_TRACK:
                 if (hasActive) {
+                    // Close persistent WiiM TLS session first to free ~40KB internal SRAM before UPnP queue submission
+                    linkplay_client_reset_session();
                     linkplay_client_reset_track_cache();
                     if (!upnp_client_play_track(activeDev.ip, cmd.data.upnp_play.track_index, activeDev.is_fixed_volume)) {
                         log_w("UPnP play_track failed for track index %u on %s", cmd.data.upnp_play.track_index, activeDev.ip);

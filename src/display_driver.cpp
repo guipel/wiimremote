@@ -137,10 +137,19 @@ static void touchpad_read_cb(lv_indev_drv_t *indev_driver, lv_indev_data_t *data
     }
 }
 
+void display_driver_prealloc() {
+    if (!disp_draw_buf1) {
+        disp_draw_buf1 = (lv_color_t *)heap_caps_malloc(sizeof(lv_color_t) * DRAW_BUF_PIXELS, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    }
+    if (!disp_draw_buf2) {
+        disp_draw_buf2 = (lv_color_t *)heap_caps_malloc(sizeof(lv_color_t) * DRAW_BUF_PIXELS, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    }
+}
+
 void display_driver_init() {
-    // 1. Initialize LovyanGFX with backlight kept at 0 until first UI frame is rendered
-    gfx.setBrightness(0);
+    // 1. Initialize LovyanGFX with backlight kept at 0 until first UI frame is rendered (TFT_BL is already held LOW)
     gfx.init();
+    gfx.setBrightness(0);
     gfx.setRotation(SCREEN_ROTATION);
     gfx.setColorDepth(16);
 
@@ -151,9 +160,8 @@ void display_driver_init() {
     // 2. Initialize LVGL core
     lv_init();
 
-    // 3. Allocate double draw buffers in Internal DMA SRAM (zero PSRAM bus contention)
-    disp_draw_buf1 = (lv_color_t *)heap_caps_malloc(sizeof(lv_color_t) * DRAW_BUF_PIXELS, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
-    disp_draw_buf2 = (lv_color_t *)heap_caps_malloc(sizeof(lv_color_t) * DRAW_BUF_PIXELS, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+    // 3. Ensure double draw buffers are allocated in Internal DMA SRAM (zero PSRAM bus contention)
+    display_driver_prealloc();
 
     if (!disp_draw_buf1) {
         log_e("Internal DMA alloc failed for disp_draw_buf1, falling back to PSRAM");
