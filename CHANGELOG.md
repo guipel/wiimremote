@@ -11,6 +11,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.7] - 2026-10-30
+
+### Added
+- **UPnP Browser Single-Row Icon-Tap Marquee & 128-Byte Title Buffers (`4279889`)**:
+  - Updated `src/ui/ui_browser.cpp` so UPnP server, folder, and track list rows render static clipped labels (`LV_LABEL_LONG_CLIP`) by default, eliminating multi-row animation clutter while browsing.
+  - Added single-row circular marquee toggle (`LV_LABEL_LONG_SCROLL_CIRCULAR` at `31 px/s` with 10-space loop padding) when tapping a row's leading icon (`x < 36 px`), automatically restoring any previously scrolling row to static clip mode while tapping the title area (`x >= 36 px`) opens or plays the item immediately.
+  - Expanded UPnP item, folder, breadcrumb, command, and metadata `title` buffers to `128` bytes across `include/model.h`, `src/ui/ui_browser.cpp`, and `src/net/upnp_client.cpp`.
+
+### Changed
+- **Cold-Boot & Wake-from-Sleep Startup Acceleration (`4279889`)**:
+  - Reduced wake-from-sleep / cold-boot time to interactive Player UI from `~5.0–12.1s` to **`1.71s`** by connecting at boot with `WIFI_FAST_SCAN` + `WIFI_PS_NONE` (`src/net/wifi_service.cpp`) and restoring `WIFI_PS_MIN_MODEM` (`wifi_service_set_power_save(true)`) immediately after initial sync (and on all error/timeout paths), while reserving `WIFI_ALL_CHANNEL_SCAN` + `WIFI_CONNECT_AP_BY_SIGNAL` (`4000 ms` retry interval) strictly for post-drop AP roaming and manual Wi-Fi scans.
+  - Pre-allocated both `38.4 KB` Internal DMA SRAM LVGL draw buffers (`display_driver_prealloc()`) before starting Wi-Fi and launched `NetTask` on Core 0 concurrently with `display_driver_init()` and `ui_init()` on Core 1 (`src/main.cpp`, `src/display_driver.cpp`), removing the unconditional `200 ms` boot delay.
+  - Added `WiiMNetworkManager::onWifiConnected()` (`src/network_manager.cpp`) so background mesh AP roaming silently resumes telemetry polling without flashing the startup progress overlay, revealed the Player UI immediately once `getStatusEx` + `getPlayerStatus` succeed, and deferred `getPresetInfo` to load asynchronously in the background right after UI reveal.
+- **Production Zero-Logging Build Configuration (`4279889`)**:
+  - Set `-DCORE_DEBUG_LEVEL=0` in `platformio.ini`, eliminating runtime `HWCDC` USB-Serial/JTAG transmit stalls when unplugged from a serial monitor and saving `~48 KB` of Flash.
+
+### Fixed
+- **Playback UI Freeze, 15s Task Watchdog Reboot & TLS/Heap Contention (`4279889`)**:
+  - Bounded all `WiFiClientSecure` handshakes (`setHandshakeTimeout(2)` on LAN LinkPlay/SSDP probes and `setHandshakeTimeout(4)` on LRCLIB HTTPS requests across `src/net/linkplay_client.cpp`, `src/net/discovery_service.cpp`, and `src/net/lyrics_client.cpp`) and fed `esp_task_wdt_reset()`, preventing stalled TLS handshakes from falling back to the 120s mbedTLS default and triggering the 15s ESP32-S3 Task Watchdog.
+  - Closed the persistent ~40 KB WiiM TLS session (`linkplay_client_reset_session()`) prior to UPnP queue submission (`CMD_UPNP_PLAY_TRACK`) and fallback SSDP HTTPS probes, and moved UPnP `<PlayList>` and SOAP XML builders (`PsramXmlBuf` in `src/net/upnp_client.cpp`) into 8 MB Octal PSRAM to prevent internal SRAM fragmentation.
+- **Intermittent Missing Audio Resolution Readout (`4279889`)**:
+  - Updated `linkplay_client_poll_active()` and `linkplay_client_fetch_meta()` (`src/net/linkplay_client.cpp`) to parse `curpos` before track evaluation so negative pre-buffer countdowns classify as `PLAY_STATE_BUFFERING`, latch `s_meta_resolved = true` only after `xQueueSend` succeeds with `sampleRate > 0`, and retry `getMetaInfo` periodically while playing instead of permanently locking out after 5 attempts.
+- **Spurious Passive SSDP Probes & Boot Backlight Initialization Order (`4279889`)**:
+  - Filtered out inbound `M-SEARCH` queries, `ssdp:byebye` announcements, and non-`:49152` UPnP packets in `discovery_service_process_ssdp()` (`src/net/discovery_service.cpp`), and moved `gfx.init()` ahead of `gfx.setBrightness(0)` in `src/display_driver.cpp`.
+
+---
+
 ## [1.0.6] - 2026-10-26
 
 ### Added
