@@ -12,6 +12,7 @@ void wifi_service_start_scan();
 void wifi_service_connect(const char* ssid, const char* pass);
 void wifi_service_forget();
 void wifi_service_reconnect();
+void wifi_service_set_power_save(bool enable);
 
 bool wifi_service_is_connected();
 int8_t wifi_service_get_rssi();

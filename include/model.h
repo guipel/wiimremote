@@ -104,14 +104,14 @@ struct UpnpServerList {
 
 struct UpnpItem {
     char id[64];
-    char title[64];
+    char title[128];
     char artist[48];
     bool is_folder;
     uint8_t track_index; // 0-based index among audio tracks in this folder
 };
 
 struct UpnpBrowseList {
-    char title[48];
+    char title[128];
     bool is_error;
     bool has_more;
     uint16_t start_index;
@@ -245,7 +245,7 @@ struct UiCommand {
             uint8_t server_index;
             uint16_t start_index;
             char object_id[64];
-            char title[48];
+            char title[128];
         } upnp_browse;              // For CMD_UPNP_BROWSE
         struct {
             uint8_t track_index;

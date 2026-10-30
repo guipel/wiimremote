@@ -64,6 +64,8 @@ void wifi_service_init(WiFiConnectedCb onConnected, WiFiDisconnectedCb onDisconn
     s_wifi_prefs.begin("wiimremote", false);
 
     WiFi.mode(WIFI_STA);
+    WiFi.setScanMethod(WIFI_FAST_SCAN);
+    WiFi.setAutoReconnect(true);
 
     bool setupDone = s_wifi_prefs.getBool("user_setup_done", false);
     s_cached_saved_ssid = setupDone ? s_wifi_prefs.getString("wifi_ssid", "") : "";
@@ -71,7 +73,7 @@ void wifi_service_init(WiFiConnectedCb onConnected, WiFiDisconnectedCb onDisconn
 
     if (s_cached_saved_ssid.length() > 0) {
         log_i("Connecting to saved Wi-Fi SSID: %s", s_cached_saved_ssid.c_str());
-        WiFi.setSleep(WIFI_PS_MIN_MODEM);
+        WiFi.setSleep(WIFI_PS_NONE);
         s_wifi_connecting = true;
         s_wifi_connect_start = millis();
         s_pending_connect_ssid = "";
@@ -103,6 +105,9 @@ void wifi_service_init(WiFiConnectedCb onConnected, WiFiDisconnectedCb onDisconn
 void wifi_service_start_scan() {
     log_i("Starting synchronous Wi-Fi network scan on Core 0 (current status: %d)...", WiFi.status());
     WiFi.mode(WIFI_STA);
+    WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+    WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+    WiFi.setAutoReconnect(true);
     WiFi.setSleep(WIFI_PS_NONE);
     WiFi.scanDelete();
 
@@ -162,6 +167,8 @@ void wifi_service_forget() {
 void wifi_service_reconnect() {
     if (s_cached_saved_ssid.length() > 0 && WiFi.status() != WL_CONNECTED) {
         log_i("Reconnecting to saved Wi-Fi: %s", s_cached_saved_ssid.c_str());
+        WiFi.setSleep(WIFI_PS_NONE);
+        WiFi.setScanMethod(WIFI_FAST_SCAN);
         s_wifi_connecting = true;
         s_wifi_connect_start = millis();
         s_pending_connect_ssid = "";
@@ -171,6 +178,10 @@ void wifi_service_reconnect() {
     }
 }
 
+void wifi_service_set_power_save(bool enable) {
+    WiFi.setSleep(enable ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
+}
+
 void wifi_service_handle() {
     unsigned long now = millis();
     wl_status_t status = WiFi.status();
@@ -178,6 +189,7 @@ void wifi_service_handle() {
     if (status == WL_CONNECTED) {
         if (!s_wifi_connected) {
             s_wifi_connected = true;
+            WiFi.setScanMethod(WIFI_FAST_SCAN);
             bool wasUserConnecting = (s_pending_connect_ssid.length() > 0);
             s_wifi_connecting = false;
             String localIpStr = WiFi.localIP().toString();
@@ -243,7 +255,7 @@ void wifi_service_handle() {
             if (s_on_disconnected_cb) {
                 s_on_disconnected_cb();
             }
-            log_w("Wi-Fi Connection Lost! Attempting reconnect...");
+            log_w("Wi-Fi Connection Lost! Attempting immediate roam/reconnect...");
             UiEvent evt;
             evt.type = UI_EVT_WIFI_STATUS;
             evt.data.wifi.connected = false;
@@ -251,11 +263,20 @@ void wifi_service_handle() {
             evt.data.wifi.ip[0] = '\0';
             evt.data.wifi.ssid[0] = '\0';
             xQueueSend(xQueueUiState, &evt, 0);
+
+            if (s_cached_saved_ssid.length() > 0 && !s_wifi_connecting) {
+                s_last_wifi_check = now;
+                WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+                WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+                WiFi.disconnect(false, false);
+                WiFi.begin(s_cached_saved_ssid.c_str(), s_cached_saved_pass.c_str());
+            }
         }
 
         if (s_wifi_connecting) {
             if (now - s_wifi_connect_start >= WIFI_CONNECT_TIMEOUT_MS) {
                 s_wifi_connecting = false;
+                WiFi.setSleep(WIFI_PS_MIN_MODEM);
                 if (s_pending_connect_ssid.length() > 0) {
                     log_w("Wi-Fi connection to %s timed out!", s_pending_connect_ssid.c_str());
                     s_pending_connect_ssid = "";
@@ -279,8 +300,11 @@ void wifi_service_handle() {
         } else {
             if (s_cached_saved_ssid.length() > 0 && now - s_last_wifi_check >= WIFI_RECONNECT_INTERVAL_MS) {
                 s_last_wifi_check = now;
-                log_i("Reconnecting to Wi-Fi...");
-                WiFi.reconnect();
+                log_i("Reconnecting to Wi-Fi (all-channel scan for strongest AP)...");
+                WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+                WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+                WiFi.disconnect(false, false);
+                WiFi.begin(s_cached_saved_ssid.c_str(), s_cached_saved_pass.c_str());
             }
         }
     }

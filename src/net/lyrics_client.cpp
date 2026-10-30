@@ -1,5 +1,6 @@
 #include "net/lyrics_client.h"
 #include "net/net_utils.h"
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <esp_task_wdt.h>
@@ -9,6 +10,10 @@ extern QueueHandle_t xQueueUiState;
 
 static int fetch_lrclib_url(const String& url, String& outPayload) {
     outPayload = "";
+    WiFiClientSecure client;
+    client.setInsecure();
+    client.setHandshakeTimeout(4);
+
     HTTPClient http;
     http.setConnectTimeout(3500);
     http.setTimeout(4000);
@@ -19,7 +24,7 @@ static int fetch_lrclib_url(const String& url, String& outPayload) {
         log_i("[LRCLIB] GET %s", url.c_str());
         esp_task_wdt_reset();
 
-        if (http.begin(url)) {
+        if (http.begin(client, url)) {
             code = http.GET();
             esp_task_wdt_reset();
             if (code == HTTP_CODE_OK) {

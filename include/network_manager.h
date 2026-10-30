@@ -26,6 +26,9 @@ public:
     // Synchronize config, status, metadata, and presets from the active WiiM
     bool syncActiveDevice();
 
+    // Handle Wi-Fi connection or AP roam reconnection
+    void onWifiConnected();
+
     // Synchronize poll timestamps after an immediate active-device fetch
     void markActiveDevicePolled();
 

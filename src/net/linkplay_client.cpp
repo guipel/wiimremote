@@ -3,6 +3,7 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <esp_task_wdt.h>
 #include "config.h"
 
 extern QueueHandle_t xQueueUiState;
@@ -76,8 +77,9 @@ static int execute_api_get(const char* targetIp, const String& cmd, String& outP
     if (strcmp(s_persistent_ip.c_str(), targetIp) != 0 || !s_persistent_http_configured) {
         linkplay_client_reset_session();
         s_persistent_client.setInsecure();
+        s_persistent_client.setHandshakeTimeout(2);
         s_persistent_http.setReuse(true);
-        s_persistent_http.setConnectTimeout(1000);
+        s_persistent_http.setConnectTimeout(1500);
         s_persistent_http.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
         s_persistent_ip = String(targetIp);
         s_persistent_http_configured = true;
@@ -93,14 +95,17 @@ static int execute_api_get(const char* targetIp, const String& cmd, String& outP
         s_persistent_http.setURL(String(path));
     }
 
+    esp_task_wdt_reset();
     int code = s_persistent_http.GET();
 
     // If socket dropped by server (e.g. keep-alive timeout), reconnect once
     if (code <= 0) {
+        esp_task_wdt_reset();
         linkplay_client_reset_session();
         s_persistent_client.setInsecure();
+        s_persistent_client.setHandshakeTimeout(2);
         s_persistent_http.setReuse(true);
-        s_persistent_http.setConnectTimeout(1000);
+        s_persistent_http.setConnectTimeout(1500);
         s_persistent_http.setTimeout(HTTP_REQUEST_TIMEOUT_MS);
         s_persistent_ip = String(targetIp);
         s_persistent_http_configured = true;
@@ -108,6 +113,7 @@ static int execute_api_get(const char* targetIp, const String& cmd, String& outP
         if (s_persistent_http.begin(s_persistent_client, String(fullUrl))) {
             code = s_persistent_http.GET();
         }
+        esp_task_wdt_reset();
     }
 
     if (code == HTTP_CODE_OK) {
@@ -200,7 +206,7 @@ static void fetch_upnp_track_duration(const char* targetIp) {
     http.end();
 }
 
-bool linkplay_client_fetch_meta(const char* targetIp) {
+bool linkplay_client_fetch_meta(const char* targetIp, bool resolveAudioFormat) {
     if (!targetIp || strlen(targetIp) == 0) return false;
 
     String payload;
@@ -235,21 +241,28 @@ bool linkplay_client_fetch_meta(const char* targetIp) {
 
     // Robust parsing of sampleRate and bitDepth (handles both integer and string variants)
     uint32_t sampleRate = 0;
-    JsonVariant vRate = doc["metaData"]["sampleRate"];
-    if (vRate.isNull()) vRate = doc["sampleRate"];
-    if (vRate.is<uint32_t>()) {
-        sampleRate = vRate.as<uint32_t>();
-    } else if (vRate.is<const char*>()) {
-        sampleRate = strtoul(vRate.as<const char*>(), nullptr, 10);
+    uint8_t bitDepth = 0;
+    if (resolveAudioFormat) {
+        JsonVariant vRate = doc["metaData"]["sampleRate"];
+        if (vRate.isNull()) vRate = doc["sampleRate"];
+        if (vRate.is<uint32_t>()) {
+            sampleRate = vRate.as<uint32_t>();
+        } else if (vRate.is<const char*>()) {
+            sampleRate = strtoul(vRate.as<const char*>(), nullptr, 10);
+        }
+
+        JsonVariant vDepth = doc["metaData"]["bitDepth"];
+        if (vDepth.isNull()) vDepth = doc["bitDepth"];
+        if (vDepth.is<uint8_t>()) {
+            bitDepth = vDepth.as<uint8_t>();
+        } else if (vDepth.is<const char*>()) {
+            bitDepth = (uint8_t)atoi(vDepth.as<const char*>());
+        }
     }
 
-    uint8_t bitDepth = 0;
-    JsonVariant vDepth = doc["metaData"]["bitDepth"];
-    if (vDepth.isNull()) vDepth = doc["bitDepth"];
-    if (vDepth.is<uint8_t>()) {
-        bitDepth = vDepth.as<uint8_t>();
-    } else if (vDepth.is<const char*>()) {
-        bitDepth = (uint8_t)atoi(vDepth.as<const char*>());
+    if (resolveAudioFormat) {
+        log_i("[Meta] getMetaInfo -> title='%s' sampleRate=%u bitDepth=%u",
+              decTitle.c_str(), (unsigned int)sampleRate, (unsigned int)bitDepth);
     }
 
     if (decTitle.length() == 0 && sampleRate == 0) {
@@ -257,9 +270,6 @@ bool linkplay_client_fetch_meta(const char* targetIp) {
         return false;
     }
 
-    if (sampleRate > 0) {
-        s_meta_resolved = true;
-    }
     pMeta->sample_rate = sampleRate;
     pMeta->bit_depth = bitDepth;
 
@@ -267,11 +277,16 @@ bool linkplay_client_fetch_meta(const char* targetIp) {
     evt.type = UI_EVT_META_UPDATED;
     evt.data.meta = pMeta;
 
-    if (xQueueSend(xQueueUiState, &evt, 0) != pdTRUE) {
+    if (xQueueSend(xQueueUiState, &evt, pdMS_TO_TICKS(10)) != pdTRUE) {
         free(pMeta);
+        return false;
     }
 
-    return (sampleRate > 0);
+    if (sampleRate > 0) {
+        s_meta_resolved = true;
+        return true;
+    }
+    return false;
 }
 
 bool linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, PlayerState& outState) {
@@ -291,16 +306,21 @@ bool linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
     memset(&evt, 0, sizeof(evt));
     evt.type = UI_EVT_PLAYER_STATE;
 
-    // Parse status
+    // 1. Parse status and raw position/duration FIRST so pre-buffering (rawCurpos < 0) is classified accurately
     const char* statusStr = doc["status"] | "";
     const char* rawTitle = doc["Title"] | doc["title"] | "";
     const char* rawArtist = doc["Artist"] | doc["artist"] | "";
     const char* rawAlbum = doc["Album"] | doc["album"] | "";
     const char* rawPlicurr = doc["plicurr"] | "0";
+    const char* totlenStr = doc["totlen"] | "0";
+    const char* curposStr = doc["curpos"] | "0";
+    uint32_t totlen = strtoul(totlenStr, nullptr, 10);
+    int32_t rawCurpos = strtol(curposStr, nullptr, 10);
+    uint32_t curpos = (rawCurpos > 0) ? (uint32_t)rawCurpos : 0;
     bool hasTitle = (strlen(rawTitle) > 0 || s_last_known_track_title.length() > 0);
 
     if (strcmp(statusStr, "play") == 0) {
-        evt.data.player.state = PLAY_STATE_PLAYING;
+        evt.data.player.state = (rawCurpos < 0) ? PLAY_STATE_BUFFERING : PLAY_STATE_PLAYING;
     } else if (strcmp(statusStr, "pause") == 0) {
         evt.data.player.state = PLAY_STATE_PAUSED;
     } else if (strcmp(statusStr, "stop") == 0) {
@@ -313,38 +333,50 @@ bool linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
         evt.data.player.state = PLAY_STATE_UNKNOWN;
     }
 
-    // Volume & Mute
+    // 2. Volume & Mute
     const char* volStr = doc["vol"] | "0";
     evt.data.player.volume = (uint8_t)atoi(volStr);
     const char* muteStr = doc["mute"] | "0";
     evt.data.player.mute = (strcmp(muteStr, "1") == 0 || atoi(muteStr) == 1);
     evt.data.player.is_fixed_volume = is_fixed_vol;
 
-    // Track Identity & Change Detection (evaluated BEFORE duration/position math)
+    // 3. Track Identity & Audio Resolution Check
     bool isNewTrack = false;
     if (evt.data.player.state == PLAY_STATE_NONE) {
         linkplay_client_reset_track_cache();
+    } else if (strlen(rawTitle) > 0) {
+        bool wasEmpty = (s_last_raw_title.length() == 0);
+        if (strcmp(s_last_raw_title.c_str(), rawTitle) != 0 ||
+            strcmp(s_last_raw_artist.c_str(), rawArtist) != 0 ||
+            strcmp(s_last_raw_album.c_str(), rawAlbum) != 0) {
+            s_last_raw_title = rawTitle;
+            s_last_raw_artist = rawArtist;
+            s_last_raw_album = rawAlbum;
+            s_cached_track_duration_ms = 0;
+            s_meta_resolved = false;
+            s_meta_retries = 0;
+            s_cached_upnp_track_num = 0;
+            s_cached_upnp_track_total = 0;
+            isNewTrack = true;
+        }
+
+        if (isNewTrack) {
+            // Resolve format immediately only if attaching to an already-paused or mid-playback (>1.5s) track;
+            // on fresh track transitions, clear stale resolution (0) and let PLAY_STATE_PLAYING resolve it.
+            bool resolveNow = wasEmpty &&
+                (evt.data.player.state == PLAY_STATE_PAUSED ||
+                 (evt.data.player.state == PLAY_STATE_PLAYING && rawCurpos > 1500));
+            linkplay_client_fetch_meta(targetIp, resolveNow);
+        } else if (!s_meta_resolved && evt.data.player.state == PLAY_STATE_PLAYING) {
+            ++s_meta_retries;
+            if (s_meta_retries <= 5 || (s_meta_retries % 5 == 0)) {
+                log_i("[Poll] Resolution check #%u (status='%s', curpos=%ld)",
+                      (unsigned int)s_meta_retries, statusStr, (long)rawCurpos);
+                linkplay_client_fetch_meta(targetIp, true);
+            }
+        }
     } else {
-        if (strlen(rawTitle) > 0) {
-            if (strcmp(s_last_raw_title.c_str(), rawTitle) != 0 ||
-                strcmp(s_last_raw_artist.c_str(), rawArtist) != 0 ||
-                strcmp(s_last_raw_album.c_str(), rawAlbum) != 0) {
-                s_last_raw_title = rawTitle;
-                s_last_raw_artist = rawArtist;
-                s_last_raw_album = rawAlbum;
-                s_cached_track_duration_ms = 0;
-                s_meta_resolved = false;
-                s_meta_retries = 0;
-                s_cached_upnp_track_num = 0;
-                s_cached_upnp_track_total = 0;
-                isNewTrack = true;
-            }
-            if (!s_meta_resolved) {
-                if (linkplay_client_fetch_meta(targetIp) || ++s_meta_retries >= 3) {
-                    s_meta_resolved = true;
-                }
-            }
-        } else if (s_last_raw_title.length() > 0) {
+        if (s_last_raw_title.length() > 0) {
             linkplay_client_reset_track_cache();
 
             TrackMeta* pMeta = (TrackMeta*)malloc(sizeof(TrackMeta));
@@ -358,18 +390,13 @@ bool linkplay_client_poll_active(const char* targetIp, bool is_fixed_vol, Player
                 }
             }
         }
-    }
-
-    // Track duration and position (LinkPlay getPlayerStatus reports totlen and curpos in ms)
-    const char* totlenStr = doc["totlen"] | "0";
-    const char* curposStr = doc["curpos"] | "0";
-    uint32_t totlen = strtoul(totlenStr, nullptr, 10);
-    int32_t rawCurpos = strtol(curposStr, nullptr, 10);
-    uint32_t curpos = (rawCurpos > 0) ? (uint32_t)rawCurpos : 0;
-
-    // If streamer reports a negative pre-buffer countdown, audio has not started playing yet
-    if (rawCurpos < 0 && evt.data.player.state == PLAY_STATE_PLAYING) {
-        evt.data.player.state = PLAY_STATE_BUFFERING;
+        // Also resolve audio format on physical inputs (Optical/Line-In/BT) where Title may be empty
+        if (!s_meta_resolved && evt.data.player.state == PLAY_STATE_PLAYING) {
+            ++s_meta_retries;
+            if (s_meta_retries <= 5 || (s_meta_retries % 5 == 0)) {
+                linkplay_client_fetch_meta(targetIp, true);
+            }
+        }
     }
 
     // Discard any residual transition position or stale buffering offsets

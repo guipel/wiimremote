@@ -12,7 +12,7 @@ extern QueueHandle_t xQueueUiCmd;
 
 struct UpnpTrackFull {
     char id[64];
-    char title[64];
+    char title[128];
     char artist[48];
     char album[48];
     char url[256];
@@ -546,19 +546,87 @@ bool upnp_client_play_track(const char* wiimIp, uint8_t trackIdx, bool isFixedVo
         }
     }
 
-    // Build LinkPlay QueueVersion 2.0 PlayList XML (matches WiiM Home app UPnPQueue schema)
-    String playListXml;
-    playListXml.reserve((size_t)totalTracks * 480 + 256);
-    playListXml += "<?xml version=\"1.0\"?>\n<PlayList>\n";
-    playListXml += "<ListName>UPnPQueue</ListName>\n";
-    playListXml += "<ListInfo>\n";
-    playListXml += "<QueueVersion>2.0</QueueVersion>\n";
-    playListXml += "<SourceName>UPnPServer</SourceName>\n";
-    playListXml += "<PicUrl></PicUrl>\n";
-    playListXml += "<TotalNumber>" + String(totalTracks) + "</TotalNumber>\n";
-    playListXml += "<TrackNumber>" + String(totalTracks) + "</TrackNumber>\n";
-    playListXml += "<LastPlayIndex>" + String(startIdx1Based) + "</LastPlayIndex>\n";
-    playListXml += "</ListInfo>\n<Tracks>\n";
+    // Build LinkPlay QueueVersion 2.0 PlayList XML in 8MB Octal PSRAM (avoids internal SRAM exhaustion on large folders)
+    struct PsramXmlBuf {
+        char* data = nullptr;
+        size_t len = 0;
+        size_t cap = 0;
+        bool ok = true;
+
+        bool init(size_t initialCap) {
+            data = (char*)heap_caps_malloc(initialCap, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (!data) data = (char*)malloc(initialCap);
+            if (!data) { ok = false; return false; }
+            cap = initialCap;
+            len = 0;
+            data[0] = '\0';
+            ok = true;
+            return true;
+        }
+        void release() {
+            if (data) { free(data); data = nullptr; }
+            len = 0; cap = 0;
+        }
+        bool ensure(size_t extra) {
+            if (!ok) return false;
+            if (len + extra + 1 <= cap) return true;
+            size_t newCap = cap ? cap * 2 : 1024;
+            while (newCap < len + extra + 1) newCap *= 2;
+            char* next = (char*)heap_caps_realloc(data, newCap, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+            if (!next) next = (char*)realloc(data, newCap);
+            if (!next) { ok = false; return false; }
+            data = next;
+            cap = newCap;
+            return true;
+        }
+        void append(const char* s, size_t slen) {
+            if (!s || slen == 0 || !ensure(slen)) return;
+            memcpy(data + len, s, slen);
+            len += slen;
+            data[len] = '\0';
+        }
+        void append_cstr(const char* s) {
+            if (s) append(s, strlen(s));
+        }
+        void append_uint(uint32_t v) {
+            char num[16];
+            int n = snprintf(num, sizeof(num), "%u", (unsigned int)v);
+            if (n > 0) append(num, (size_t)n);
+        }
+        void append_escaped(const char* s) {
+            if (!s) return;
+            while (*s) {
+                char c = *s++;
+                switch (c) {
+                    case '&':  append("&amp;", 5); break;
+                    case '<':  append("&lt;", 4); break;
+                    case '>':  append("&gt;", 4); break;
+                    case '"':  append("&quot;", 6); break;
+                    case '\'': append("&apos;", 6); break;
+                    default:   append(&c, 1); break;
+                }
+            }
+        }
+    };
+
+    PsramXmlBuf playListXml;
+    if (!playListXml.init((size_t)totalTracks * 512 + 256)) {
+        log_e("[UPnP] Out of memory allocating PlayList XML");
+        return false;
+    }
+    playListXml.append_cstr("<?xml version=\"1.0\"?>\n<PlayList>\n"
+                            "<ListName>UPnPQueue</ListName>\n"
+                            "<ListInfo>\n"
+                            "<QueueVersion>2.0</QueueVersion>\n"
+                            "<SourceName>UPnPServer</SourceName>\n"
+                            "<PicUrl></PicUrl>\n"
+                            "<TotalNumber>");
+    playListXml.append_uint(totalTracks);
+    playListXml.append_cstr("</TotalNumber>\n<TrackNumber>");
+    playListXml.append_uint(totalTracks);
+    playListXml.append_cstr("</TrackNumber>\n<LastPlayIndex>");
+    playListXml.append_uint(startIdx1Based);
+    playListXml.append_cstr("</LastPlayIndex>\n</ListInfo>\n<Tracks>\n");
 
     for (uint8_t i = 0; i < totalTracks; ++i) {
         const UpnpTrackFull& t = s_folder_tracks[i];
@@ -596,28 +664,38 @@ bool upnp_client_play_track(const char* wiimIp, uint8_t trackIdx, bool isFixedVo
         }
         didl += "</item>\n</DIDL-Lite>\n";
 
-        String trackTag = "Track" + String(i + 1);
-        playListXml += "<" + trackTag + ">\n";
-        playListXml += "<Id>" + String(i + 1) + "</Id>\n";
-        playListXml += "<URL>" + escUrl + "</URL>\n";
-        playListXml += "<Metadata>";
-        append_xml_escaped(playListXml, didl.c_str());
-        playListXml += "</Metadata>\n";
-        playListXml += "<Source>UPnPServer</Source>\n";
-        playListXml += "</" + trackTag + ">\n";
+        playListXml.append_cstr("<Track");
+        playListXml.append_uint(i + 1);
+        playListXml.append_cstr(">\n<Id>");
+        playListXml.append_uint(i + 1);
+        playListXml.append_cstr("</Id>\n<URL>");
+        playListXml.append_cstr(escUrl.c_str());
+        playListXml.append_cstr("</URL>\n<Metadata>");
+        playListXml.append_escaped(didl.c_str());
+        playListXml.append_cstr("</Metadata>\n<Source>UPnPServer</Source>\n</Track");
+        playListXml.append_uint(i + 1);
+        playListXml.append_cstr(">\n");
     }
-    playListXml += "</Tracks>\n</PlayList>";
+    playListXml.append_cstr("</Tracks>\n</PlayList>");
 
-    String createSoap;
-    createSoap.reserve((playListXml.length() * 3) / 2 + 512);
-    createSoap +=
+    PsramXmlBuf createSoap;
+    if (!playListXml.ok || !createSoap.init((playListXml.len * 3) / 2 + 512)) {
+        playListXml.release();
+        log_e("[UPnP] Out of memory allocating CreateQueue SOAP");
+        return false;
+    }
+    createSoap.append_cstr(
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>"
         "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">"
         "<s:Body><u:CreateQueue xmlns:u=\"urn:schemas-wiimu-com:service:PlayQueue:1\">"
-        "<QueueContext>";
-    append_xml_escaped(createSoap, playListXml.c_str());
-    playListXml = String(); // Free unescaped playlist before HTTP POST
-    createSoap += "</QueueContext></u:CreateQueue></s:Body></s:Envelope>";
+        "<QueueContext>");
+    createSoap.append_escaped(playListXml.data);
+    playListXml.release();
+    createSoap.append_cstr("</QueueContext></u:CreateQueue></s:Body></s:Envelope>");
+    if (!createSoap.ok) {
+        createSoap.release();
+        return false;
+    }
 
     String queueUrl = "http://" + String(wiimIp) + ":" + String(WIIM_UPNP_PORT) + "/upnp/control/PlayQueue1";
 
@@ -630,10 +708,10 @@ bool upnp_client_play_track(const char* wiimIp, uint8_t trackIdx, bool isFixedVo
     if (http.begin(queueUrl)) {
         http.addHeader("Content-Type", "text/xml; charset=\"utf-8\"");
         http.addHeader("SOAPAction", "\"urn:schemas-wiimu-com:service:PlayQueue:1#CreateQueue\"");
-        createCode = http.POST(createSoap);
+        createCode = http.POST((uint8_t*)createSoap.data, createSoap.len);
         http.end();
     }
-    createSoap = String();
+    createSoap.release();
     esp_task_wdt_reset();
 
     int playCode = -1;

@@ -2,12 +2,13 @@
 #include "ui/ui_theme.h"
 #include "config.h"
 #include <stdio.h>
+#include <string.h>
 
 extern QueueHandle_t xQueueUiCmd;
 
 struct NavEntry {
     char object_id[64];
-    char title[48];
+    char title[128];
     uint16_t start_index;
 };
 
@@ -25,12 +26,67 @@ static lv_obj_t* s_cont_header = nullptr;
 static lv_obj_t* lbl_nav_icon = nullptr;
 static lv_obj_t* lbl_header_title = nullptr;
 static lv_obj_t* list_browser = nullptr;
+static lv_obj_t* s_scrolling_lbl = nullptr;
+
+static constexpr uint16_t MARQUEE_ANIM_SPEED = 31;
+static constexpr lv_coord_t ICON_TAP_MAX_X = 36;
+static constexpr lv_coord_t ROW_TEXT_MAX_W = 200;
+static constexpr const char* MARQUEE_LOOP_PAD = "          ";
 
 static void render_server_list();
 static bool request_browse(uint8_t serverIdx, const char* objectId, const char* title, uint16_t startIndex = 0);
 
+static void set_padded_label_text(lv_obj_t* lbl, const char* text) {
+    if (!lbl || !text) return;
+    lv_coord_t txtW = lv_txt_get_width(text, strlen(text), &lv_font_montserrat_12, 0, LV_TEXT_FLAG_NONE);
+    if (txtW > ROW_TEXT_MAX_W) {
+        char paddedBuf[160];
+        snprintf(paddedBuf, sizeof(paddedBuf), "%s%s", text, MARQUEE_LOOP_PAD);
+        lv_label_set_text(lbl, paddedBuf);
+    } else {
+        lv_label_set_text(lbl, text);
+    }
+}
+
+static void style_browser_row_label(lv_obj_t* lbl, const char* text) {
+    if (!lbl) return;
+    set_padded_label_text(lbl, text);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_CLIP);
+    lv_obj_set_style_anim_speed(lbl, MARQUEE_ANIM_SPEED, 0);
+}
+
+static bool handle_icon_tap_marquee(lv_event_t* e) {
+    lv_indev_t* indev = lv_indev_get_act();
+    if (!indev) return false;
+
+    lv_point_t pt;
+    lv_indev_get_point(indev, &pt);
+    if (pt.x >= ICON_TAP_MAX_X) return false;
+
+    lv_obj_t* btn = lv_event_get_target(e);
+    if (!btn || lv_obj_get_child_cnt(btn) < 2) return true;
+    lv_obj_t* lbl = lv_obj_get_child(btn, 1);
+    if (!lbl) return true;
+
+    if (s_scrolling_lbl == lbl) {
+        lv_label_set_long_mode(lbl, LV_LABEL_LONG_CLIP);
+        s_scrolling_lbl = nullptr;
+        return true;
+    }
+
+    if (s_scrolling_lbl) {
+        lv_label_set_long_mode(s_scrolling_lbl, LV_LABEL_LONG_CLIP);
+        s_scrolling_lbl = nullptr;
+    }
+
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    s_scrolling_lbl = lbl;
+    return true;
+}
+
 static void show_status_message(const char* msg) {
     if (!list_browser) return;
+    s_scrolling_lbl = nullptr;
     lv_obj_clean(list_browser);
     lv_obj_scroll_to_y(list_browser, 0, LV_ANIM_OFF);
 
@@ -48,12 +104,12 @@ static void update_header(bool showPageRange = false) {
     if (!lbl_nav_icon || !lbl_header_title) return;
     if (s_nav_depth == 0) {
         lv_label_set_text(lbl_nav_icon, LV_SYMBOL_REFRESH);
-        lv_label_set_text(lbl_header_title, "UPnP Servers");
+        set_padded_label_text(lbl_header_title, "UPnP Servers");
     } else {
         lv_label_set_text(lbl_nav_icon, LV_SYMBOL_LEFT);
         const char* baseTitle = s_nav_stack[s_nav_depth - 1].title;
         if (showPageRange && s_current_browse.count > 0 && (s_current_browse.start_index > 0 || s_current_browse.has_more)) {
-            char hdrBuf[96];
+            char hdrBuf[160];
             uint32_t firstItem = (uint32_t)s_current_browse.start_index + 1;
             uint32_t lastItem = (uint32_t)s_current_browse.start_index + (uint32_t)s_current_browse.count;
             if (s_current_browse.total_matches >= lastItem) {
@@ -63,9 +119,9 @@ static void update_header(bool showPageRange = false) {
                 snprintf(hdrBuf, sizeof(hdrBuf), "%s (%u-%u)",
                          baseTitle, (unsigned int)firstItem, (unsigned int)lastItem);
             }
-            lv_label_set_text(lbl_header_title, hdrBuf);
+            set_padded_label_text(lbl_header_title, hdrBuf);
         } else {
-            lv_label_set_text(lbl_header_title, baseTitle);
+            set_padded_label_text(lbl_header_title, baseTitle);
         }
     }
 }
@@ -121,6 +177,8 @@ static void event_btn_page(lv_event_t* e) {
 }
 
 static void event_btn_server(lv_event_t* e) {
+    if (handle_icon_tap_marquee(e)) return;
+
     uint8_t srvIdx = (uint8_t)(uintptr_t)lv_event_get_user_data(e);
     if (srvIdx >= s_servers.count) return;
 
@@ -137,6 +195,8 @@ static void event_btn_server(lv_event_t* e) {
 }
 
 static void event_btn_item(lv_event_t* e) {
+    if (handle_icon_tap_marquee(e)) return;
+
     uint8_t itemIdx = (uint8_t)(uintptr_t)lv_event_get_user_data(e);
     if (itemIdx >= s_current_browse.count) return;
 
@@ -176,6 +236,7 @@ static void event_btn_item(lv_event_t* e) {
 static void render_server_list() {
     update_header(false);
     if (!list_browser) return;
+    s_scrolling_lbl = nullptr;
     lv_obj_clean(list_browser);
     lv_obj_scroll_to_y(list_browser, 0, LV_ANIM_OFF);
 
@@ -186,7 +247,8 @@ static void render_server_list() {
 
     for (uint8_t i = 0; i < s_servers.count; ++i) {
         lv_obj_t* btn = lv_list_add_btn(list_browser, LV_SYMBOL_DRIVE, s_servers.servers[i].name);
-        ui_style_flat_list_btn(btn, COLOR_ACCENT, COLOR_TEXT_PRIMARY, 7);
+        lv_obj_t* lbl = ui_style_flat_list_btn(btn, COLOR_ACCENT, COLOR_TEXT_PRIMARY, 7);
+        style_browser_row_label(lbl, s_servers.servers[i].name);
         lv_obj_add_event_cb(btn, event_btn_server, LV_EVENT_CLICKED, (void*)(uintptr_t)i);
     }
 }
@@ -220,6 +282,7 @@ void ui_browser_init(lv_obj_t* parent) {
     lbl_header_title = lv_label_create(s_cont_header);
     lv_label_set_text(lbl_header_title, "UPnP Servers");
     lv_label_set_long_mode(lbl_header_title, LV_LABEL_LONG_SCROLL_CIRCULAR);
+    lv_obj_set_style_anim_speed(lbl_header_title, MARQUEE_ANIM_SPEED, 0);
     lv_obj_set_width(lbl_header_title, 200);
     lv_obj_set_style_text_font(lbl_header_title, &lv_font_montserrat_12, 0);
     lv_obj_align(lbl_header_title, LV_ALIGN_LEFT_MID, 32, 0);
@@ -275,6 +338,7 @@ void ui_browser_set_browse_result(const UpnpBrowseList& result) {
     if (s_nav_depth == 0 || !list_browser) return;
 
     update_header(true);
+    s_scrolling_lbl = nullptr;
     lv_obj_clean(list_browser);
     lv_obj_scroll_to_y(list_browser, 0, LV_ANIM_OFF);
 
@@ -305,7 +369,8 @@ void ui_browser_set_browse_result(const UpnpBrowseList& result) {
             item.is_folder ? LV_SYMBOL_DIRECTORY : LV_SYMBOL_AUDIO,
             item.title
         );
-        ui_style_flat_list_btn(btn, item.is_folder ? COLOR_ACCENT : COLOR_TEXT_MUTED, COLOR_TEXT_PRIMARY, 7);
+        lv_obj_t* lbl = ui_style_flat_list_btn(btn, item.is_folder ? COLOR_ACCENT : COLOR_TEXT_MUTED, COLOR_TEXT_PRIMARY, 7);
+        style_browser_row_label(lbl, item.title);
         lv_obj_add_event_cb(btn, event_btn_item, LV_EVENT_CLICKED, (void*)(uintptr_t)i);
     }
 
