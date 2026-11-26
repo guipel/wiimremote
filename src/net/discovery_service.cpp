@@ -15,6 +15,7 @@ extern QueueHandle_t xQueueUiState;
 
 static Preferences s_dev_prefs;
 static WiFiUDP s_udp_ssdp;
+static WiFiUDP s_udp_msearch;
 static ActiveDeviceChangedCb s_on_active_changed_cb = nullptr;
 
 static DeviceList s_device_list;
@@ -325,6 +326,7 @@ void discovery_service_init(ActiveDeviceChangedCb onActiveChanged) {
 
 void discovery_service_start_ssdp_listener() {
     s_udp_ssdp.beginMulticast(IPAddress(239, 255, 255, 250), SSDP_PORT);
+    s_udp_msearch.begin(0);
 }
 
 void discovery_service_send_upnp_server_query() {
@@ -338,9 +340,9 @@ void discovery_service_send_upnp_server_query() {
         "ST: urn:schemas-upnp-org:device:MediaServer:1\r\n\r\n";
 
     IPAddress mcastIP(239, 255, 255, 250);
-    s_udp_ssdp.beginPacket(mcastIP, SSDP_PORT);
-    s_udp_ssdp.write((const uint8_t*)ssdp_msearch_mediaserver, strlen(ssdp_msearch_mediaserver));
-    s_udp_ssdp.endPacket();
+    s_udp_msearch.beginPacket(mcastIP, SSDP_PORT);
+    s_udp_msearch.write((const uint8_t*)ssdp_msearch_mediaserver, strlen(ssdp_msearch_mediaserver));
+    s_udp_msearch.endPacket();
 }
 
 void discovery_service_send_ssdp_query() {
@@ -371,24 +373,24 @@ void discovery_service_send_ssdp_query() {
         "ST: urn:schemas-upnp-org:device:MediaServer:1\r\n\r\n";
 
     IPAddress mcastIP(239, 255, 255, 250);
-    s_udp_ssdp.beginPacket(mcastIP, SSDP_PORT);
-    s_udp_ssdp.write((const uint8_t*)ssdp_msearch_renderer, strlen(ssdp_msearch_renderer));
-    s_udp_ssdp.endPacket();
+    s_udp_msearch.beginPacket(mcastIP, SSDP_PORT);
+    s_udp_msearch.write((const uint8_t*)ssdp_msearch_renderer, strlen(ssdp_msearch_renderer));
+    s_udp_msearch.endPacket();
 
-    s_udp_ssdp.beginPacket(mcastIP, SSDP_PORT);
-    s_udp_ssdp.write((const uint8_t*)ssdp_msearch_wiimu, strlen(ssdp_msearch_wiimu));
-    s_udp_ssdp.endPacket();
+    s_udp_msearch.beginPacket(mcastIP, SSDP_PORT);
+    s_udp_msearch.write((const uint8_t*)ssdp_msearch_wiimu, strlen(ssdp_msearch_wiimu));
+    s_udp_msearch.endPacket();
 
-    s_udp_ssdp.beginPacket(mcastIP, SSDP_PORT);
-    s_udp_ssdp.write((const uint8_t*)ssdp_msearch_mediaserver, strlen(ssdp_msearch_mediaserver));
-    s_udp_ssdp.endPacket();
+    s_udp_msearch.beginPacket(mcastIP, SSDP_PORT);
+    s_udp_msearch.write((const uint8_t*)ssdp_msearch_mediaserver, strlen(ssdp_msearch_mediaserver));
+    s_udp_msearch.endPacket();
 }
 
-void discovery_service_process_ssdp() {
+static void process_ssdp_socket(WiFiUDP& udp) {
     int packetSize;
-    while ((packetSize = s_udp_ssdp.parsePacket()) > 0) {
+    while ((packetSize = udp.parsePacket()) > 0) {
         char packetBuffer[1024];
-        int len = s_udp_ssdp.read(packetBuffer, sizeof(packetBuffer) - 1);
+        int len = udp.read(packetBuffer, sizeof(packetBuffer) - 1);
         if (len <= 0) continue;
         packetBuffer[len] = '\0';
 
@@ -427,7 +429,7 @@ void discovery_service_process_ssdp() {
             continue;
         }
 
-        IPAddress remoteIP = s_udp_ssdp.remoteIP();
+        IPAddress remoteIP = udp.remoteIP();
         String ipStr = remoteIP.toString();
 
         const char* locPtr = strstr(packetBuffer, "LOCATION: http://");
@@ -485,6 +487,11 @@ void discovery_service_process_ssdp() {
             s_ignored_count++;
         }
     }
+}
+
+void discovery_service_process_ssdp() {
+    process_ssdp_socket(s_udp_msearch);
+    process_ssdp_socket(s_udp_ssdp);
 }
 
 void discovery_service_trigger_rescan() {

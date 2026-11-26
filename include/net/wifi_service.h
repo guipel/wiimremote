@@ -13,8 +13,10 @@ void wifi_service_connect(const char* ssid, const char* pass);
 void wifi_service_forget();
 void wifi_service_reconnect();
 void wifi_service_set_power_save(bool enable);
+void wifi_service_prepare_deep_sleep();
 
 bool wifi_service_is_connected();
+bool wifi_service_is_connecting();
 int8_t wifi_service_get_rssi();
 String wifi_service_get_ip();
 String wifi_service_get_ssid();

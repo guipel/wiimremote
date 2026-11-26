@@ -1,8 +1,8 @@
 #include "power_manager.h"
 #include "display_driver.h"
+#include "net/wifi_service.h"
 #include "config.h"
 #include <Preferences.h>
-#include <WiFi.h>
 #include <esp_sleep.h>
 #include <driver/gpio.h>
 #include <driver/rtc_io.h>
@@ -198,9 +198,8 @@ void power_manager_enter_deep_sleep() {
     gpio_hold_en((gpio_num_t)PIN_PA_EN);
     gpio_deep_sleep_hold_en();
 
-    // Cleanly shut down Wi-Fi radio
-    WiFi.disconnect(true);
-    WiFi.mode(WIFI_OFF);
+    // Cleanly shut down Wi-Fi radio without clearing RTC fast-resume cache
+    wifi_service_prepare_deep_sleep();
 
     rtc_gpio_pullup_en((gpio_num_t)TOUCH_INT);
     rtc_gpio_pulldown_dis((gpio_num_t)TOUCH_INT);

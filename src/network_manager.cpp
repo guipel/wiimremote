@@ -5,11 +5,29 @@
 #include "net/lyrics_client.h"
 #include "net/upnp_client.h"
 #include "power_manager.h"
+#include <esp_sleep.h>
 #include <esp_task_wdt.h>
 #include "config.h"
 
 extern QueueHandle_t xQueueUiCmd;
 extern QueueHandle_t xQueueUiState;
+
+struct RtcDeviceConfigCache {
+    uint32_t magic;
+    char uuid[64];
+    bool is_fixed_volume;
+};
+
+static constexpr uint32_t RTC_DEV_CFG_MAGIC = 0x44434647UL; // "DCFG"
+static RTC_DATA_ATTR RtcDeviceConfigCache s_rtc_dev_cfg = {};
+
+static void save_rtc_dev_cfg(const char* uuid, bool isFixed) {
+    if (!uuid || strlen(uuid) == 0) return;
+    memset(&s_rtc_dev_cfg, 0, sizeof(s_rtc_dev_cfg));
+    strncpy(s_rtc_dev_cfg.uuid, uuid, sizeof(s_rtc_dev_cfg.uuid) - 1);
+    s_rtc_dev_cfg.is_fixed_volume = isFixed;
+    s_rtc_dev_cfg.magic = RTC_DEV_CFG_MAGIC;
+}
 
 static void emit_boot_status(uint8_t pct, bool hasError, bool completed, const char* msg) {
     UiEvent evt;
@@ -128,17 +146,31 @@ bool WiiMNetworkManager::syncActiveDevice() {
     linkplay_client_reset_track_cache();
     esp_task_wdt_reset();
 
-    bool isFixed = activeDev.is_fixed_volume;
-    bool configOk = linkplay_client_fetch_config(activeDev.ip, isFixed);
+    bool canDeferConfig = (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_UNDEFINED) &&
+                          (s_rtc_dev_cfg.magic == RTC_DEV_CFG_MAGIC) &&
+                          (strlen(activeDev.uuid) > 0) &&
+                          (strcmp(s_rtc_dev_cfg.uuid, activeDev.uuid) == 0);
+    bool isFixed = canDeferConfig ? s_rtc_dev_cfg.is_fixed_volume : activeDev.is_fixed_volume;
+    bool configOk = canDeferConfig;
+    bool deferredConfig = canDeferConfig;
     PlayerState st;
     memset(&st, 0, sizeof(st));
     bool statusOk = false;
 
-    if (configOk) {
+    if (canDeferConfig) {
         discovery_service_set_active_fixed_volume(isFixed);
         activeDev.is_fixed_volume = isFixed;
         esp_task_wdt_reset();
         statusOk = linkplay_client_poll_active(activeDev.ip, isFixed, st);
+    } else {
+        configOk = linkplay_client_fetch_config(activeDev.ip, isFixed);
+        if (configOk) {
+            save_rtc_dev_cfg(activeDev.uuid, isFixed);
+            discovery_service_set_active_fixed_volume(isFixed);
+            activeDev.is_fixed_volume = isFixed;
+            esp_task_wdt_reset();
+            statusOk = linkplay_client_poll_active(activeDev.ip, isFixed, st);
+        }
     }
 
     // If initial query failed (e.g. cold ARP on wake or DHCP IP changed), run a quick SSDP check and retry once
@@ -153,8 +185,10 @@ bool WiiMNetworkManager::syncActiveDevice() {
         linkplay_client_reset_session();
         esp_task_wdt_reset();
 
+        deferredConfig = false;
         configOk = linkplay_client_fetch_config(activeDev.ip, isFixed);
         if (configOk) {
+            save_rtc_dev_cfg(activeDev.uuid, isFixed);
             discovery_service_set_active_fixed_volume(isFixed);
             activeDev.is_fixed_volume = isFixed;
             esp_task_wdt_reset();
@@ -177,7 +211,18 @@ bool WiiMNetworkManager::syncActiveDevice() {
     emit_boot_status(100, false, true, "Ready");
     log_i("[Sync] Player UI ready (%s at %s). Loading presets in background...", activeDev.name, activeDev.ip);
 
-    // Load presets asynchronously right after revealing the Player screen, then re-enable Wi-Fi modem sleep
+    // Verify deferred fixed-volume config and load presets in background right after revealing the Player screen
+    if (deferredConfig) {
+        esp_task_wdt_reset();
+        bool freshFixed = isFixed;
+        if (linkplay_client_fetch_config(activeDev.ip, freshFixed)) {
+            save_rtc_dev_cfg(activeDev.uuid, freshFixed);
+            if (freshFixed != isFixed) {
+                discovery_service_set_active_fixed_volume(freshFixed);
+                _lastStatusPoll = 0;
+            }
+        }
+    }
     esp_task_wdt_reset();
     if (!linkplay_client_fetch_presets(activeDev.ip)) {
         esp_task_wdt_reset();
@@ -419,9 +464,12 @@ void WiiMNetworkManager::runTaskLoop() {
         if (hasActive && _deviceSynced && !dimmed && (now - _lastConfigPoll >= 30000)) {
             _lastConfigPoll = now;
             bool isFixed = false;
-            if (linkplay_client_fetch_config(activeDev.ip, isFixed) && isFixed != activeDev.is_fixed_volume) {
-                discovery_service_set_active_fixed_volume(isFixed);
-                _lastStatusPoll = 0;
+            if (linkplay_client_fetch_config(activeDev.ip, isFixed)) {
+                save_rtc_dev_cfg(activeDev.uuid, isFixed);
+                if (isFixed != activeDev.is_fixed_volume) {
+                    discovery_service_set_active_fixed_volume(isFixed);
+                    _lastStatusPoll = 0;
+                }
             }
         }
 
@@ -433,7 +481,7 @@ void WiiMNetworkManager::runTaskLoop() {
         }
 
         vTaskDelay(pdMS_TO_TICKS(dimmed ? 25 : 1)); // Yield to Wi-Fi/lwIP stack on Core 0
-    } else {
+    } else if (!wifi_service_is_connecting()) {
         vTaskDelay(pdMS_TO_TICKS(50));
     }
 }

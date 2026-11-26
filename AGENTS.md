@@ -5,6 +5,7 @@ These directives are binding and must be strictly followed on all tasks in this 
 ## 1. Mandatory Implementation Plan Before File Modifications
 - **Never modify, create, or delete code or configuration files without presenting an implementation plan first.**
 - Before executing any code changes, draft a detailed implementation plan outlining the proposed modifications, affected files, and verification steps.
+- **Single-Hypothesis Plan Gate**: A bug-fix plan may only modify what is strictly required to test the single primary root cause; any secondary observations must be noted separately as optional follow-ups, never bundled into the plan.
 - **Wait for explicit user review and approval** before modifying workspace files.
 
 ## 2. Simplicity & Clean Design (Zero Overengineering)
@@ -37,4 +38,5 @@ These directives are binding and must be strictly followed on all tasks in this 
 ## 7. Subtractive Debugging & First-Principles Reduction
 - **Delete before patching**: When a feature is buggy or flaky, do not preserve or patch around existing retry loops, fallback heuristics, state booleans, or workarounds—especially those left behind by earlier iterations.
 - **Reduce to the 1-step baseline first**: Strip the failing function down to its simplest textbook path (e.g., 1 request -> 1 status code check -> 1 output) and test that baseline before proposing any retries, fallbacks, or low-level SDK/RTOS workarounds.
+- **Single-Hypothesis Plan Gate**: A bug-fix plan may only modify what is strictly required to test the single primary root cause; any secondary observations must be noted separately as optional follow-ups, never bundled into the plan.
 - **Verify observability upfront**: Before capturing logs or diagnosing runtime behavior, verify that the build configuration (e.g., `CORE_DEBUG_LEVEL` in `platformio.ini`) actually outputs the log level being used, and log the exact inputs/outputs of the function under test.

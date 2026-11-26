@@ -1,24 +1,70 @@
 #include "net/wifi_service.h"
 #include "power_manager.h"
 #include <Preferences.h>
+#include <esp_sleep.h>
 #include <esp_task_wdt.h>
+#include <esp_wifi.h>
 #include "config.h"
 #include "model.h"
 
 extern QueueHandle_t xQueueUiState;
+
+struct RtcWifiCache {
+    uint32_t magic;
+    char ssid[33];
+    uint8_t bssid[6];
+    int32_t channel;
+    uint32_t ip;
+    uint32_t gw;
+    uint32_t mask;
+    uint32_t dns1;
+    uint32_t dns2;
+};
+
+static constexpr uint32_t RTC_WIFI_MAGIC = 0x57494649UL; // "WIFI"
+static constexpr unsigned long WIFI_FAST_RESUME_TIMEOUT_MS = 2500UL;
+static RTC_DATA_ATTR RtcWifiCache s_rtc_wifi = {};
 
 static Preferences s_wifi_prefs;
 static WiFiConnectedCb s_on_connected_cb = nullptr;
 static WiFiDisconnectedCb s_on_disconnected_cb = nullptr;
 
 static bool s_wifi_connected = false;
+static volatile bool s_shutting_down = false;
 static unsigned long s_last_wifi_check = 0;
 static bool s_wifi_connecting = false;
+static bool s_fast_resume_active = false;
 static unsigned long s_wifi_connect_start = 0;
 static String s_pending_connect_ssid = "";
 static String s_pending_connect_pass = "";
 static String s_cached_saved_ssid = "";
 static String s_cached_saved_pass = "";
+
+static void clear_rtc_wifi_cache() {
+    s_rtc_wifi.magic = 0;
+}
+
+static void save_rtc_wifi_cache(const String& ssid) {
+    const uint8_t* bssid = WiFi.BSSID();
+    int32_t ch = WiFi.channel();
+    uint32_t ip = (uint32_t)WiFi.localIP();
+    if (!bssid || ch < 1 || ch > 14 || ip == 0 || ssid.length() == 0 || ssid.length() >= sizeof(s_rtc_wifi.ssid)) {
+        return;
+    }
+    memset(&s_rtc_wifi, 0, sizeof(s_rtc_wifi));
+    strncpy(s_rtc_wifi.ssid, ssid.c_str(), sizeof(s_rtc_wifi.ssid) - 1);
+    memcpy(s_rtc_wifi.bssid, bssid, 6);
+    s_rtc_wifi.channel = ch;
+    s_rtc_wifi.ip = ip;
+    s_rtc_wifi.gw = (uint32_t)WiFi.gatewayIP();
+    s_rtc_wifi.mask = (uint32_t)WiFi.subnetMask();
+    s_rtc_wifi.dns1 = (uint32_t)WiFi.dnsIP(0);
+    s_rtc_wifi.dns2 = (uint32_t)WiFi.dnsIP(1);
+    if (s_rtc_wifi.dns1 == 0) {
+        s_rtc_wifi.dns1 = s_rtc_wifi.gw;
+    }
+    s_rtc_wifi.magic = RTC_WIFI_MAGIC;
+}
 
 static void collect_wifi_scan_results(int16_t n) {
     WiFiScanList* pScan = (WiFiScanList*)malloc(sizeof(WiFiScanList));
@@ -63,8 +109,10 @@ void wifi_service_init(WiFiConnectedCb onConnected, WiFiDisconnectedCb onDisconn
 
     s_wifi_prefs.begin("wiimremote", false);
 
+    WiFi.persistent(false);
     WiFi.mode(WIFI_STA);
-    WiFi.setScanMethod(WIFI_FAST_SCAN);
+    esp_wifi_set_max_tx_power(WIFI_POWER_15dBm);
+    WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
     WiFi.setAutoReconnect(true);
 
     bool setupDone = s_wifi_prefs.getBool("user_setup_done", false);
@@ -88,7 +136,34 @@ void wifi_service_init(WiFiConnectedCb onConnected, WiFiDisconnectedCb onDisconn
         snprintf(evtBoot.data.boot.message, sizeof(evtBoot.data.boot.message), "Connecting to Wi-Fi...");
         xQueueSend(xQueueUiState, &evtBoot, 0);
 
-        WiFi.begin(s_cached_saved_ssid.c_str(), s_cached_saved_pass.c_str());
+        bool canFastResume = (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_UNDEFINED) &&
+                             (s_rtc_wifi.magic == RTC_WIFI_MAGIC) &&
+                             (strcmp(s_rtc_wifi.ssid, s_cached_saved_ssid.c_str()) == 0) &&
+                             (s_rtc_wifi.channel >= 1 && s_rtc_wifi.channel <= 14) &&
+                             (s_rtc_wifi.ip != 0 && s_rtc_wifi.gw != 0 && s_rtc_wifi.mask != 0);
+
+        if (canFastResume) {
+            log_i("Fast-resuming Wi-Fi on ch %ld (cached BSSID + static IP)", (long)s_rtc_wifi.channel);
+            s_fast_resume_active = true;
+            WiFi.setScanMethod(WIFI_FAST_SCAN);
+            WiFi.setAutoReconnect(false);
+            WiFi.config(IPAddress(s_rtc_wifi.ip),
+                        IPAddress(s_rtc_wifi.gw),
+                        IPAddress(s_rtc_wifi.mask),
+                        IPAddress(s_rtc_wifi.dns1),
+                        IPAddress(s_rtc_wifi.dns2));
+            WiFi.begin(s_cached_saved_ssid.c_str(),
+                       s_cached_saved_pass.c_str(),
+                       s_rtc_wifi.channel,
+                       s_rtc_wifi.bssid,
+                       true);
+        } else {
+            s_fast_resume_active = false;
+            WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+            WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+            WiFi.setAutoReconnect(true);
+            WiFi.begin(s_cached_saved_ssid.c_str(), s_cached_saved_pass.c_str());
+        }
     } else {
         log_w("No user-configured Wi-Fi credentials. Setup required!");
         WiFi.disconnect(true, true);
@@ -123,11 +198,17 @@ void wifi_service_connect(const char* ssid, const char* pass) {
     if (!ssid || strlen(ssid) == 0) return;
     log_i("Connecting to user-selected Wi-Fi: %s", ssid);
     s_wifi_connecting = true;
+    s_fast_resume_active = false;
+    clear_rtc_wifi_cache();
     s_wifi_connect_start = millis();
     s_pending_connect_ssid = ssid;
     s_pending_connect_pass = pass ? pass : "";
 
+    WiFi.setAutoReconnect(true);
+    WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+    WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
     WiFi.disconnect(false, false);
+    WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
     WiFi.begin(ssid, pass);
 }
 
@@ -137,11 +218,14 @@ void wifi_service_forget() {
     s_wifi_prefs.remove("wifi_pass");
     s_wifi_prefs.remove("user_setup_done");
     s_wifi_connected = false;
+    s_fast_resume_active = false;
+    clear_rtc_wifi_cache();
     s_pending_connect_ssid = "";
     s_pending_connect_pass = "";
     s_cached_saved_ssid = "";
     s_cached_saved_pass = "";
     WiFi.disconnect(false, true);
+    WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
 
     unsigned long waitStart = millis();
     while (WiFi.status() == WL_CONNECTED && millis() - waitStart < 1000) {
@@ -168,12 +252,17 @@ void wifi_service_reconnect() {
     if (s_cached_saved_ssid.length() > 0 && WiFi.status() != WL_CONNECTED) {
         log_i("Reconnecting to saved Wi-Fi: %s", s_cached_saved_ssid.c_str());
         WiFi.setSleep(WIFI_PS_NONE);
-        WiFi.setScanMethod(WIFI_FAST_SCAN);
+        WiFi.setAutoReconnect(true);
+        WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+        WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
         s_wifi_connecting = true;
+        s_fast_resume_active = false;
+        clear_rtc_wifi_cache();
         s_wifi_connect_start = millis();
         s_pending_connect_ssid = "";
         s_pending_connect_pass = "";
         WiFi.disconnect(false, false);
+        WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
         WiFi.begin(s_cached_saved_ssid.c_str(), s_cached_saved_pass.c_str());
     }
 }
@@ -182,19 +271,32 @@ void wifi_service_set_power_save(bool enable) {
     WiFi.setSleep(enable ? WIFI_PS_MIN_MODEM : WIFI_PS_NONE);
 }
 
+void wifi_service_prepare_deep_sleep() {
+    s_shutting_down = true;
+    __sync_synchronize();
+    WiFi.setAutoReconnect(false);
+    WiFi.disconnect(true);
+    WiFi.mode(WIFI_OFF);
+}
+
 void wifi_service_handle() {
+    if (s_shutting_down) return;
     unsigned long now = millis();
     wl_status_t status = WiFi.status();
 
     if (status == WL_CONNECTED) {
         if (!s_wifi_connected) {
             s_wifi_connected = true;
-            WiFi.setScanMethod(WIFI_FAST_SCAN);
+            s_fast_resume_active = false;
+            WiFi.setAutoReconnect(true);
+            WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+            WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
             bool wasUserConnecting = (s_pending_connect_ssid.length() > 0);
             s_wifi_connecting = false;
             String localIpStr = WiFi.localIP().toString();
             int8_t rssi = WiFi.RSSI();
             String ssidStr = WiFi.SSID();
+            save_rtc_wifi_cache(ssidStr);
             log_i("Wi-Fi Connected! IP: %s, RSSI: %d dBm", localIpStr.c_str(), rssi);
 
             // Save to NVS if newly connected via pending credentials
@@ -250,6 +352,7 @@ void wifi_service_handle() {
             }
         }
     } else {
+        if (s_shutting_down) return;
         if (s_wifi_connected) {
             s_wifi_connected = false;
             if (s_on_disconnected_cb) {
@@ -266,15 +369,31 @@ void wifi_service_handle() {
 
             if (s_cached_saved_ssid.length() > 0 && !s_wifi_connecting) {
                 s_last_wifi_check = now;
+                s_fast_resume_active = false;
+                clear_rtc_wifi_cache();
                 WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
                 WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
                 WiFi.disconnect(false, false);
+                WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
                 WiFi.begin(s_cached_saved_ssid.c_str(), s_cached_saved_pass.c_str());
             }
         }
 
         if (s_wifi_connecting) {
-            if (now - s_wifi_connect_start >= WIFI_CONNECT_TIMEOUT_MS) {
+            bool fastResumeFailed = s_fast_resume_active &&
+                                    (now - s_wifi_connect_start >= WIFI_FAST_RESUME_TIMEOUT_MS);
+            if (fastResumeFailed) {
+                log_w("Wi-Fi fast-resume timed out (status=%d); falling back to full scan + DHCP...", (int)status);
+                s_fast_resume_active = false;
+                clear_rtc_wifi_cache();
+                s_wifi_connect_start = now;
+                WiFi.setAutoReconnect(true);
+                WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
+                WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
+                WiFi.disconnect(false, false);
+                WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
+                WiFi.begin(s_cached_saved_ssid.c_str(), s_cached_saved_pass.c_str());
+            } else if (now - s_wifi_connect_start >= WIFI_CONNECT_TIMEOUT_MS) {
                 s_wifi_connecting = false;
                 WiFi.setSleep(WIFI_PS_MIN_MODEM);
                 if (s_pending_connect_ssid.length() > 0) {
@@ -300,10 +419,13 @@ void wifi_service_handle() {
         } else {
             if (s_cached_saved_ssid.length() > 0 && now - s_last_wifi_check >= WIFI_RECONNECT_INTERVAL_MS) {
                 s_last_wifi_check = now;
+                s_fast_resume_active = false;
+                clear_rtc_wifi_cache();
                 log_i("Reconnecting to Wi-Fi (all-channel scan for strongest AP)...");
                 WiFi.setScanMethod(WIFI_ALL_CHANNEL_SCAN);
                 WiFi.setSortMethod(WIFI_CONNECT_AP_BY_SIGNAL);
                 WiFi.disconnect(false, false);
+                WiFi.config(INADDR_NONE, INADDR_NONE, INADDR_NONE);
                 WiFi.begin(s_cached_saved_ssid.c_str(), s_cached_saved_pass.c_str());
             }
         }
@@ -312,6 +434,10 @@ void wifi_service_handle() {
 
 bool wifi_service_is_connected() {
     return s_wifi_connected;
+}
+
+bool wifi_service_is_connecting() {
+    return s_wifi_connecting;
 }
 
 int8_t wifi_service_get_rssi() {
