@@ -11,6 +11,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.0.8] - 2026-11-26
+
+### Added
+- **RTC Fast Wi-Fi Resume & Deferred Device Config on Wake (`b936983`)**:
+  - Cached the last connected AP's `SSID`, `BSSID`, channel, and static IP/gateway/subnet/DNS in `RTC_DATA_ATTR` (`src/net/wifi_service.cpp`) so deep-sleep wakes connect via `WIFI_FAST_SCAN` on the cached channel + BSSID without DHCP delay (`~397 ms` Wi-Fi connect, `~1.63 s` total to interactive Player UI), with automatic `2500 ms` fallback to `WIFI_ALL_CHANNEL_SCAN` + DHCP if the AP changes or is out of range.
+  - Added `wifi_service_prepare_deep_sleep()` (`include/net/wifi_service.h`, `src/net/wifi_service.cpp`, `src/power_manager.cpp`) to cleanly halt `wifi_service_handle()` before turning off Wi-Fi so Core 0 never wipes the RTC cache or triggers reconnect attempts during deep-sleep entry.
+  - Cached active streamer `uuid` and `is_fixed_volume` in `RTC_DATA_ATTR` (`src/network_manager.cpp`) to defer `getStatusEx` to the background immediately after revealing the Player UI on deep-sleep wake, and polled Wi-Fi connection status every `10 ms` during connect.
+- **UPnP Browser Folder Context Persistence Across Deep Sleep (`b936983`)**:
+  - Persisted the active UPnP server identity (`UDN` / `base_url`) and breadcrumb navigation stack (`MAX_NAV_DEPTH = 10` with per-level pagination offsets) in `RTC_DATA_ATTR` (`src/ui/ui_browser.cpp`) with zero boot-time network overhead, lazily reloading the previous folder only when the user opens the **UPnP** tab after waking.
+
+### Changed
+- **ILI9341V Datasheet Deep-Sleep & Clean Wake Sequence (`b936983`)**:
+  - Updated `display_prepare_deep_sleep()` (`src/display_driver.cpp`) to cut backlight PWM, flush a black frame (`30 ms`), send `DISPOFF (0x28)` wrapped in `startWrite()`/`endWrite()` (`30 ms`), and enter `SLPIN (0x10)` with a `120 ms` discharge settle before locking `TFT_BL` LOW—recovering `~6–10 mA` of standby LCD current draw.
+  - Updated `display_driver_init()` (`src/display_driver.cpp`) to issue `SWRESET (0x01)` (`120 ms`) on deep-sleep wake so the `ILI9341V` re-initializes from a clean POR state while keeping backlight PWM at `0` until the first LVGL frame is rendered.
+- **Mesh Wi-Fi Stability & Low-Battery TX Power Cap (`b936983`)**:
+  - Capped Wi-Fi transmit power to `15 dBm` via `esp_wifi_set_max_tx_power(WIFI_POWER_15dBm)` right after `WiFi.mode(WIFI_STA)` (`src/net/wifi_service.cpp`) to reduce peak RF current spikes and prevent brownout-induced reconnect failures on low battery.
+  - Disabled redundant SDK flash writes (`WiFi.persistent(false)`), enabled `WIFI_ALL_CHANNEL_SCAN` + `WIFI_CONNECT_AP_BY_SIGNAL` on cold boot, fallback, and reconnect for mesh networks, and raised `WIFI_RECONNECT_INTERVAL_MS` from `4000 ms` to `8000 ms` (`include/config.h`).
+
+### Fixed
+- **Ephemeral UDP Socket for SSDP `M-SEARCH` Discovery (`b936983`)**:
+  - Split outbound SSDP `M-SEARCH` broadcasts onto a dedicated ephemeral UDP socket (`s_udp_msearch.begin(0)`) while keeping `s_udp_ssdp` bound to multicast `239.255.255.250:1900` (`src/net/discovery_service.cpp`), processing unicast `M-SEARCH` replies and multicast `NOTIFY` packets reliably across both sockets.
+
+---
+
 ## [1.0.7] - 2026-10-30
 
 ### Added
