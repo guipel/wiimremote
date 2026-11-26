@@ -1,6 +1,7 @@
 #include "display_driver.h"
 #include "power_manager.h"
 #include <esp_heap_caps.h>
+#include <esp_sleep.h>
 #include <driver/gpio.h>
 
 LGFX_ESP32S3_Custom gfx;
@@ -81,6 +82,7 @@ LGFX_ESP32S3_Custom::LGFX_ESP32S3_Custom() {
         _panel_instance.setTouch(&_touch_instance);
     }
 
+    setBrightness(0); // Keep backlight at 0 inside LGFX_Device::init_impl() until first UI frame is rendered
     setPanel(&_panel_instance);
 }
 
@@ -147,7 +149,19 @@ void display_driver_prealloc() {
 }
 
 void display_driver_init() {
-    // 1. Initialize LovyanGFX with backlight kept at 0 until first UI frame is rendered (TFT_BL is already held LOW)
+    // 1. On deep-sleep wake, issue SWRESET (0x01) so ILI9341V enters gfx.init() from clean POR state
+    //    (TFT_RST is tied to system EN, so ESP32-S3 deep sleep wake does not hardware-reset the LCD)
+    if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_UNDEFINED) {
+        pinMode(TFT_CS, OUTPUT);
+        digitalWrite(TFT_CS, HIGH);
+        gfx.initBus();
+        gfx.startWrite();
+        gfx.writeCommand(0x01); // SWRESET
+        gfx.endWrite();
+        delay(120);             // ILI9341V datasheet: >= 120ms settle after SWRESET while in Sleep-In
+    }
+
+    // 2. Initialize LovyanGFX with backlight kept at 0 until first UI frame is rendered (TFT_BL is already held LOW)
     gfx.init();
     gfx.setBrightness(0);
     gfx.setRotation(SCREEN_ROTATION);
@@ -213,15 +227,24 @@ void display_set_rotation(bool flipped_180) {
 
 void display_prepare_deep_sleep() {
     // 1. Put FT6336G touch controller into low-power Monitor mode (0xA5 = 0x01)
-    //    Scans at ~25Hz (~0.8mA instead of ~5mA) while still asserting TOUCH_INT LOW on touch
+    //    Scans at ~25Hz (~0.22mA instead of ~4.3mA) while still asserting TOUCH_INT LOW on touch
     lgfx::i2c::writeRegister8(TOUCH_I2C_PORT, TOUCH_ADDR, 0x86, 0x01, 0, TOUCH_I2C_FREQ);
     lgfx::i2c::writeRegister8(TOUCH_I2C_PORT, TOUCH_ADDR, 0xA5, 0x01, 0, TOUCH_I2C_FREQ);
 
-    // 2. Wait for any in-flight SPI DMA transfer to finish, turn off backlight, and clear GRAM
+    // 2. Cut backlight first, discharge pixel capacitance with a black frame, then blank (DISPOFF) and sleep (SLPIN)
     gfx.waitDisplay();
     gfx.setBrightness(0);
     gfx.fillScreen(0);
     gfx.waitDisplay();
+    delay(30); // ~2 frames at 70 Hz so LC pixels settle to black before blanking
+
+    gfx.startWrite();
+    gfx.writeCommand(0x28); // DISPOFF (wrapped in startWrite/endWrite so TFT_CS asserts LOW)
+    gfx.endWrite();
+    delay(30); // Allow panel gate/source drivers to blank cleanly
+
+    gfx.sleep(); // Sends SLPIN (0x10) wrapped in startWrite/endWrite
+    delay(120);  // ILI9341V datasheet: 120ms charge-pump/VCOM discharge settling period
 
     // 3. Drive TFT_BL LOW and lock it in deep sleep so the MOSFET gate cannot float
     pinMode(TFT_BL, OUTPUT);

@@ -1,6 +1,7 @@
 #include "ui/ui_browser.h"
 #include "ui/ui_theme.h"
 #include "config.h"
+#include <esp_sleep.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -13,9 +14,24 @@ struct NavEntry {
 };
 
 static constexpr uint8_t MAX_NAV_DEPTH = 10;
+static constexpr uint32_t RTC_UPNP_MAGIC = 0x55504E50UL; // "UPNP"
+
+struct RtcUpnpNavCache {
+    uint32_t magic;
+    uint8_t nav_depth;
+    uint8_t server_idx;
+    char server_udn[64];
+    char server_base_url[64];
+    NavEntry stack[MAX_NAV_DEPTH];
+};
+
+static RTC_DATA_ATTR RtcUpnpNavCache s_rtc_nav = {};
+
 static NavEntry s_nav_stack[MAX_NAV_DEPTH];
 static uint8_t s_nav_depth = 0; // 0 = Server List, >= 1 = Inside s_active_server_idx
 static uint8_t s_active_server_idx = 0;
+static bool s_needs_restore_browse = false;
+static bool s_restore_pending_servers = false;
 
 static UpnpServerList s_servers;
 static UpnpBrowseList s_current_browse;
@@ -35,6 +51,69 @@ static constexpr const char* MARQUEE_LOOP_PAD = "          ";
 
 static void render_server_list();
 static bool request_browse(uint8_t serverIdx, const char* objectId, const char* title, uint16_t startIndex = 0);
+
+static void clear_rtc_nav_cache() {
+    s_rtc_nav.magic = 0;
+    s_rtc_nav.nav_depth = 0;
+}
+
+static void save_rtc_nav_cache() {
+    if (s_nav_depth == 0 || s_nav_depth > MAX_NAV_DEPTH || s_active_server_idx >= s_servers.count) {
+        clear_rtc_nav_cache();
+        return;
+    }
+    memset(&s_rtc_nav, 0, sizeof(s_rtc_nav));
+    s_rtc_nav.nav_depth = s_nav_depth;
+    s_rtc_nav.server_idx = s_active_server_idx;
+    strncpy(s_rtc_nav.server_udn, s_servers.servers[s_active_server_idx].udn, sizeof(s_rtc_nav.server_udn) - 1);
+    strncpy(s_rtc_nav.server_base_url, s_servers.servers[s_active_server_idx].base_url, sizeof(s_rtc_nav.server_base_url) - 1);
+    memcpy(s_rtc_nav.stack, s_nav_stack, sizeof(NavEntry) * s_nav_depth);
+    s_rtc_nav.magic = RTC_UPNP_MAGIC;
+}
+
+static int resolve_restored_server_idx() {
+    if (s_servers.count == 0) return -1;
+    if (s_rtc_nav.server_udn[0] != '\0') {
+        for (uint8_t i = 0; i < s_servers.count; ++i) {
+            if (strcmp(s_servers.servers[i].udn, s_rtc_nav.server_udn) == 0) {
+                return (int)i;
+            }
+        }
+    }
+    if (s_rtc_nav.server_base_url[0] != '\0') {
+        for (uint8_t i = 0; i < s_servers.count; ++i) {
+            if (strcmp(s_servers.servers[i].base_url, s_rtc_nav.server_base_url) == 0) {
+                return (int)i;
+            }
+        }
+    }
+    if (s_active_server_idx < s_servers.count) {
+        return (int)s_active_server_idx;
+    }
+    return -1;
+}
+
+static void trigger_restored_browse() {
+    if (!s_needs_restore_browse || s_nav_depth == 0) return;
+
+    int resolvedIdx = resolve_restored_server_idx();
+    if (resolvedIdx < 0) {
+        s_needs_restore_browse = false;
+        s_restore_pending_servers = false;
+        s_nav_depth = 0;
+        clear_rtc_nav_cache();
+        render_server_list();
+        return;
+    }
+
+    s_active_server_idx = (uint8_t)resolvedIdx;
+    const NavEntry& cur = s_nav_stack[s_nav_depth - 1];
+    if (request_browse(s_active_server_idx, cur.object_id, cur.title, cur.start_index)) {
+        s_needs_restore_browse = false;
+        s_restore_pending_servers = false;
+        save_rtc_nav_cache();
+    }
+}
 
 static void set_padded_label_text(lv_obj_t* lbl, const char* text) {
     if (!lbl || !text) return;
@@ -153,12 +232,28 @@ static void event_btn_nav(lv_event_t* e) {
             show_status_message("Scanning for UPnP servers...");
         }
     } else {
+        bool wasPendingRestore = s_needs_restore_browse;
+        s_needs_restore_browse = false;
+        s_restore_pending_servers = false;
         s_nav_depth--;
         if (s_nav_depth == 0) {
+            clear_rtc_nav_cache();
             render_server_list();
         } else {
+            if (wasPendingRestore) {
+                int resolvedIdx = resolve_restored_server_idx();
+                if (resolvedIdx < 0) {
+                    s_nav_depth = 0;
+                    clear_rtc_nav_cache();
+                    render_server_list();
+                    return;
+                }
+                s_active_server_idx = (uint8_t)resolvedIdx;
+            }
             const NavEntry& prev = s_nav_stack[s_nav_depth - 1];
-            if (!request_browse(s_active_server_idx, prev.object_id, prev.title, prev.start_index)) {
+            if (request_browse(s_active_server_idx, prev.object_id, prev.title, prev.start_index)) {
+                save_rtc_nav_cache();
+            } else {
                 s_nav_depth++;
             }
         }
@@ -167,11 +262,15 @@ static void event_btn_nav(lv_event_t* e) {
 
 static void event_btn_page(lv_event_t* e) {
     if (s_nav_depth == 0) return;
+    s_needs_restore_browse = false;
+    s_restore_pending_servers = false;
     uint16_t targetStart = (uint16_t)(uintptr_t)lv_event_get_user_data(e);
     NavEntry& cur = s_nav_stack[s_nav_depth - 1];
     uint16_t prevStart = cur.start_index;
     cur.start_index = targetStart;
-    if (!request_browse(s_active_server_idx, cur.object_id, cur.title, targetStart)) {
+    if (request_browse(s_active_server_idx, cur.object_id, cur.title, targetStart)) {
+        save_rtc_nav_cache();
+    } else {
         cur.start_index = prevStart;
     }
 }
@@ -182,6 +281,8 @@ static void event_btn_server(lv_event_t* e) {
     uint8_t srvIdx = (uint8_t)(uintptr_t)lv_event_get_user_data(e);
     if (srvIdx >= s_servers.count) return;
 
+    s_needs_restore_browse = false;
+    s_restore_pending_servers = false;
     s_active_server_idx = srvIdx;
     s_nav_depth = 1;
     memset(&s_nav_stack[0], 0, sizeof(s_nav_stack[0]));
@@ -189,7 +290,9 @@ static void event_btn_server(lv_event_t* e) {
     strncpy(s_nav_stack[0].title, s_servers.servers[srvIdx].name, sizeof(s_nav_stack[0].title) - 1);
     s_nav_stack[0].start_index = 0;
 
-    if (!request_browse(srvIdx, "0", s_servers.servers[srvIdx].name, 0)) {
+    if (request_browse(srvIdx, "0", s_servers.servers[srvIdx].name, 0)) {
+        save_rtc_nav_cache();
+    } else {
         s_nav_depth = 0;
     }
 }
@@ -202,6 +305,8 @@ static void event_btn_item(lv_event_t* e) {
 
     const UpnpItem& item = s_current_browse.items[itemIdx];
     if (item.is_folder) {
+        s_needs_restore_browse = false;
+        s_restore_pending_servers = false;
         uint8_t prevDepth = s_nav_depth;
         if (s_nav_depth < MAX_NAV_DEPTH) {
             NavEntry& next = s_nav_stack[s_nav_depth++];
@@ -215,7 +320,9 @@ static void event_btn_item(lv_event_t* e) {
             strncpy(top.title, item.title, sizeof(top.title) - 1);
             top.start_index = 0;
         }
-        if (!request_browse(s_active_server_idx, item.id, item.title, 0)) {
+        if (request_browse(s_active_server_idx, item.id, item.title, 0)) {
+            save_rtc_nav_cache();
+        } else {
             s_nav_depth = prevDepth;
         }
     } else {
@@ -257,7 +364,21 @@ void ui_browser_init(lv_obj_t* parent) {
     s_parent = parent;
     memset(&s_servers, 0, sizeof(s_servers));
     memset(&s_current_browse, 0, sizeof(s_current_browse));
-    s_nav_depth = 0;
+    s_needs_restore_browse = false;
+    s_restore_pending_servers = false;
+
+    if (esp_sleep_get_wakeup_cause() != ESP_SLEEP_WAKEUP_UNDEFINED &&
+        s_rtc_nav.magic == RTC_UPNP_MAGIC &&
+        s_rtc_nav.nav_depth > 0 &&
+        s_rtc_nav.nav_depth <= MAX_NAV_DEPTH) {
+        s_nav_depth = s_rtc_nav.nav_depth;
+        s_active_server_idx = s_rtc_nav.server_idx;
+        memcpy(s_nav_stack, s_rtc_nav.stack, sizeof(NavEntry) * s_nav_depth);
+        s_needs_restore_browse = true;
+    } else {
+        s_nav_depth = 0;
+        clear_rtc_nav_cache();
+    }
 
     lv_obj_set_style_pad_all(parent, 0, 0);
     lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
@@ -310,12 +431,30 @@ void ui_browser_apply_theme() {
 
     if (s_nav_depth == 0) {
         render_server_list();
+    } else if (s_needs_restore_browse) {
+        update_header(false);
+        show_status_message("Loading folder...");
     } else {
         ui_browser_set_browse_result(s_current_browse);
     }
 }
 
 void ui_browser_on_tab_activated() {
+    if (s_needs_restore_browse && s_nav_depth > 0) {
+        if (s_servers.count > 0) {
+            trigger_restored_browse();
+        } else {
+            s_restore_pending_servers = true;
+            update_header(false);
+            show_status_message("Loading folder...");
+            UiCommand cmd;
+            memset(&cmd, 0, sizeof(cmd));
+            cmd.type = CMD_UPNP_SCAN_SERVERS;
+            xQueueSend(xQueueUiCmd, &cmd, pdMS_TO_TICKS(50));
+        }
+        return;
+    }
+
     if (s_nav_depth == 0 && s_servers.count == 0) {
         UiCommand cmd;
         memset(&cmd, 0, sizeof(cmd));
@@ -330,6 +469,8 @@ void ui_browser_set_servers(const UpnpServerList& servers) {
     s_servers = servers;
     if (s_nav_depth == 0) {
         render_server_list();
+    } else if (s_needs_restore_browse && s_restore_pending_servers) {
+        trigger_restored_browse();
     }
 }
 
